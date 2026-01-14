@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   BuildingIcon,
   CreditCardIcon,
@@ -10,6 +10,9 @@ import {
   PlusIcon,
   WalletIcon,
   SparklesIcon,
+  CalendarIcon,
+  TrendingUpIcon,
+  ClockIcon,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -24,18 +27,20 @@ interface AccountsSectionProps {
   accounts: BankAccount[]
   sourceFiles: SourceFile[]
   onSave: (account: BankAccount) => void
+  initialAddSourceFile?: string | null
+  onAddingStateChange?: (isAdding: boolean) => void
 }
 
 function AccountForm({
   account,
-  sourceFiles,
   onSave,
   onCancel,
+  defaultSourceFile,
 }: {
   account: BankAccount | null
-  sourceFiles: string[]  // Only parsed filenames passed here
   onSave: (account: BankAccount) => void
   onCancel: () => void
+  defaultSourceFile?: string | null
 }) {
   const [saving, setSaving] = useState(false)
   const [formData, setFormData] = useState<BankAccountInput>({
@@ -44,7 +49,7 @@ function AccountForm({
     account_number: account?.account_number || "",
     ifsc_code: account?.ifsc_code || "",
     branch: account?.branch || "",
-    source_file: account?.source_file || sourceFiles[0] || "",
+    source_file: account?.source_file || defaultSourceFile || "",
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -123,20 +128,14 @@ function AccountForm({
             className="w-full px-3 py-1.5 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
           />
         </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Source File</label>
-          <select
-            value={formData.source_file}
-            onChange={(e) => setFormData({ ...formData, source_file: e.target.value })}
-            className="w-full px-3 py-1.5 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-          >
-            {sourceFiles.map((file) => (
-              <option key={file} value={file}>
-                {file}
-              </option>
-            ))}
-          </select>
-        </div>
+        {formData.source_file && (
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Linked Source File</label>
+            <div className="w-full px-3 py-1.5 rounded-md border border-input bg-muted/50 text-sm font-mono truncate">
+              {formData.source_file}
+            </div>
+          </div>
+        )}
       </div>
       <div className="flex justify-end gap-2">
         <button
@@ -158,6 +157,22 @@ function AccountForm({
       </div>
     </form>
   )
+}
+
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
 }
 
 function AccountCard({
@@ -186,7 +201,43 @@ function AccountCard({
           <PencilIcon className="h-4 w-4 text-muted-foreground" />
         </button>
       </div>
-      <div className="mt-4 flex flex-wrap gap-3 text-sm">
+
+      {/* Balance Info */}
+      {account.current_balance != null && (
+        <div className="mt-3 p-3 rounded-lg bg-gradient-to-r from-green-500/10 to-transparent border border-green-500/20">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground">Current Balance</p>
+              <p className="text-lg font-bold text-green-600 dark:text-green-400">
+                {formatCurrency(account.current_balance)}
+              </p>
+            </div>
+            {account.last_transaction_date && (
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
+                  <ClockIcon className="h-3 w-3" />
+                  Last updated
+                </p>
+                <p className="text-sm font-medium">{formatDate(account.last_transaction_date)}</p>
+              </div>
+            )}
+          </div>
+          {account.starting_balance != null && account.first_transaction_date && (
+            <div className="mt-2 pt-2 border-t border-green-500/20 flex items-center justify-between text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <TrendingUpIcon className="h-3 w-3" />
+                Started: {formatCurrency(account.starting_balance)}
+              </span>
+              <span className="flex items-center gap-1">
+                <CalendarIcon className="h-3 w-3" />
+                {formatDate(account.first_transaction_date)}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap gap-2 text-sm">
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/50">
           <CreditCardIcon className="h-3.5 w-3.5 text-primary" />
           <span className="font-mono">****{account.account_number.slice(-4)}</span>
@@ -206,14 +257,31 @@ function AccountCard({
   )
 }
 
-export function AccountsSection({ accounts, sourceFiles, onSave }: AccountsSectionProps) {
+export function AccountsSection({ accounts, sourceFiles, onSave, initialAddSourceFile, onAddingStateChange }: AccountsSectionProps) {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [isAdding, setIsAdding] = useState(false)
+  const [prefilledSourceFile, setPrefilledSourceFile] = useState<string | null>(null)
 
   // Only parsed files can be linked to accounts
   const parsedFileNames = sourceFiles
     .filter((f) => f.status === 'parsed')
     .map((f) => f.filename)
+
+  // Handle external trigger to add account with pre-filled source file
+  useEffect(() => {
+    if (initialAddSourceFile) {
+      setPrefilledSourceFile(initialAddSourceFile)
+      setIsAdding(true)
+    }
+  }, [initialAddSourceFile])
+
+  // Notify parent when adding state changes
+  useEffect(() => {
+    onAddingStateChange?.(isAdding)
+    if (!isAdding) {
+      setPrefilledSourceFile(null)
+    }
+  }, [isAdding, onAddingStateChange])
 
   const handleSave = (account: BankAccount) => {
     onSave(account)
@@ -267,7 +335,6 @@ export function AccountsSection({ accounts, sourceFiles, onSave }: AccountsSecti
                 <AccountForm
                   key={account.id}
                   account={account}
-                  sourceFiles={parsedFileNames}
                   onSave={handleSave}
                   onCancel={() => setEditingId(null)}
                 />
@@ -284,9 +351,9 @@ export function AccountsSection({ accounts, sourceFiles, onSave }: AccountsSecti
         {isAdding && (
           <AccountForm
             account={null}
-            sourceFiles={parsedFileNames}
             onSave={handleSave}
             onCancel={() => setIsAdding(false)}
+            defaultSourceFile={prefilledSourceFile}
           />
         )}
       </CardContent>

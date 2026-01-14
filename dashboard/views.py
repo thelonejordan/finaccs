@@ -1,31 +1,55 @@
-from django.db.models import Sum
+from django.db.models import Sum, Max, Subquery, OuterRef
 from django.db.models.functions import TruncMonth
 from django.http import JsonResponse
 
 from .models import Transaction
 
+# Categories to exclude from income/expense calculations (internal transfers)
+EXCLUDED_CATEGORIES = ['Self Transfer']
+
 
 def api_summary(request):
-    transactions = Transaction.objects.all()
+    all_transactions = Transaction.objects.all()
+
+    # Exclude self transfers from income/expense totals
+    transactions = all_transactions.exclude(category__in=EXCLUDED_CATEGORIES)
 
     total_credits = transactions.aggregate(total=Sum('credit_amount'))['total'] or 0
     total_debits = transactions.aggregate(total=Sum('debit_amount'))['total'] or 0
     net_flow = total_credits - total_debits
 
-    latest_balance = transactions.first()
-    current_balance = float(latest_balance.closing_balance) if latest_balance else 0
+    # Calculate total balance as sum of latest closing balance from each account
+    # Get the latest transaction for each bank_account
+    from bank_accs.models import BankAccount
+
+    total_balance = 0
+    accounts = BankAccount.objects.all()
+
+    if accounts.exists():
+        for account in accounts:
+            # Get latest transaction for this account's source file
+            latest_txn = all_transactions.filter(
+                bank_account=account
+            ).first()
+            if latest_txn:
+                total_balance += float(latest_txn.closing_balance)
+    else:
+        # Fallback: if no accounts, use latest transaction balance
+        latest_balance = all_transactions.first()
+        total_balance = float(latest_balance.closing_balance) if latest_balance else 0
 
     return JsonResponse({
         'total_credits': float(total_credits),
         'total_debits': float(total_debits),
         'net_flow': float(net_flow),
-        'current_balance': current_balance,
-        'transaction_count': transactions.count(),
+        'current_balance': total_balance,
+        'transaction_count': all_transactions.count(),
     })
 
 
 def api_monthly(request):
-    transactions = Transaction.objects.all()
+    # Exclude self transfers from monthly breakdown
+    transactions = Transaction.objects.exclude(category__in=EXCLUDED_CATEGORIES)
 
     monthly_data = (
         transactions
@@ -50,9 +74,17 @@ def api_monthly(request):
 
 
 def api_categories(request):
+    # Check if we should include all categories (for filtering purposes)
+    include_all = request.GET.get('include_all', 'false').lower() == 'true'
+
+    queryset = Transaction.objects.filter(debit_amount__gt=0)
+
+    # Exclude self transfers from category breakdown unless include_all is set
+    if not include_all:
+        queryset = queryset.exclude(category__in=EXCLUDED_CATEGORIES)
+
     category_data = (
-        Transaction.objects
-        .filter(debit_amount__gt=0)
+        queryset
         .values('category')
         .annotate(total=Sum('debit_amount'))
         .order_by('-total')
@@ -111,9 +143,11 @@ def api_transactions(request):
 def api_top_expenses(request):
     limit = int(request.GET.get('limit', 10))
 
+    # Exclude self transfers from top expenses
     top_expenses = (
         Transaction.objects
         .filter(debit_amount__gt=0)
+        .exclude(category__in=EXCLUDED_CATEGORIES)
         .order_by('-debit_amount')[:limit]
     )
 

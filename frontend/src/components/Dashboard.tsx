@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react"
+import { Link } from "react-router-dom"
 import {
-  BarChart,
-  Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
+  Legend,
 } from "recharts"
 import {
   ArrowDownIcon,
@@ -20,6 +22,7 @@ import {
   MoonIcon,
   ClockIcon,
   FlameIcon,
+  ArrowRightIcon,
 } from "lucide-react"
 import { useTheme } from "@/lib/theme"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -75,11 +78,11 @@ export function Dashboard() {
   const [categories, setCategories] = useState<CategoryData[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [topExpenses, setTopExpenses] = useState<TopExpense[]>([])
-  const [bankAccount, setBankAccount] = useState<BankAccount | null>(null)
   const [allAccounts, setAllAccounts] = useState<BankAccount[]>([])
   const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([])
   const [loading, setLoading] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [addSourceFile, setAddSourceFile] = useState<string | null>(null)
   const { theme, toggleTheme } = useTheme()
 
   useEffect(() => {
@@ -100,7 +103,6 @@ export function Dashboard() {
         setCategories(categoryData.data)
         setTransactions(transactionsData.data)
         setTopExpenses(topExpensesData.data)
-        setBankAccount(accountsData.accounts[0] || null)
         setAllAccounts(accountsData.accounts)
         setSourceFiles(accountsData.source_files)
       } catch (error) {
@@ -182,7 +184,26 @@ export function Dashboard() {
             accounts={allAccounts}
             sourceFiles={sourceFiles}
             onSave={(account) => {
-              setBankAccount(account)
+              setAllAccounts((prev) => {
+                const existing = prev.findIndex((a) => a.id === account.id)
+                if (existing >= 0) {
+                  const updated = [...prev]
+                  updated[existing] = account
+                  return updated
+                }
+                return [...prev, account]
+              })
+            }}
+            initialAddSourceFile={addSourceFile}
+            onAddingStateChange={(isAdding) => {
+              if (!isAdding) setAddSourceFile(null)
+            }}
+          />
+          <DataSources
+            sourceFiles={sourceFiles}
+            accounts={allAccounts}
+            onCreateAccount={(filename) => setAddSourceFile(filename)}
+            onAccountUpdated={(account) => {
               setAllAccounts((prev) => {
                 const existing = prev.findIndex((a) => a.id === account.id)
                 if (existing >= 0) {
@@ -194,7 +215,6 @@ export function Dashboard() {
               })
             }}
           />
-          <DataSources sourceFiles={sourceFiles} accounts={allAccounts} />
         </div>
 
         {/* Summary Cards */}
@@ -274,16 +294,38 @@ export function Dashboard() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={monthly}>
+                <LineChart data={monthly}>
                   <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}k`} />
                   <RechartsTooltip
-                    formatter={(value: number) => formatCurrency(value)}
+                    formatter={(value) => formatCurrency(value as number)}
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                    }}
                   />
-                  <Bar dataKey="credits" name="Income" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="debits" name="Expenses" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                </BarChart>
+                  <Legend />
+                  <Line
+                    type="monotone"
+                    dataKey="credits"
+                    name="Income"
+                    stroke="#22c55e"
+                    strokeWidth={2}
+                    dot={{ fill: '#22c55e', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="debits"
+                    name="Expenses"
+                    stroke="#ef4444"
+                    strokeWidth={2}
+                    dot={{ fill: '#ef4444', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
@@ -309,11 +351,20 @@ export function Dashboard() {
           {/* Recent Transactions */}
           <Card className="border-teal-500/20 bg-gradient-to-br from-card via-card to-teal-500/5">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-teal-500/10">
-                  <ClockIcon className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-teal-500/10">
+                    <ClockIcon className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                  </div>
+                  Recent Transactions
                 </div>
-                Recent Transactions
+                <Link
+                  to="/transactions"
+                  className="text-sm font-medium text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1"
+                >
+                  View All
+                  <ArrowRightIcon className="h-4 w-4" />
+                </Link>
               </CardTitle>
             </CardHeader>
             <CardContent>

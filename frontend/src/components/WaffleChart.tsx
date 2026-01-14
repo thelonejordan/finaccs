@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import type { CategoryData } from "@/lib/api"
 
 const COLORS = [
@@ -12,11 +12,17 @@ const COLORS = [
   "#FF6B6B",
   "#A78BFA",
   "#F472B6",
+  "#34D399",
+  "#F59E0B",
+  "#EC4899",
+  "#6366F1",
+  "#14B8A6",
 ]
 
 interface WaffleChartProps {
   data: CategoryData[]
-  totalCells?: number
+  cellSize?: number
+  gap?: number
 }
 
 function formatCurrency(amount: number): string {
@@ -27,15 +33,35 @@ function formatCurrency(amount: number): string {
   }).format(amount)
 }
 
-export function WaffleChart({ data, totalCells = 100 }: WaffleChartProps) {
+export function WaffleChart({ data, cellSize = 12, gap = 2 }: WaffleChartProps) {
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [dimensions, setDimensions] = useState({ cols: 20, rows: 10 })
 
+  // Calculate grid dimensions based on container width
+  useEffect(() => {
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        const width = containerRef.current.offsetWidth
+        const cols = Math.floor(width / (cellSize + gap))
+        // Use a reasonable number of rows to make a nice rectangle
+        const rows = Math.max(8, Math.min(12, Math.floor(cols * 0.5)))
+        setDimensions({ cols: Math.max(10, cols), rows })
+      }
+    }
+
+    updateDimensions()
+    window.addEventListener("resize", updateDimensions)
+    return () => window.removeEventListener("resize", updateDimensions)
+  }, [cellSize, gap])
+
+  const totalCells = dimensions.cols * dimensions.rows
   const total = data.reduce((sum, item) => sum + item.amount, 0)
 
   // Calculate cells per category
   const cellsPerCategory = data.map((item, index) => {
     const percentage = total > 0 ? item.amount / total : 0
-    const cells = Math.round(percentage * totalCells)
+    const cells = Math.max(1, Math.round(percentage * totalCells))
     return {
       ...item,
       cells,
@@ -45,15 +71,30 @@ export function WaffleChart({ data, totalCells = 100 }: WaffleChartProps) {
   })
 
   // Adjust for rounding errors
-  const totalAssigned = cellsPerCategory.reduce((sum, item) => sum + item.cells, 0)
-  if (totalAssigned !== totalCells && cellsPerCategory.length > 0) {
-    const diff = totalCells - totalAssigned
-    // Add/remove from the largest category
+  let totalAssigned = cellsPerCategory.reduce((sum, item) => sum + item.cells, 0)
+
+  // If we have more cells assigned than available, reduce from largest categories
+  while (totalAssigned > totalCells && cellsPerCategory.length > 0) {
     const largestIdx = cellsPerCategory.reduce(
       (maxIdx, item, idx, arr) => (item.cells > arr[maxIdx].cells ? idx : maxIdx),
       0
     )
-    cellsPerCategory[largestIdx].cells += diff
+    if (cellsPerCategory[largestIdx].cells > 1) {
+      cellsPerCategory[largestIdx].cells -= 1
+      totalAssigned -= 1
+    } else {
+      break
+    }
+  }
+
+  // If we have fewer cells, add to largest
+  while (totalAssigned < totalCells && cellsPerCategory.length > 0) {
+    const largestIdx = cellsPerCategory.reduce(
+      (maxIdx, item, idx, arr) => (item.cells > arr[maxIdx].cells ? idx : maxIdx),
+      0
+    )
+    cellsPerCategory[largestIdx].cells += 1
+    totalAssigned += 1
   }
 
   // Build the waffle grid
@@ -69,79 +110,93 @@ export function WaffleChart({ data, totalCells = 100 }: WaffleChartProps) {
     }
   })
 
-  const gridSize = Math.ceil(Math.sqrt(totalCells))
+  // Fill remaining cells if any
+  while (grid.length < totalCells) {
+    grid.push({
+      category: "Other",
+      color: "#e5e7eb",
+      amount: 0,
+      percentage: 0,
+    })
+  }
+
   const hoveredData = hoveredCategory
     ? cellsPerCategory.find((c) => c.category === hoveredCategory)
     : null
 
   return (
     <div className="space-y-4">
-      {/* Waffle Grid */}
-      <div className="flex justify-center">
+      {/* Waffle Grid with Tooltip Overlay */}
+      <div ref={containerRef} className="w-full relative">
         <div
-          className="grid gap-1"
+          className="grid"
           style={{
-            gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`,
-            width: "fit-content",
+            gridTemplateColumns: `repeat(${dimensions.cols}, ${cellSize}px)`,
+            gap: `${gap}px`,
+            justifyContent: "center",
           }}
         >
           {grid.map((cell, idx) => (
             <div
               key={idx}
-              className={`w-5 h-5 rounded-sm transition-all duration-150 cursor-pointer ${
+              className={`rounded-sm transition-all duration-150 cursor-pointer ${
                 hoveredCategory && hoveredCategory !== cell.category
-                  ? "opacity-30"
+                  ? "opacity-20"
                   : "opacity-100"
               } ${
                 hoveredCategory === cell.category
-                  ? "scale-110 shadow-md"
+                  ? "scale-110"
                   : "hover:scale-105"
               }`}
-              style={{ backgroundColor: cell.color }}
-              onMouseEnter={() => setHoveredCategory(cell.category)}
+              style={{
+                backgroundColor: cell.color,
+                width: cellSize,
+                height: cellSize,
+              }}
+              onMouseEnter={() => cell.category !== "Other" && setHoveredCategory(cell.category)}
               onMouseLeave={() => setHoveredCategory(null)}
             />
           ))}
         </div>
+
+        {/* Hover Info Tooltip - Positioned as overlay */}
+        {hoveredData && (
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center px-4 py-3 rounded-lg bg-card/95 backdrop-blur-sm border border-border shadow-lg pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-center gap-2 mb-1">
+              <div
+                className="w-3 h-3 rounded-sm"
+                style={{ backgroundColor: hoveredData.color }}
+              />
+              <span className="font-medium">{hoveredData.category}</span>
+            </div>
+            <p className="text-lg font-bold">{formatCurrency(hoveredData.amount)}</p>
+            <p className="text-sm text-muted-foreground whitespace-nowrap">
+              {hoveredData.percentage.toFixed(1)}% of total spending
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Hover Info */}
-      {hoveredData && (
-        <div className="text-center p-3 rounded-lg bg-muted/50 animate-in fade-in duration-150">
-          <div className="flex items-center justify-center gap-2 mb-1">
-            <div
-              className="w-3 h-3 rounded-sm"
-              style={{ backgroundColor: hoveredData.color }}
-            />
-            <span className="font-medium">{hoveredData.category}</span>
-          </div>
-          <p className="text-lg font-bold">{formatCurrency(hoveredData.amount)}</p>
-          <p className="text-sm text-muted-foreground">
-            {hoveredData.percentage.toFixed(1)}% of total spending
-          </p>
-        </div>
-      )}
-
-      {/* Legend */}
-      <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm">
+      {/* Legend - Scrollable if too many categories */}
+      <div className="flex flex-wrap justify-center gap-x-3 gap-y-1.5 text-xs max-h-24 overflow-y-auto">
         {cellsPerCategory.map((item) => (
           <div
             key={item.category}
-            className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${
+            className={`flex items-center gap-1 cursor-pointer transition-opacity px-1.5 py-0.5 rounded ${
               hoveredCategory && hoveredCategory !== item.category
                 ? "opacity-40"
                 : "opacity-100"
-            }`}
+            } ${hoveredCategory === item.category ? "bg-muted" : ""}`}
             onMouseEnter={() => setHoveredCategory(item.category)}
             onMouseLeave={() => setHoveredCategory(null)}
           >
             <div
-              className="w-3 h-3 rounded-sm flex-shrink-0"
+              className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
               style={{ backgroundColor: item.color }}
             />
-            <span className="truncate max-w-[100px]">{item.category}</span>
+            <span className="truncate max-w-[80px]">{item.category}</span>
             <span className="text-muted-foreground">
-              ({item.percentage.toFixed(0)}%)
+              {item.percentage.toFixed(0)}%
             </span>
           </div>
         ))}

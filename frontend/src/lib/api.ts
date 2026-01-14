@@ -48,6 +48,12 @@ export interface BankAccount {
   source_file: string
   created_at?: string
   updated_at?: string
+  // Transaction stats
+  current_balance?: number | null
+  last_transaction_date?: string | null
+  starting_balance?: number | null
+  first_transaction_date?: string | null
+  transaction_count?: number
 }
 
 export interface BankAccountInput {
@@ -62,6 +68,9 @@ export interface BankAccountInput {
 export interface SourceFile {
   filename: string
   status: 'parsed' | 'pending'
+  first_transaction_date?: string | null
+  last_transaction_date?: string | null
+  transaction_count?: number
 }
 
 export async function fetchSummary(): Promise<Summary> {
@@ -74,8 +83,9 @@ export async function fetchMonthly(): Promise<{ data: MonthlyData[] }> {
   return res.json()
 }
 
-export async function fetchCategories(): Promise<{ data: CategoryData[] }> {
-  const res = await fetch(`${API_BASE}/api/categories/`)
+export async function fetchCategories(includeAll = false): Promise<{ data: CategoryData[] }> {
+  const params = includeAll ? '?include_all=true' : ''
+  const res = await fetch(`${API_BASE}/api/categories/${params}`)
   return res.json()
 }
 

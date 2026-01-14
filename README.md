@@ -66,8 +66,35 @@ mkdir -p bank_accs/data
 ```
 
 **Supported file formats:**
-- `.txt` - Parsed and ready to use
-- `.xlsx`, `.xls`, `.csv` - Shown as "pending" (parser not yet implemented)
+- `.txt` - Plain text bank statements (comma-separated)
+- `.xlsx`, `.xls` - Excel files (supports password-protected files)
+- `.csv` - CSV files (pending support)
+
+### 5. Configure Environment Variables (Optional)
+
+For password-protected xlsx files, create a `.env` file:
+
+```bash
+echo "XLSX_PASSWORD=your_password_here" > .env
+```
+
+### 6. Load Transactions
+
+Load transactions from bank statement files:
+
+```bash
+# Load from default file in bank_accs/data/
+uv run python manage.py load_transactions
+
+# Load from specific file
+uv run python manage.py load_transactions --file bank_accs/data/statement.xlsx
+
+# Clear existing and reload
+uv run python manage.py load_transactions --clear
+
+# Provide password for encrypted xlsx
+uv run python manage.py load_transactions --file statement.xlsx --password mypassword
+```
 
 ## Running the Development Servers
 
