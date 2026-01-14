@@ -1,6 +1,10 @@
+import json
+
 from django.db.models import Sum, Max, Subquery, OuterRef
 from django.db.models.functions import TruncMonth
 from django.http import JsonResponse
+from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
 
 from .models import Transaction
 
@@ -103,6 +107,11 @@ def api_categories(request):
 def api_transactions(request):
     transactions = Transaction.objects.all()
 
+    # Filter by bank account
+    bank_account_id = request.GET.get('bank_account')
+    if bank_account_id:
+        transactions = transactions.filter(bank_account_id=bank_account_id)
+
     category = request.GET.get('category')
     if category:
         transactions = transactions.filter(category=category)
@@ -113,14 +122,18 @@ def api_transactions(request):
     elif transaction_type == 'debit':
         transactions = transactions.filter(debit_amount__gt=0)
 
+    # Calculate aggregate stats based on filtered results
+    total_credits = transactions.aggregate(total=Sum('credit_amount'))['total'] or 0
+    total_debits = transactions.aggregate(total=Sum('debit_amount'))['total'] or 0
+
     limit = int(request.GET.get('limit', 100))
     offset = int(request.GET.get('offset', 0))
 
     total = transactions.count()
-    transactions = transactions[offset:offset + limit]
+    transactions_page = transactions[offset:offset + limit]
 
     data = []
-    for t in transactions:
+    for t in transactions_page:
         data.append({
             'id': t.id,
             'date': t.date.isoformat(),
@@ -130,6 +143,10 @@ def api_transactions(request):
             'balance': float(t.closing_balance),
             'category': t.category,
             'reference': t.reference_number,
+            'bank_account': {
+                'id': t.bank_account.id,
+                'nickname': t.bank_account.nickname,
+            } if t.bank_account else None,
         })
 
     return JsonResponse({
@@ -137,6 +154,11 @@ def api_transactions(request):
         'total': total,
         'limit': limit,
         'offset': offset,
+        'stats': {
+            'total_credits': float(total_credits),
+            'total_debits': float(total_debits),
+            'net_flow': float(total_credits - total_debits),
+        }
     })
 
 
@@ -162,3 +184,32 @@ def api_top_expenses(request):
         })
 
     return JsonResponse({'data': data})
+
+
+@csrf_exempt
+@require_http_methods(["PUT", "PATCH"])
+def api_transaction_update(request, transaction_id):
+    try:
+        transaction = Transaction.objects.get(id=transaction_id)
+    except Transaction.DoesNotExist:
+        return JsonResponse({'error': 'Transaction not found'}, status=404)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if 'category' in data:
+        transaction.category = data['category']
+        transaction.save()
+
+    return JsonResponse({
+        'id': transaction.id,
+        'date': transaction.date.isoformat(),
+        'narration': transaction.narration,
+        'debit': float(transaction.debit_amount),
+        'credit': float(transaction.credit_amount),
+        'balance': float(transaction.closing_balance),
+        'category': transaction.category,
+        'reference': transaction.reference_number,
+    })

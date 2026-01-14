@@ -14,7 +14,6 @@ import {
   TrendingUpIcon,
   ClockIcon,
 } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   createBankAccount,
   updateBankAccount,
@@ -149,7 +148,7 @@ function AccountForm({
         <button
           type="submit"
           disabled={saving}
-          className="px-3 py-1.5 text-sm rounded-md bg-amber-500 text-white hover:bg-amber-600 transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
+          className="px-3 py-1.5 text-sm rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
         >
           <CheckIcon className="h-3.5 w-3.5" />
           {saving ? "Saving..." : "Save"}
@@ -183,11 +182,11 @@ function AccountCard({
   onEdit: () => void
 }) {
   return (
-    <div className="p-4 border border-primary/20 rounded-lg bg-gradient-to-br from-primary/5 via-primary/5 to-transparent hover:border-primary/40 hover:shadow-md transition-all">
+    <div className="p-4 border border-border rounded-lg hover:border-border hover:shadow-md transition-all">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 shadow-sm">
-            <BuildingIcon className="h-5 w-5 text-primary" />
+          <div className="p-2.5 rounded-xl bg-muted">
+            <BuildingIcon className="h-5 w-5 text-muted-foreground" />
           </div>
           <div>
             <p className="font-semibold">{account.nickname}</p>
@@ -196,7 +195,7 @@ function AccountCard({
         </div>
         <button
           onClick={onEdit}
-          className="p-2 rounded-lg hover:bg-primary/10 transition-colors"
+          className="p-2 rounded-lg hover:bg-muted transition-colors"
         >
           <PencilIcon className="h-4 w-4 text-muted-foreground" />
         </button>
@@ -204,11 +203,11 @@ function AccountCard({
 
       {/* Balance Info */}
       {account.current_balance != null && (
-        <div className="mt-3 p-3 rounded-lg bg-gradient-to-r from-green-500/10 to-transparent border border-green-500/20">
+        <div className="mt-3 p-3 rounded-lg border border-border">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs text-muted-foreground">Current Balance</p>
-              <p className="text-lg font-bold text-green-600 dark:text-green-400">
+              <p className="text-lg font-bold text-green-700 dark:text-green-400">
                 {formatCurrency(account.current_balance)}
               </p>
             </div>
@@ -223,7 +222,7 @@ function AccountCard({
             )}
           </div>
           {account.starting_balance != null && account.first_transaction_date && (
-            <div className="mt-2 pt-2 border-t border-green-500/20 flex items-center justify-between text-xs text-muted-foreground">
+            <div className="mt-2 pt-2 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <TrendingUpIcon className="h-3 w-3" />
                 Started: {formatCurrency(account.starting_balance)}
@@ -239,16 +238,16 @@ function AccountCard({
 
       <div className="mt-3 flex flex-wrap gap-2 text-sm">
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/50">
-          <CreditCardIcon className="h-3.5 w-3.5 text-primary" />
+          <CreditCardIcon className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="font-mono">****{account.account_number.slice(-4)}</span>
         </div>
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/50">
-          <HashIcon className="h-3.5 w-3.5 text-primary" />
+          <HashIcon className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="font-mono">{account.ifsc_code}</span>
         </div>
         {account.branch && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/50">
-            <MapPinIcon className="h-3.5 w-3.5 text-primary" />
+            <MapPinIcon className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="truncate">{account.branch}</span>
           </div>
         )}
@@ -290,27 +289,27 @@ export function AccountsSection({ accounts, sourceFiles, onSave, initialAddSourc
   }
 
   return (
-    <Card className="border-primary/20 bg-gradient-to-br from-card via-card to-primary/5">
-      <CardHeader className="pb-3">
+    <section className="rounded-xl border border-border bg-card shadow-sm">
+      <header className="p-6 pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <div className="p-1.5 rounded-lg bg-primary/10">
-              <WalletIcon className="h-5 w-5 text-primary" />
+          <h3 className="font-semibold flex items-center gap-2 text-lg">
+            <div className="p-1.5 rounded-lg bg-muted">
+              <WalletIcon className="h-5 w-5 text-muted-foreground" />
             </div>
             Accounts
-          </CardTitle>
+          </h3>
           {!isAdding && parsedFileNames.length > 0 && accounts.length > 0 && (
             <button
               onClick={() => setIsAdding(true)}
-              className="px-3 py-1.5 text-sm rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors inline-flex items-center gap-1.5 font-medium"
+              className="px-3 py-1.5 text-sm rounded-lg bg-muted text-foreground hover:bg-muted/80 transition-colors inline-flex items-center gap-1.5 font-medium"
             >
               <PlusIcon className="h-3.5 w-3.5" />
               Add
             </button>
           )}
         </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
+      </header>
+      <div className="p-6 pt-0 space-y-3">
         {accounts.length === 0 && !isAdding ? (
           <div className="text-center py-8 rounded-xl bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20">
             <div className="p-3 rounded-full bg-amber-500/20 w-fit mx-auto mb-3">
@@ -321,7 +320,7 @@ export function AccountsSection({ accounts, sourceFiles, onSave, initialAddSourc
             {parsedFileNames.length > 0 && (
               <button
                 onClick={() => setIsAdding(true)}
-                className="mt-4 px-4 py-2 text-sm rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors inline-flex items-center gap-2 font-medium shadow-sm"
+                className="mt-4 px-4 py-2 text-sm rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors inline-flex items-center gap-2 font-medium shadow-sm"
               >
                 <PlusIcon className="h-4 w-4" />
                 Add Account
@@ -356,7 +355,7 @@ export function AccountsSection({ accounts, sourceFiles, onSave, initialAddSourc
             defaultSourceFile={prefilledSourceFile}
           />
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   )
 }

@@ -13,7 +13,7 @@ import {
   CalendarIcon,
   HashIcon,
 } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import { updateBankAccount, type BankAccount, type SourceFile } from "@/lib/api"
 
 function formatDate(dateStr: string): string {
@@ -32,7 +32,6 @@ interface DataSourcesProps {
 }
 
 export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountUpdated }: DataSourcesProps) {
-  const [linkingFile, setLinkingFile] = useState<string | null>(null)
   const [isLinking, setIsLinking] = useState(false)
   // Create a map of source_file -> account for quick lookup
   const fileToAccount = new Map<string, BankAccount>()
@@ -51,7 +50,6 @@ export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountU
     try {
       const updatedAccount = await updateBankAccount(accountId, { source_file: filename })
       onAccountUpdated(updatedAccount)
-      setLinkingFile(null)
     } catch (error) {
       console.error("Failed to link account:", error)
     } finally {
@@ -60,16 +58,16 @@ export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountU
   }
 
   return (
-    <Card className="border-cyan-500/20 bg-gradient-to-br from-card via-card to-cyan-500/5">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <div className="p-1.5 rounded-lg bg-cyan-500/10">
-            <DatabaseIcon className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
+    <section className="rounded-xl border border-border bg-card shadow-sm">
+      <header className="p-6 pb-3">
+        <h3 className="font-semibold flex items-center gap-2 text-lg">
+          <div className="p-1.5 rounded-lg bg-muted">
+            <DatabaseIcon className="h-5 w-5 text-muted-foreground" />
           </div>
           Data Sources
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+        </h3>
+      </header>
+      <div className="p-6 pt-0">
         {sourceFiles.length === 0 ? (
           <div className="text-center py-8 rounded-xl bg-gradient-to-br from-muted/50 to-transparent border border-border">
             <div className="p-3 rounded-full bg-muted w-fit mx-auto mb-3">
@@ -89,11 +87,11 @@ export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountU
                 {pendingFiles.map((file) => (
                   <div
                     key={file.filename}
-                    className="p-4 rounded-lg border border-violet-500/30 bg-gradient-to-br from-violet-500/10 to-transparent"
+                    className="p-4 rounded-lg border border-border"
                   >
                     <div className="flex items-start gap-3">
-                      <div className="p-2.5 rounded-xl shadow-sm bg-gradient-to-br from-violet-500/20 to-violet-500/10">
-                        <FileSpreadsheetIcon className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+                      <div className="p-2.5 rounded-xl bg-muted">
+                        <FileSpreadsheetIcon className="h-5 w-5 text-muted-foreground" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -124,33 +122,17 @@ export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountU
                   return (
                     <div
                       key={file.filename}
-                      className={`p-4 rounded-lg border transition-all hover:shadow-md ${
-                        linkedAccount
-                          ? "border-green-500/30 bg-gradient-to-br from-green-500/10 to-transparent"
-                          : "border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-transparent"
-                      }`}
+                      className="p-4 rounded-lg border border-border transition-all hover:shadow-md"
                     >
                       <div className="flex items-start gap-3">
-                        <div
-                          className={`p-2.5 rounded-xl shadow-sm ${
-                            linkedAccount
-                              ? "bg-gradient-to-br from-green-500/20 to-green-500/10"
-                              : "bg-gradient-to-br from-amber-500/20 to-amber-500/10"
-                          }`}
-                        >
-                          <FileTextIcon
-                            className={`h-5 w-5 ${
-                              linkedAccount
-                                ? "text-green-600 dark:text-green-400"
-                                : "text-amber-600 dark:text-amber-400"
-                            }`}
-                          />
+                        <div className="p-2.5 rounded-xl bg-muted">
+                          <FileTextIcon className="h-5 w-5 text-muted-foreground" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-mono text-sm truncate font-medium">{file.filename}</p>
                             {linkedAccount ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-600 dark:text-green-400">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-700 dark:text-green-400">
                                 <LinkIcon className="h-3 w-3" />
                                 Linked
                               </span>
@@ -180,8 +162,8 @@ export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountU
 
                           {linkedAccount ? (
                             <div className="mt-2 flex items-center gap-2 flex-wrap text-sm">
-                              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-500/10">
-                                <BuildingIcon className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+                              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/50">
+                                <BuildingIcon className="h-3.5 w-3.5 text-muted-foreground" />
                                 <span className="font-medium">{linkedAccount.nickname}</span>
                               </div>
                               <span className="text-muted-foreground">
@@ -189,28 +171,32 @@ export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountU
                               </span>
                             </div>
                           ) : (
-                            <div className="mt-2 relative">
-                              <button
-                                onClick={() => setLinkingFile(linkingFile === file.filename ? null : file.filename)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors font-medium"
-                              >
-                                <LinkIcon className="h-3.5 w-3.5" />
-                                Link Account
-                                <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${linkingFile === file.filename ? 'rotate-180' : ''}`} />
-                              </button>
-
-                              {linkingFile === file.filename && (
-                                <div className="absolute left-0 top-full mt-1 w-64 bg-card rounded-lg shadow-lg border border-border z-10">
-                                  <div className="p-2">
+                            <div className="mt-2">
+                              <DropdownMenu.Root>
+                                <DropdownMenu.Trigger asChild>
+                                  <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium">
+                                    <LinkIcon className="h-3.5 w-3.5" />
+                                    Link Account
+                                    <ChevronDownIcon className="h-3.5 w-3.5" />
+                                  </button>
+                                </DropdownMenu.Trigger>
+                                <DropdownMenu.Portal>
+                                  <DropdownMenu.Content
+                                    className="w-64 bg-card rounded-lg shadow-lg border border-border z-50 p-2 animate-in fade-in-0 zoom-in-95"
+                                    sideOffset={4}
+                                    align="start"
+                                  >
                                     {accounts.length > 0 && (
                                       <>
-                                        <p className="text-xs font-medium text-muted-foreground px-2 py-1">Link to existing account</p>
+                                        <DropdownMenu.Label className="text-xs font-medium text-muted-foreground px-2 py-1">
+                                          Link to existing account
+                                        </DropdownMenu.Label>
                                         {accounts.map((acc) => (
-                                          <button
+                                          <DropdownMenu.Item
                                             key={acc.id}
-                                            onClick={() => handleLinkToAccount(file.filename, acc.id)}
                                             disabled={isLinking}
-                                            className="w-full flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors text-left disabled:opacity-50"
+                                            onSelect={() => handleLinkToAccount(file.filename, acc.id)}
+                                            className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none disabled:opacity-50"
                                           >
                                             <BuildingIcon className="h-4 w-4 text-muted-foreground" />
                                             <div className="flex-1 min-w-0">
@@ -219,24 +205,21 @@ export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountU
                                                 {acc.bank_name} • ****{acc.account_number.slice(-4)}
                                               </p>
                                             </div>
-                                          </button>
+                                          </DropdownMenu.Item>
                                         ))}
-                                        <div className="border-t border-border my-1" />
+                                        <DropdownMenu.Separator className="h-px bg-border my-1" />
                                       </>
                                     )}
-                                    <button
-                                      onClick={() => {
-                                        onCreateAccount(file.filename)
-                                        setLinkingFile(null)
-                                      }}
-                                      className="w-full flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors text-left text-amber-600 dark:text-amber-400 font-medium"
+                                    <DropdownMenu.Item
+                                      onSelect={() => onCreateAccount(file.filename)}
+                                      className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none font-medium"
                                     >
                                       <PlusIcon className="h-4 w-4" />
                                       Create new account
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
+                                    </DropdownMenu.Item>
+                                  </DropdownMenu.Content>
+                                </DropdownMenu.Portal>
+                              </DropdownMenu.Root>
                             </div>
                           )}
                         </div>
@@ -248,7 +231,7 @@ export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountU
             )}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   )
 }

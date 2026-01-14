@@ -28,6 +28,10 @@ export interface Transaction {
   balance: number
   category: string
   reference: string
+  bank_account: {
+    id: number
+    nickname: string
+  } | null
 }
 
 export interface TopExpense {
@@ -36,6 +40,12 @@ export interface TopExpense {
   narration: string
   amount: number
   category: string
+}
+
+export interface TransactionStats {
+  total_credits: number
+  total_debits: number
+  net_flow: number
 }
 
 export interface BankAccount {
@@ -92,12 +102,14 @@ export async function fetchCategories(includeAll = false): Promise<{ data: Categ
 export async function fetchTransactions(params?: {
   category?: string
   type?: string
+  bank_account?: number
   limit?: number
   offset?: number
-}): Promise<{ data: Transaction[]; total: number }> {
+}): Promise<{ data: Transaction[]; total: number; stats: TransactionStats }> {
   const searchParams = new URLSearchParams()
   if (params?.category) searchParams.set("category", params.category)
   if (params?.type) searchParams.set("type", params.type)
+  if (params?.bank_account) searchParams.set("bank_account", params.bank_account.toString())
   if (params?.limit) searchParams.set("limit", params.limit.toString())
   if (params?.offset) searchParams.set("offset", params.offset.toString())
 
@@ -139,6 +151,18 @@ export async function updateBankAccount(
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
+  })
+  return res.json()
+}
+
+export async function updateTransactionCategory(
+  transactionId: number,
+  category: string
+): Promise<Transaction> {
+  const res = await fetch(`${API_BASE}/api/transactions/${transactionId}/`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ category }),
   })
   return res.json()
 }
