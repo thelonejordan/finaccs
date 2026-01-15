@@ -1,20 +1,17 @@
-import { useEffect, useState } from "react"
-import { Link } from "react-router-dom"
+import { useEffect, useState, useRef } from "react"
 import {
-  ArrowLeftIcon,
   ArrowDownIcon,
   ArrowUpIcon,
   SearchIcon,
   FilterIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  SunIcon,
-  MoonIcon,
-  MonitorIcon,
-  MenuIcon,
+  ChevronsLeftIcon,
+  ChevronsRightIcon,
   ChevronDownIcon,
   CheckIcon,
   BuildingIcon,
+  FileIcon,
   TrendingUpIcon,
   TrendingDownIcon,
   ActivityIcon,
@@ -22,12 +19,11 @@ import {
   Link2OffIcon,
   XIcon,
 } from "lucide-react"
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
 import * as Dialog from "@radix-ui/react-dialog"
 import * as Tooltip from "@radix-ui/react-tooltip"
-import { useTheme } from "@/lib/theme"
+import { Header } from "@/components/Header"
 import {
   fetchTransactions,
   fetchCategories,
@@ -39,6 +35,7 @@ import {
   type Transaction,
   type CategoryData,
   type BankAccount,
+  type SourceFile,
   type TransactionStats,
   type PotentialLinkTransaction,
 } from "@/lib/api"
@@ -47,8 +44,23 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(amount)
+}
+
+function FormattedCurrency({ amount, className = "" }: { amount: number; className?: string }) {
+  const formatted = formatCurrency(amount)
+  const match = formatted.match(/^(.*?)(\.\d{2})$/)
+  if (match) {
+    return (
+      <span className={className}>
+        {match[1]}
+        <span className="opacity-50">{match[2]}</span>
+      </span>
+    )
+  }
+  return <span className={className}>{formatted}</span>
 }
 
 function formatDate(dateStr: string): string {
@@ -277,10 +289,11 @@ function LinkDialog({
               <p className="text-sm text-muted-foreground mb-1">Current Transaction</p>
               <p className="font-medium">{formatDate(transaction.date)}</p>
               <p className="text-sm text-muted-foreground line-clamp-1">{transaction.narration}</p>
-              <p className="text-sm">
+              <p className="text-sm flex items-center gap-1 flex-wrap">
                 {transaction.bank_account?.nickname} •{" "}
-                <span className={transaction.debit > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}>
-                  {transaction.debit > 0 ? `-${formatCurrency(transaction.debit)}` : `+${formatCurrency(transaction.credit)}`}
+                <span className={`inline-flex items-center gap-0.5 ${transaction.debit > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
+                  <FormattedCurrency amount={transaction.debit > 0 ? transaction.debit : transaction.credit} />
+                  {transaction.debit > 0 ? <ArrowDownIcon className="h-3 w-3" /> : <ArrowUpIcon className="h-3 w-3" />}
                 </span>
                 {transaction.category && (
                   <span className="ml-2 text-muted-foreground">• {transaction.category}</span>
@@ -294,10 +307,11 @@ function LinkDialog({
                 <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
                   <p className="text-sm text-muted-foreground mb-1">Linked To</p>
                   <p className="font-medium">{formatDate(transaction.linked_transaction?.date || "")}</p>
-                  <p className="text-sm">
+                  <p className="text-sm flex items-center gap-1">
                     {transaction.linked_transaction?.bank_account} •{" "}
-                    <span className="text-green-600 dark:text-green-400">
-                      {formatCurrency(transaction.linked_transaction?.amount || 0)}
+                    <span className="text-green-600 dark:text-green-400 inline-flex items-center gap-0.5">
+                      <FormattedCurrency amount={transaction.linked_transaction?.amount || 0} />
+                      <ArrowUpIcon className="h-3 w-3" />
                     </span>
                   </p>
                 </div>
@@ -336,10 +350,11 @@ function LinkDialog({
                           <div className="flex-1 min-w-0">
                             <p className="font-medium">{formatDate(t.date)}</p>
                             <p className="text-sm text-muted-foreground line-clamp-1">{t.narration}</p>
-                            <p className="text-sm">
+                            <p className="text-sm flex items-center gap-1 flex-wrap">
                               {t.bank_account?.nickname} •{" "}
-                              <span className={t.debit > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}>
-                                {t.debit > 0 ? `-${formatCurrency(t.debit)}` : `+${formatCurrency(t.credit)}`}
+                              <span className={`inline-flex items-center gap-0.5 ${t.debit > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
+                                <FormattedCurrency amount={t.debit > 0 ? t.debit : t.credit} />
+                                {t.debit > 0 ? <ArrowDownIcon className="h-3 w-3" /> : <ArrowUpIcon className="h-3 w-3" />}
                               </span>
                               {t.category && (
                                 <span className="ml-2 text-muted-foreground">• {t.category}</span>
@@ -380,20 +395,40 @@ export function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [categories, setCategories] = useState<CategoryData[]>([])
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([])
   const [stats, setStats] = useState<TransactionStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [total, setTotal] = useState(0)
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
-  const { mode, setMode } = useTheme()
 
   // Filters
   const [search, setSearch] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string>("")
   const [selectedType, setSelectedType] = useState<string>("")
   const [selectedBankAccount, setSelectedBankAccount] = useState<number | null>(null)
+  const [selectedSourceFile, setSelectedSourceFile] = useState<number | null>(null)
   const [page, setPage] = useState(1)
   const pageSize = 50
+  const paginationRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    document.title = "Transactions | FinAccs"
+  }, [])
+
+  // Scroll pagination slider to show current page
+  useEffect(() => {
+    setTimeout(() => {
+      const container = paginationRef.current
+      const activeBtn = container?.querySelector('[data-active="true"]') as HTMLElement
+      if (container && activeBtn) {
+        const containerRect = container.getBoundingClientRect()
+        const btnRect = activeBtn.getBoundingClientRect()
+        const scrollLeft = container.scrollLeft + (btnRect.left - containerRect.left) - (containerRect.width / 2) + (btnRect.width / 2)
+        container.scrollTo({ left: scrollLeft, behavior: 'smooth' })
+      }
+    }, 50)
+  }, [page, total])
 
   const handleCategoryChange = async (transactionId: number, newCategory: string) => {
     setUpdatingId(transactionId)
@@ -443,6 +478,7 @@ export function TransactionsPage() {
       try {
         const data = await fetchBankAccounts()
         setBankAccounts(data.accounts)
+        setSourceFiles(data.source_files)
       } catch (error) {
         console.error("Failed to load bank accounts:", error)
       }
@@ -458,6 +494,7 @@ export function TransactionsPage() {
           category: selectedCategory || undefined,
           type: selectedType || undefined,
           bank_account: selectedBankAccount || undefined,
+          source_file: selectedSourceFile || undefined,
           limit: pageSize,
           offset: (page - 1) * pageSize,
         })
@@ -471,7 +508,7 @@ export function TransactionsPage() {
       }
     }
     loadTransactions()
-  }, [selectedCategory, selectedType, selectedBankAccount, page, refreshKey])
+  }, [selectedCategory, selectedType, selectedBankAccount, selectedSourceFile, page, refreshKey])
 
   // Filter transactions by search (client-side)
   const filteredTransactions = search
@@ -487,79 +524,7 @@ export function TransactionsPage() {
 
   return (
     <div className="min-h-screen bg-muted/40">
-        <header className="bg-primary text-primary-foreground shadow-lg relative">
-          <div className="max-w-7xl mx-auto px-4 py-6 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link
-                to="/"
-                className="p-2 rounded-lg hover:bg-primary-foreground/10 transition-colors"
-              >
-                <ArrowLeftIcon className="h-5 w-5" />
-              </Link>
-              <div>
-                <h1 className="text-2xl font-bold">All Transactions</h1>
-                <p className="text-primary-foreground/80 text-sm">
-                  {total.toLocaleString()} transactions total
-                </p>
-              </div>
-            </div>
-
-            {/* Radix Dropdown Menu */}
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger asChild>
-                <button
-                  className="p-2 rounded-lg hover:bg-primary-foreground/10 transition-colors"
-                  aria-label="Toggle menu"
-                >
-                  <MenuIcon className="h-6 w-6" />
-                </button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content
-                  className="w-56 bg-card rounded-lg shadow-lg border border-border z-50 p-2 animate-in fade-in-0 zoom-in-95"
-                  sideOffset={8}
-                  align="end"
-                >
-                  <DropdownMenu.Label className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                    Display Mode
-                  </DropdownMenu.Label>
-                  <DropdownMenu.RadioGroup value={mode} onValueChange={(value) => setMode(value as "light" | "dark" | "system")}>
-                    <DropdownMenu.RadioItem
-                      value="light"
-                      className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-accent text-card-foreground transition-colors cursor-pointer outline-none"
-                    >
-                      <SunIcon className="h-4 w-4" />
-                      <span className="flex-1">Light</span>
-                      <DropdownMenu.ItemIndicator>
-                        <CheckIcon className="h-4 w-4" />
-                      </DropdownMenu.ItemIndicator>
-                    </DropdownMenu.RadioItem>
-                    <DropdownMenu.RadioItem
-                      value="dark"
-                      className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-accent text-card-foreground transition-colors cursor-pointer outline-none"
-                    >
-                      <MoonIcon className="h-4 w-4" />
-                      <span className="flex-1">Dark</span>
-                      <DropdownMenu.ItemIndicator>
-                        <CheckIcon className="h-4 w-4" />
-                      </DropdownMenu.ItemIndicator>
-                    </DropdownMenu.RadioItem>
-                    <DropdownMenu.RadioItem
-                      value="system"
-                      className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-accent text-card-foreground transition-colors cursor-pointer outline-none"
-                    >
-                      <MonitorIcon className="h-4 w-4" />
-                      <span className="flex-1">System</span>
-                      <DropdownMenu.ItemIndicator>
-                        <CheckIcon className="h-4 w-4" />
-                      </DropdownMenu.ItemIndicator>
-                    </DropdownMenu.RadioItem>
-                  </DropdownMenu.RadioGroup>
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
-          </div>
-        </header>
+        <Header />
 
         <main className="max-w-7xl mx-auto px-4 py-8">
           {/* Filters */}
@@ -578,7 +543,7 @@ export function TransactionsPage() {
                   />
                 </div>
 
-                {/* Category Filter - Radix Select */}
+                {/* Category Filter */}
                 <div className="flex items-center gap-2">
                   <FilterIcon className="h-4 w-4 text-muted-foreground" />
                   <Select.Root
@@ -624,7 +589,7 @@ export function TransactionsPage() {
                   </Select.Root>
                 </div>
 
-                {/* Type Filter - Radix Select */}
+                {/* Type Filter */}
                 <Select.Root
                   value={selectedType || "all"}
                   onValueChange={(value) => {
@@ -639,8 +604,8 @@ export function TransactionsPage() {
                     </Select.Icon>
                   </Select.Trigger>
                   <Select.Portal>
-                    <Select.Content className="bg-card rounded-lg shadow-lg border border-border z-50 overflow-hidden">
-                      <Select.Viewport className="p-1">
+                    <Select.Content className="bg-card rounded-lg shadow-lg border border-border z-50 overflow-hidden" position="popper" sideOffset={4}>
+                      <Select.Viewport className="p-1 max-h-60 overflow-y-auto">
                         <Select.Item
                           value="all"
                           className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
@@ -673,7 +638,7 @@ export function TransactionsPage() {
                   </Select.Portal>
                 </Select.Root>
 
-                {/* Bank Account Filter - Radix Select */}
+                {/* Bank Account Filter */}
                 {bankAccounts.length > 0 && (
                   <Select.Root
                     value={selectedBankAccount?.toString() || "all"}
@@ -692,8 +657,8 @@ export function TransactionsPage() {
                       </Select.Icon>
                     </Select.Trigger>
                     <Select.Portal>
-                      <Select.Content className="bg-card rounded-lg shadow-lg border border-border z-50 overflow-hidden">
-                        <Select.Viewport className="p-1 max-h-60">
+                      <Select.Content className="bg-card rounded-lg shadow-lg border border-border z-50 overflow-hidden" position="popper" sideOffset={4}>
+                        <Select.Viewport className="p-1 max-h-60 overflow-y-auto">
                           <Select.Item
                             value="all"
                             className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
@@ -725,6 +690,54 @@ export function TransactionsPage() {
                     </Select.Portal>
                   </Select.Root>
                 )}
+
+                {/* Source File Filter */}
+                {sourceFiles.length > 0 && (
+                  <Select.Root
+                    value={selectedSourceFile?.toString() || "all"}
+                    onValueChange={(value) => {
+                      setSelectedSourceFile(value === "all" ? null : parseInt(value, 10))
+                      setPage(1)
+                    }}
+                  >
+                    <Select.Trigger className="inline-flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-w-[160px]">
+                      <div className="flex items-center gap-2">
+                        <FileIcon className="h-4 w-4 text-muted-foreground" />
+                        <Select.Value placeholder="All Sources" />
+                      </div>
+                      <Select.Icon>
+                        <ChevronDownIcon className="h-4 w-4 text-muted-foreground" />
+                      </Select.Icon>
+                    </Select.Trigger>
+                    <Select.Portal>
+                      <Select.Content className="bg-card rounded-lg shadow-lg border border-border z-50 overflow-hidden" position="popper" sideOffset={4}>
+                        <Select.Viewport className="p-1 max-h-60 overflow-y-auto">
+                          <Select.Item
+                            value="all"
+                            className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
+                          >
+                            <Select.ItemText>All Sources</Select.ItemText>
+                            <Select.ItemIndicator>
+                              <CheckIcon className="h-4 w-4" />
+                            </Select.ItemIndicator>
+                          </Select.Item>
+                          {sourceFiles.map((file) => (
+                            <Select.Item
+                              key={file.id}
+                              value={file.id.toString()}
+                              className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
+                            >
+                              <Select.ItemText>{file.filename}</Select.ItemText>
+                              <Select.ItemIndicator>
+                                <CheckIcon className="h-4 w-4" />
+                              </Select.ItemIndicator>
+                            </Select.Item>
+                          ))}
+                        </Select.Viewport>
+                      </Select.Content>
+                    </Select.Portal>
+                  </Select.Root>
+                )}
               </div>
             </div>
           </section>
@@ -739,9 +752,7 @@ export function TransactionsPage() {
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Total Credits</p>
-                    <p className="text-xl font-bold text-green-700 dark:text-green-400">
-                      {formatCurrency(stats.total_credits)}
-                    </p>
+                    <FormattedCurrency amount={stats.total_credits} className="text-xl font-bold text-green-700 dark:text-green-400" />
                   </div>
                 </div>
               </div>
@@ -752,9 +763,7 @@ export function TransactionsPage() {
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Total Debits</p>
-                    <p className="text-xl font-bold text-red-700 dark:text-red-400">
-                      {formatCurrency(stats.total_debits)}
-                    </p>
+                    <FormattedCurrency amount={stats.total_debits} className="text-xl font-bold text-red-700 dark:text-red-400" />
                   </div>
                 </div>
               </div>
@@ -765,12 +774,13 @@ export function TransactionsPage() {
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Net Flow</p>
-                    <p className={`text-xl font-bold ${
+                    <p className={`text-xl font-bold inline-flex items-center gap-1 ${
                       stats.net_flow >= 0
                         ? "text-green-700 dark:text-green-400"
                         : "text-red-700 dark:text-red-400"
                     }`}>
-                      {stats.net_flow >= 0 ? "+" : ""}{formatCurrency(stats.net_flow)}
+                      <FormattedCurrency amount={Math.abs(stats.net_flow)} />
+                      {stats.net_flow >= 0 ? <ArrowUpIcon className="h-4 w-4" /> : <ArrowDownIcon className="h-4 w-4" />}
                     </p>
                   </div>
                 </div>
@@ -852,18 +862,18 @@ export function TransactionsPage() {
                               <td className="p-4 align-middle text-right whitespace-nowrap">
                                 {t.credit > 0 ? (
                                   <span className="text-green-700 dark:text-green-400 font-medium flex items-center justify-end gap-1">
+                                    <FormattedCurrency amount={t.credit} />
                                     <ArrowUpIcon className="h-3 w-3" />
-                                    {formatCurrency(t.credit)}
                                   </span>
                                 ) : (
                                   <span className="text-red-700 dark:text-red-400 font-medium flex items-center justify-end gap-1">
+                                    <FormattedCurrency amount={t.debit} />
                                     <ArrowDownIcon className="h-3 w-3" />
-                                    {formatCurrency(t.debit)}
                                   </span>
                                 )}
                               </td>
-                              <td className="p-4 align-middle text-right font-mono text-sm whitespace-nowrap">
-                                {formatCurrency(t.balance)}
+                              <td className="p-4 align-middle text-right text-sm whitespace-nowrap">
+                                <FormattedCurrency amount={t.balance} />
                               </td>
                             </tr>
                         ))}
@@ -877,47 +887,57 @@ export function TransactionsPage() {
                       <p className="text-sm text-muted-foreground">
                         Page {page} of {totalPages}
                       </p>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setPage(1)}
+                          disabled={page === 1}
+                          className="p-2 rounded-lg border border-input hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title="First page"
+                        >
+                          <ChevronsLeftIcon className="h-4 w-4" />
+                        </button>
                         <button
                           onClick={() => setPage((p) => Math.max(1, p - 1))}
                           disabled={page === 1}
                           className="p-2 rounded-lg border border-input hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title="Previous page"
                         >
                           <ChevronLeftIcon className="h-4 w-4" />
                         </button>
-                        <div className="flex items-center gap-1">
-                          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                            let pageNum: number
-                            if (totalPages <= 5) {
-                              pageNum = i + 1
-                            } else if (page <= 3) {
-                              pageNum = i + 1
-                            } else if (page >= totalPages - 2) {
-                              pageNum = totalPages - 4 + i
-                            } else {
-                              pageNum = page - 2 + i
-                            }
-                            return (
-                              <button
-                                key={pageNum}
-                                onClick={() => setPage(pageNum)}
-                                className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
-                                  page === pageNum
-                                    ? "bg-primary text-primary-foreground"
-                                    : "hover:bg-accent"
-                                }`}
-                              >
-                                {pageNum}
-                              </button>
-                            )
-                          })}
+                        <div
+                          ref={paginationRef}
+                          className="flex items-center gap-1 max-w-[300px] overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+                        >
+                          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                            <button
+                              key={p}
+                              data-active={page === p}
+                              onClick={() => setPage(p)}
+                              className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors flex-shrink-0 ${
+                                page === p
+                                  ? "bg-primary text-primary-foreground"
+                                  : "hover:bg-accent"
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          ))}
                         </div>
                         <button
                           onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                           disabled={page === totalPages}
                           className="p-2 rounded-lg border border-input hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title="Next page"
                         >
                           <ChevronRightIcon className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => setPage(totalPages)}
+                          disabled={page === totalPages}
+                          className="p-2 rounded-lg border border-input hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title="Last page"
+                        >
+                          <ChevronsRightIcon className="h-4 w-4" />
                         </button>
                       </div>
                     </div>

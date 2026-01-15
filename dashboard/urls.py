@@ -13,4 +13,6 @@ urlpatterns = [
     path('api/transactions/<int:transaction_id>/potential-links/', views.api_potential_links, name='api_potential_links'),
     path('api/transactions/<int:transaction_id>/link/', views.api_link_transaction, name='api_link_transaction'),
     path('api/top-expenses/', views.api_top_expenses, name='api_top_expenses'),
+    path('api/logs/', views.api_transaction_logs, name='api_transaction_logs'),
+    path('api/inconsistencies/', views.api_inconsistencies, name='api_inconsistencies'),
 ]

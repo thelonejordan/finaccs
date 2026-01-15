@@ -29,8 +29,23 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(amount)
+}
+
+function FormattedCurrency({ amount, className = "" }: { amount: number; className?: string }) {
+  const formatted = formatCurrency(amount)
+  const match = formatted.match(/^(.*?)(\.\d{2})$/)
+  if (match) {
+    return (
+      <span className={className}>
+        {match[1]}
+        <span className="opacity-50">{match[2]}</span>
+      </span>
+    )
+  }
+  return <span className={className}>{formatted}</span>
 }
 
 export function WaffleChart({ data, cellSize = 12, gap = 2 }: WaffleChartProps) {
@@ -169,7 +184,7 @@ export function WaffleChart({ data, cellSize = 12, gap = 2 }: WaffleChartProps) 
               />
               <span className="font-medium">{hoveredData.category}</span>
             </div>
-            <p className="text-lg font-bold">{formatCurrency(hoveredData.amount)}</p>
+            <FormattedCurrency amount={hoveredData.amount} className="text-lg font-bold" />
             <p className="text-sm text-muted-foreground whitespace-nowrap">
               {hoveredData.percentage.toFixed(1)}% of total spending
             </p>

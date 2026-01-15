@@ -14,8 +14,23 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(amount)
+}
+
+function FormattedCurrency({ amount, className = "" }: { amount: number; className?: string }) {
+  const formatted = formatCurrency(amount)
+  const match = formatted.match(/^(.*?)(\.\d{2})$/)
+  if (match) {
+    return (
+      <span className={className}>
+        {match[1]}
+        <span className="opacity-50">{match[2]}</span>
+      </span>
+    )
+  }
+  return <span className={className}>{formatted}</span>
 }
 
 function formatDate(dateStr: string): string {
@@ -97,12 +112,12 @@ export function TransactionTooltip({
                   <span className="text-sm text-muted-foreground">Amount</span>
                 </div>
                 <span
-                  className={`text-lg font-bold ${
+                  className={`text-lg font-bold inline-flex items-center gap-1 ${
                     isCredit ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"
                   }`}
                 >
-                  {isCredit ? "+" : "-"}
-                  {formatCurrency(amount)}
+                  <FormattedCurrency amount={amount} />
+                  {isCredit ? <ArrowUpIcon className="h-4 w-4" /> : <ArrowDownIcon className="h-4 w-4" />}
                 </span>
               </div>
 
@@ -150,7 +165,7 @@ export function TransactionTooltip({
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs text-muted-foreground">Closing Balance</p>
-                        <p className="text-sm font-medium">{formatCurrency(t.balance)}</p>
+                        <FormattedCurrency amount={t.balance} className="text-sm font-medium" />
                       </div>
                     </div>
 

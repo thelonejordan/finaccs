@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
   BuildingIcon,
   CreditCardIcon,
@@ -41,6 +41,7 @@ function AccountForm({
   onCancel: () => void
   defaultSourceFile?: string | null
 }) {
+  const formRef = useRef<HTMLFormElement>(null)
   const [saving, setSaving] = useState(false)
   const initialSourceFiles = account?.source_files || (defaultSourceFile ? [defaultSourceFile] : [])
   const [formData, setFormData] = useState<BankAccountInput>({
@@ -51,6 +52,15 @@ function AccountForm({
     branch: account?.branch || "",
     source_files: initialSourceFiles,
   })
+
+  useEffect(() => {
+    // Scroll the parent container so the form is fully visible with some padding
+    const scrollParent = formRef.current?.parentElement
+    if (scrollParent && formRef.current) {
+      const formTop = formRef.current.offsetTop - 12 // 12px padding above form
+      scrollParent.scrollTo({ top: formTop, behavior: 'smooth' })
+    }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -71,7 +81,7 @@ function AccountForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 p-4 border border-amber-500/30 rounded-lg bg-gradient-to-br from-amber-500/10 to-transparent">
+    <form ref={formRef} onSubmit={handleSubmit} className="space-y-4 p-4 border border-amber-500/30 rounded-lg bg-gradient-to-br from-amber-500/10 to-transparent">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Nickname</label>
@@ -172,8 +182,23 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(amount)
+}
+
+function FormattedCurrency({ amount, className = "" }: { amount: number; className?: string }) {
+  const formatted = formatCurrency(amount)
+  const match = formatted.match(/^(.*?)(\.\d{2})$/)
+  if (match) {
+    return (
+      <span className={className}>
+        {match[1]}
+        <span className="opacity-50">{match[2]}</span>
+      </span>
+    )
+  }
+  return <span className={className}>{formatted}</span>
 }
 
 function formatDate(dateStr: string): string {
@@ -217,9 +242,7 @@ function AccountCard({
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs text-muted-foreground">Current Balance</p>
-              <p className="text-lg font-bold text-green-700 dark:text-green-400">
-                {formatCurrency(account.current_balance)}
-              </p>
+              <FormattedCurrency amount={account.current_balance} className="text-lg font-bold text-green-700 dark:text-green-400" />
             </div>
             {account.last_transaction_date && (
               <div className="text-right">
@@ -235,7 +258,7 @@ function AccountCard({
             <div className="mt-2 pt-2 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <TrendingUpIcon className="h-3 w-3" />
-                Started: {formatCurrency(account.starting_balance)}
+                Started: <FormattedCurrency amount={account.starting_balance} />
               </span>
               <span className="flex items-center gap-1">
                 <CalendarIcon className="h-3 w-3" />
@@ -319,52 +342,55 @@ export function AccountsSection({ accounts, sourceFiles, onSave, initialAddSourc
           )}
         </div>
       </header>
-      <div className="p-6 pt-0 space-y-3">
-        {accounts.length === 0 && !isAdding ? (
-          <div className="text-center py-8 rounded-xl bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20">
-            <div className="p-3 rounded-full bg-amber-500/20 w-fit mx-auto mb-3">
-              <SparklesIcon className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+      <div className="relative">
+        <div className="p-6 pt-0 space-y-3 max-h-[512px] overflow-y-auto">
+          {accounts.length === 0 && !isAdding ? (
+            <div className="text-center py-8 rounded-xl bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20">
+              <div className="p-3 rounded-full bg-amber-500/20 w-fit mx-auto mb-3">
+                <SparklesIcon className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+              </div>
+              <p className="font-medium">No accounts configured</p>
+              <p className="text-sm text-muted-foreground mt-1">Add a bank account to get started</p>
+              {parsedFileNames.length > 0 && (
+                <button
+                  onClick={() => setIsAdding(true)}
+                  className="mt-4 px-4 py-2 text-sm rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors inline-flex items-center gap-2 font-medium shadow-sm"
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  Add Account
+                </button>
+              )}
             </div>
-            <p className="font-medium">No accounts configured</p>
-            <p className="text-sm text-muted-foreground mt-1">Add a bank account to get started</p>
-            {parsedFileNames.length > 0 && (
-              <button
-                onClick={() => setIsAdding(true)}
-                className="mt-4 px-4 py-2 text-sm rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors inline-flex items-center gap-2 font-medium shadow-sm"
-              >
-                <PlusIcon className="h-4 w-4" />
-                Add Account
-              </button>
-            )}
-          </div>
-        ) : (
-          <>
-            {accounts.map((account) =>
-              editingId === account.id ? (
-                <AccountForm
-                  key={account.id}
-                  account={account}
-                  onSave={handleSave}
-                  onCancel={() => setEditingId(null)}
-                />
-              ) : (
-                <AccountCard
-                  key={account.id}
-                  account={account}
-                  onEdit={() => setEditingId(account.id)}
-                />
-              )
-            )}
-          </>
-        )}
-        {isAdding && (
-          <AccountForm
-            account={null}
-            onSave={handleSave}
-            onCancel={() => setIsAdding(false)}
-            defaultSourceFile={prefilledSourceFile}
-          />
-        )}
+          ) : (
+            <>
+              {accounts.map((account) =>
+                editingId === account.id ? (
+                  <AccountForm
+                    key={account.id}
+                    account={account}
+                    onSave={handleSave}
+                    onCancel={() => setEditingId(null)}
+                  />
+                ) : (
+                  <AccountCard
+                    key={account.id}
+                    account={account}
+                    onEdit={() => setEditingId(account.id)}
+                  />
+                )
+              )}
+            </>
+          )}
+          {isAdding && (
+            <AccountForm
+              account={null}
+              onSave={handleSave}
+              onCancel={() => setIsAdding(false)}
+              defaultSourceFile={prefilledSourceFile}
+            />
+          )}
+        </div>
+        <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-card to-transparent pointer-events-none rounded-b-xl" />
       </div>
     </section>
   )

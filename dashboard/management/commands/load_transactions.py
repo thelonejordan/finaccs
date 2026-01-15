@@ -1,3 +1,4 @@
+import hashlib
 import io
 import os
 import re
@@ -6,9 +7,10 @@ from decimal import Decimal
 from pathlib import Path
 
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 from dotenv import load_dotenv
 
-from dashboard.models import Transaction
+from dashboard.models import Transaction, FileLoadLog
 
 # Load environment variables
 load_dotenv()
@@ -35,7 +37,8 @@ CATEGORY_PATTERNS = {
     'Utilities': ['ELECTRICITY', 'GAS', 'WATER', 'BROADBAND', 'TRAFFIC'],
     'Bank Charges': ['AMB CHRG', 'CHRG INCL GST'],
     'ATM': ['ATW-', 'NWD-'],
-    'Salary/Income': ['SALARY', 'INTEREST PAID'],
+    'Salary/Income': ['SALARY'],
+    'Interest': ['INTEREST PAID'],
     'Rent': ['RENT'],
     'Self Transfer': ['UPI-JYOTIRMAYA  MAHANTA', 'UPI-JYOTIRMAYA MAHANTA'],
     'Credit Card Payment': ['PAID VIA CRED'],
@@ -237,6 +240,15 @@ def parse_xlsx_transactions(sheet, column_map, header_row_idx):
     return transactions
 
 
+def compute_file_hash(file_path):
+    """Compute SHA-256 hash of a file."""
+    sha256_hash = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for byte_block in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(byte_block)
+    return sha256_hash.hexdigest()
+
+
 class Command(BaseCommand):
     help = 'Load transactions from bank statement file (.txt or .xlsx)'
 
@@ -247,9 +259,19 @@ class Command(BaseCommand):
             help='Path to the bank statement file',
         )
         parser.add_argument(
+            '--all',
+            action='store_true',
+            help='Load all files from bank_accs/data/',
+        )
+        parser.add_argument(
             '--clear',
             action='store_true',
             help='Clear existing transactions before loading',
+        )
+        parser.add_argument(
+            '--force',
+            action='store_true',
+            help='Force reload even if file hash matches',
         )
         parser.add_argument(
             '--password',
@@ -259,7 +281,22 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         file_path = options.get('file')
+        load_all = options.get('all')
         password = options.get('password')
+        self.force = options.get('force', False)
+
+        # Sync source files from disk to database
+        from bank_accs.views import sync_source_files
+        sync_source_files()
+
+        if options['clear']:
+            deleted_count, _ = Transaction.objects.all().delete()
+            log_count, _ = TransactionLog.objects.all().delete()
+            self.stdout.write(self.style.WARNING(f'Deleted {deleted_count} transactions and {log_count} log entries'))
+
+        if load_all:
+            self.load_all_files(password)
+            return
 
         if not file_path:
             data_dir = Path('bank_accs/data')
@@ -270,46 +307,112 @@ class Command(BaseCommand):
                 return
             file_path = files[0]
 
-        if options['clear']:
-            deleted_count, _ = Transaction.objects.all().delete()
-            self.stdout.write(self.style.WARNING(f'Deleted {deleted_count} existing transactions'))
-
         file_path = Path(file_path)
         if not file_path.exists():
             self.stderr.write(self.style.ERROR(f'File not found: {file_path}'))
             return
 
-        self.stdout.write(f'Loading transactions from {file_path}')
+        transactions_created = self.load_file(file_path, password)
+        if transactions_created >= 0:
+            self.stdout.write(self.style.SUCCESS(f'Successfully loaded {transactions_created} transactions'))
 
-        # Sync source files from disk to database
-        from bank_accs.views import sync_source_files
-        sync_source_files()
+    def load_all_files(self, password=None):
+        """Load all files from bank_accs/data/"""
+        data_dir = Path('bank_accs/data')
+        files = list(data_dir.glob('*.txt')) + list(data_dir.glob('*.xlsx')) + list(data_dir.glob('*.xls'))
 
-        # Find the bank account linked to this source file
-        from bank_accs.models import SourceFile
+        if not files:
+            self.stderr.write(self.style.ERROR('No statement files found in bank_accs/data/'))
+            return
+
+        total_created = 0
+        files_loaded = 0
+        files_skipped = 0
+        for file_path in sorted(files):
+            transactions_created = self.load_file(file_path, password)
+            if transactions_created >= 0:
+                total_created += transactions_created
+                files_loaded += 1
+            else:
+                files_skipped += 1
+
+        self.stdout.write(self.style.SUCCESS(
+            f'Loaded {total_created} transactions from {files_loaded} files'
+            + (f' (skipped {files_skipped} unchanged)' if files_skipped else '')
+        ))
+
+    def load_file(self, file_path, password=None):
+        """Load transactions from a single file. Returns -1 if skipped."""
+        file_path = Path(file_path)
         filename = file_path.name
-        source_file = SourceFile.objects.filter(filename=filename).select_related('bank_account').first()
-        bank_account = source_file.bank_account if source_file else None
+
+        # Find or create the source file record
+        from bank_accs.models import SourceFile
+        source_file, _ = SourceFile.objects.get_or_create(filename=filename)
+        bank_account = source_file.bank_account
+
+        # Compute file hash
+        current_hash = compute_file_hash(file_path)
+
+        # Check if bank account link changed for existing transactions
+        existing_txns = Transaction.objects.filter(source_file=source_file)
+        bank_account_changed = False
+        if existing_txns.exists():
+            first_txn = existing_txns.first()
+            if first_txn.bank_account != bank_account:
+                bank_account_changed = True
+                self.stdout.write(f'Bank account link changed for {filename}')
+
+        # Check if file has changed or bank account link changed
+        if not self.force and source_file.file_hash == current_hash and not bank_account_changed:
+            self.stdout.write(f'Skipping {filename} (unchanged)')
+            return -1
+
+        self.stdout.write(f'Loading transactions from {file_path}')
         if bank_account:
-            self.stdout.write(f'Linking transactions to account: {bank_account.nickname}')
+            self.stdout.write(f'  Linking to account: {bank_account.nickname}')
         else:
-            self.stdout.write(self.style.WARNING(f'No bank account linked to {filename}'))
+            self.stdout.write(self.style.WARNING(f'  No bank account linked to {filename}'))
+
+        # Delete existing transactions from this source file before reloading
+        if source_file.file_hash or bank_account_changed:
+            deleted_count = Transaction.objects.filter(source_file=source_file).delete()[0]
+            if deleted_count:
+                self.stdout.write(f'  Deleted {deleted_count} existing transactions from this file')
 
         # Determine file type and parse accordingly
         suffix = file_path.suffix.lower()
         if suffix in ['.xlsx', '.xls']:
-            transactions_created = self.load_xlsx(file_path, password, bank_account)
+            transactions_created, category_counts = self.load_xlsx(file_path, password, bank_account, source_file)
         else:
-            transactions_created = self.load_txt(file_path, bank_account)
+            transactions_created, category_counts = self.load_txt(file_path, bank_account, source_file)
 
-        self.stdout.write(self.style.SUCCESS(f'Successfully loaded {transactions_created} transactions'))
+        # Update source file hash and timestamp
+        source_file.file_hash = current_hash
+        source_file.last_loaded_at = timezone.now()
+        source_file.save()
 
-    def load_txt(self, file_path, bank_account=None):
+        # Create single FileLoadLog entry for this file load
+        if transactions_created > 0:
+            FileLoadLog.objects.create(
+                source_file=source_file,
+                bank_account=bank_account,
+                transaction_count=transactions_created,
+                file_hash=current_hash,
+                category_summary=category_counts,
+                link_source='pre_existing' if bank_account else 'none',
+            )
+
+        self.stdout.write(self.style.SUCCESS(f'  Loaded {transactions_created} transactions'))
+        return transactions_created
+
+    def load_txt(self, file_path, bank_account=None, source_file=None):
         """Load transactions from a txt/csv file."""
         with open(file_path, 'r') as f:
             lines = f.readlines()
 
         transactions_created = 0
+        category_counts = {}
         for i, line in enumerate(lines):
             if i == 0:
                 continue
@@ -346,21 +449,24 @@ class Command(BaseCommand):
                     closing_balance=closing_balance,
                     category=category,
                     bank_account=bank_account,
+                    source_file=source_file,
                 )
+                # Track category counts
+                category_counts[category] = category_counts.get(category, 0) + 1
                 transactions_created += 1
             except (ValueError, IndexError) as e:
                 self.stderr.write(f'Error parsing line {i + 1}: {e}')
                 continue
 
-        return transactions_created
+        return transactions_created, category_counts
 
-    def load_xlsx(self, file_path, password=None, bank_account=None):
+    def load_xlsx(self, file_path, password=None, bank_account=None, source_file=None):
         """Load transactions from an xlsx file."""
         try:
             wb = load_xlsx_workbook(file_path, password)
         except Exception as e:
             self.stderr.write(self.style.ERROR(f'Failed to open xlsx file: {e}'))
-            return 0
+            return 0, {}
 
         sheet = wb.active
 
@@ -368,7 +474,7 @@ class Command(BaseCommand):
         header_row_idx, header_row = find_header_row(sheet)
         if header_row_idx is None:
             self.stderr.write(self.style.ERROR('Could not find header row in xlsx file'))
-            return 0
+            return 0, {}
 
         self.stdout.write(f'Found header row at row {header_row_idx}: {header_row}')
 
@@ -381,12 +487,20 @@ class Command(BaseCommand):
 
         # Save to database
         transactions_created = 0
-        for txn in transactions:
+        category_counts = {}
+        for txn_data in transactions:
             try:
-                Transaction.objects.create(**txn, bank_account=bank_account)
+                Transaction.objects.create(
+                    **txn_data,
+                    bank_account=bank_account,
+                    source_file=source_file,
+                )
+                # Track category counts
+                category = txn_data.get('category', 'Uncategorized')
+                category_counts[category] = category_counts.get(category, 0) + 1
                 transactions_created += 1
             except Exception as e:
                 self.stderr.write(f'Error saving transaction: {e}')
                 continue
 
-        return transactions_created
+        return transactions_created, category_counts

@@ -1,6 +1,8 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom"
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { Dashboard } from "@/components/Dashboard"
 import { TransactionsPage } from "@/components/TransactionsPage"
+import { InconsistenciesPage } from "@/components/InconsistenciesPage"
+import { LogsPage } from "@/components/LogsPage"
 import { ThemeProvider } from "@/lib/theme"
 
 function App() {
@@ -8,8 +10,11 @@ function App() {
     <ThemeProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/transactions" element={<TransactionsPage />} />
+          <Route path="/inconsistencies" element={<InconsistenciesPage />} />
+          <Route path="/logs" element={<LogsPage />} />
         </Routes>
       </BrowserRouter>
     </ThemeProvider>

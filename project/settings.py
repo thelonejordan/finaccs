@@ -10,10 +10,17 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / '.env')
+
+DEV_MODE = os.getenv('DEV_MODE', '0') == '1'
 
 
 # Quick-start development settings - unsuitable for production
@@ -41,6 +48,10 @@ INSTALLED_APPS = [
     'bank_accs',
     'dashboard',
 ]
+
+# Development tools
+if DEV_MODE:
+    INSTALLED_APPS += ['django_extensions']
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

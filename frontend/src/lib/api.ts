@@ -1,11 +1,31 @@
 const API_BASE = "http://localhost:8000"
 
+export interface AccountSummary {
+  id: number
+  nickname: string
+  starting_balance: number
+  current_balance: number
+  total_credits: number
+  total_debits: number
+  salary_income: number
+  other_income: number
+  expenses: number
+  unaccounted: number
+  transaction_count: number
+}
+
 export interface Summary {
+  starting_balance: number
+  current_balance: number
   total_credits: number
   total_debits: number
   net_flow: number
-  current_balance: number
+  salary_income: number
+  other_income: number
+  expenses: number
+  unaccounted: number
   transaction_count: number
+  per_account: AccountSummary[]
 }
 
 export interface MonthlyData {
@@ -117,6 +137,7 @@ export async function fetchTransactions(params?: {
   category?: string
   type?: string
   bank_account?: number
+  source_file?: number
   limit?: number
   offset?: number
 }): Promise<{ data: Transaction[]; total: number; stats: TransactionStats }> {
@@ -124,6 +145,7 @@ export async function fetchTransactions(params?: {
   if (params?.category) searchParams.set("category", params.category)
   if (params?.type) searchParams.set("type", params.type)
   if (params?.bank_account) searchParams.set("bank_account", params.bank_account.toString())
+  if (params?.source_file) searchParams.set("source_file", params.source_file.toString())
   if (params?.limit) searchParams.set("limit", params.limit.toString())
   if (params?.offset) searchParams.set("offset", params.offset.toString())
 
@@ -227,5 +249,87 @@ export async function unlinkTransaction(
       method: "DELETE",
     }
   )
+  return res.json()
+}
+
+export interface TransactionLogEntry {
+  id: string
+  log_type: 'transaction' | 'account' | 'file_load'
+  action: 'LOAD' | 'CATEGORY_CHANGE' | 'LINK' | 'UNLINK' | 'CREATE' | 'UPDATE' | 'DELETE' | 'LINK_SOURCE' | 'UNLINK_SOURCE'
+  action_display: string
+  old_value: string
+  new_value: string
+  created_at: string
+  transaction: {
+    id: number
+    date: string
+    narration: string
+    bank_account: string | null
+  } | null
+  bank_account: {
+    id: number
+    nickname: string
+  } | null
+  source_file: string | null
+  file_load: {
+    transaction_count: number
+    category_summary: Record<string, number>
+    file_hash: string
+    source_file_id: number | null
+    link_source: 'pre_existing' | 'none'
+    link_source_display: string
+  } | null
+}
+
+export async function fetchTransactionLogs(params?: {
+  action?: string
+  transaction_id?: number
+  limit?: number
+  offset?: number
+}): Promise<{ data: TransactionLogEntry[]; total: number }> {
+  const searchParams = new URLSearchParams()
+  if (params?.action) searchParams.set("action", params.action)
+  if (params?.transaction_id) searchParams.set("transaction_id", params.transaction_id.toString())
+  if (params?.limit) searchParams.set("limit", params.limit.toString())
+  if (params?.offset) searchParams.set("offset", params.offset.toString())
+
+  const res = await fetch(`${API_BASE}/api/logs/?${searchParams}`)
+  return res.json()
+}
+
+export interface PreviousTransaction {
+  id: number
+  date: string
+  closing_balance: number
+}
+
+export interface Inconsistency {
+  transaction_id: number
+  date: string
+  narration: string
+  debit: number
+  credit: number
+  actual_balance: number
+  expected_balance: number
+  gap: number
+  reference: string
+  bank_account: {
+    id: number
+    nickname: string
+  }
+  previous_transaction: PreviousTransaction
+}
+
+export async function fetchInconsistencies(params?: {
+  bank_account?: number
+  limit?: number
+  offset?: number
+}): Promise<{ data: Inconsistency[]; total: number }> {
+  const searchParams = new URLSearchParams()
+  if (params?.bank_account) searchParams.set("bank_account", params.bank_account.toString())
+  if (params?.limit) searchParams.set("limit", params.limit.toString())
+  if (params?.offset) searchParams.set("offset", params.offset.toString())
+
+  const res = await fetch(`${API_BASE}/api/inconsistencies/?${searchParams}`)
   return res.json()
 }

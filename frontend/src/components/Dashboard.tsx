@@ -7,26 +7,22 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip as RechartsTooltip,
-  Legend,
 } from "recharts"
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import {
   ArrowDownIcon,
   ArrowUpIcon,
   WalletIcon,
   TrendingUpIcon,
-  ActivityIcon,
-  MenuIcon,
-  SunIcon,
-  MoonIcon,
-  MonitorIcon,
   ClockIcon,
   FlameIcon,
   ArrowRightIcon,
-  CheckIcon,
+  ActivityIcon,
+  BriefcaseIcon,
+  ReceiptIcon,
+  HelpCircleIcon,
 } from "lucide-react"
-import { useTheme } from "@/lib/theme"
+import { Header } from "@/components/Header"
 import { TransactionTooltip } from "@/components/TransactionTooltip"
 import {
   fetchSummary,
@@ -36,6 +32,7 @@ import {
   fetchTopExpenses,
   fetchBankAccounts,
   type Summary,
+  type AccountSummary,
   type MonthlyData,
   type CategoryData,
   type Transaction,
@@ -51,8 +48,23 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(amount)
+}
+
+function FormattedCurrency({ amount, className = "" }: { amount: number; className?: string }) {
+  const formatted = formatCurrency(amount)
+  const match = formatted.match(/^(.*?)(\.\d{2})$/)
+  if (match) {
+    return (
+      <span className={className}>
+        {match[1]}
+        <span className="opacity-50">{match[2]}</span>
+      </span>
+    )
+  }
+  return <span className={className}>{formatted}</span>
 }
 
 function formatDate(dateStr: string): string {
@@ -61,6 +73,52 @@ function formatDate(dateStr: string): string {
     month: "short",
     year: "numeric",
   })
+}
+
+function PerAccountTooltip({
+  accounts,
+  field,
+  children,
+}: {
+  accounts: AccountSummary[]
+  field: keyof AccountSummary
+  children: React.ReactNode
+}) {
+  if (!accounts || accounts.length === 0) {
+    return <>{children}</>
+  }
+
+  return (
+    <Tooltip.Provider>
+      <Tooltip.Root delayDuration={200}>
+        <Tooltip.Trigger asChild>
+          {children}
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          <Tooltip.Content
+            className="bg-card text-card-foreground px-4 py-3 rounded-lg shadow-lg border border-border text-sm z-50 max-w-xs"
+            sideOffset={8}
+          >
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Per Account</div>
+              {accounts.map((acc) => (
+                <div key={acc.id} className="flex justify-between gap-4">
+                  <span className="text-muted-foreground truncate">{acc.nickname}</span>
+                  <span className="font-medium whitespace-nowrap">
+                    {field === 'unaccounted' && (acc[field] as number) >= 0 ? '+' : ''}
+                    {field === 'transaction_count'
+                      ? (acc[field] as number).toLocaleString()
+                      : formatCurrency(acc[field] as number)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <Tooltip.Arrow className="fill-card" />
+          </Tooltip.Content>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
+  )
 }
 
 export function Dashboard() {
@@ -75,7 +133,10 @@ export function Dashboard() {
   const [syncing, setSyncing] = useState(false)
   const [addSourceFile, setAddSourceFile] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
-  const { mode, setMode } = useTheme()
+
+  useEffect(() => {
+    document.title = "Dashboard | FinAccs"
+  }, [])
 
   useEffect(() => {
     async function loadData() {
@@ -123,71 +184,7 @@ export function Dashboard() {
   return (
     <Tooltip.Provider delayDuration={300}>
     <div className="min-h-screen bg-muted/40">
-      <header className="bg-primary text-primary-foreground shadow-lg relative">
-        <div className="max-w-7xl mx-auto px-4 py-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Financial Dashboard</h1>
-            <p className="text-primary-foreground/80 text-sm">
-              Track your income, expenses, and financial health
-            </p>
-          </div>
-
-          {/* Radix Dropdown Menu */}
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <button
-                className="p-2 rounded-lg hover:bg-primary-foreground/10 transition-colors"
-                aria-label="Toggle menu"
-              >
-                <MenuIcon className="h-6 w-6" />
-              </button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                className="w-56 bg-card rounded-lg shadow-lg border border-border z-50 p-2 animate-in fade-in-0 zoom-in-95"
-                sideOffset={8}
-                align="end"
-              >
-                <DropdownMenu.Label className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                  Display Mode
-                </DropdownMenu.Label>
-                <DropdownMenu.RadioGroup value={mode} onValueChange={(value) => setMode(value as "light" | "dark" | "system")}>
-                  <DropdownMenu.RadioItem
-                    value="light"
-                    className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-accent text-card-foreground transition-colors cursor-pointer outline-none"
-                  >
-                    <SunIcon className="h-4 w-4" />
-                    <span className="flex-1">Light</span>
-                    <DropdownMenu.ItemIndicator>
-                      <CheckIcon className="h-4 w-4" />
-                    </DropdownMenu.ItemIndicator>
-                  </DropdownMenu.RadioItem>
-                  <DropdownMenu.RadioItem
-                    value="dark"
-                    className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-accent text-card-foreground transition-colors cursor-pointer outline-none"
-                  >
-                    <MoonIcon className="h-4 w-4" />
-                    <span className="flex-1">Dark</span>
-                    <DropdownMenu.ItemIndicator>
-                      <CheckIcon className="h-4 w-4" />
-                    </DropdownMenu.ItemIndicator>
-                  </DropdownMenu.RadioItem>
-                  <DropdownMenu.RadioItem
-                    value="system"
-                    className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-accent text-card-foreground transition-colors cursor-pointer outline-none"
-                  >
-                    <MonitorIcon className="h-4 w-4" />
-                    <span className="flex-1">System</span>
-                    <DropdownMenu.ItemIndicator>
-                      <CheckIcon className="h-4 w-4" />
-                    </DropdownMenu.ItemIndicator>
-                  </DropdownMenu.RadioItem>
-                </DropdownMenu.RadioGroup>
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
-        </div>
-      </header>
+      <Header />
 
       {/* Syncing indicator */}
       {syncing && (
@@ -252,63 +249,175 @@ export function Dashboard() {
           />
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <section className="rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 via-card to-card hover:shadow-lg hover:border-blue-500/30 transition-all shadow-sm">
-            <header className="flex flex-row items-center justify-between p-6 pb-2">
-              <h3 className="text-sm font-medium">Current Balance</h3>
-              <div className="p-2 rounded-lg bg-blue-500/10">
-                <WalletIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+        {/* Balance Overview */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+          <PerAccountTooltip accounts={summary?.per_account ?? []} field="starting_balance">
+            <section className="rounded-xl border border-slate-500/20 bg-gradient-to-br from-slate-500/10 via-card to-card hover:shadow-lg hover:border-slate-500/30 transition-all shadow-sm cursor-help">
+              <header className="flex flex-row items-center justify-between p-6 pb-2">
+                <h3 className="text-sm font-medium">Starting Balance</h3>
+                <div className="p-2 rounded-lg bg-slate-500/10">
+                  <WalletIcon className="h-4 w-4 text-slate-600 dark:text-slate-400" />
+                </div>
+              </header>
+              <div className="p-6 pt-0">
+                <FormattedCurrency amount={summary?.starting_balance ?? 0} className="text-2xl font-bold text-slate-600 dark:text-slate-400" />
               </div>
-            </header>
-            <div className="p-6 pt-0">
-              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                {formatCurrency(summary?.current_balance ?? 0)}
-              </div>
-            </div>
-          </section>
+            </section>
+          </PerAccountTooltip>
 
-          <section className="rounded-xl border border-green-500/20 bg-gradient-to-br from-green-500/10 via-card to-card hover:shadow-lg hover:border-green-500/30 transition-all shadow-sm">
-            <header className="flex flex-row items-center justify-between p-6 pb-2">
-              <h3 className="text-sm font-medium">Total Income</h3>
-              <div className="p-2 rounded-lg bg-green-500/10">
-                <ArrowUpIcon className="h-4 w-4 text-green-700 dark:text-green-400" />
+          <PerAccountTooltip accounts={summary?.per_account ?? []} field="total_credits">
+            <section className="rounded-xl border border-green-500/20 bg-gradient-to-br from-green-500/10 via-card to-card hover:shadow-lg hover:border-green-500/30 transition-all shadow-sm cursor-help">
+              <header className="flex flex-row items-center justify-between p-6 pb-2">
+                <h3 className="text-sm font-medium">Total Credits</h3>
+                <div className="p-2 rounded-lg bg-green-500/10">
+                  <ArrowUpIcon className="h-4 w-4 text-green-700 dark:text-green-400" />
+                </div>
+              </header>
+              <div className="p-6 pt-0">
+                <FormattedCurrency amount={summary?.total_credits ?? 0} className="text-2xl font-bold text-green-700 dark:text-green-400" />
               </div>
-            </header>
-            <div className="p-6 pt-0">
-              <div className="text-2xl font-bold text-green-700 dark:text-green-400">
-                {formatCurrency(summary?.total_credits ?? 0)}
-              </div>
-            </div>
-          </section>
+            </section>
+          </PerAccountTooltip>
 
-          <section className="rounded-xl border border-red-500/20 bg-gradient-to-br from-red-500/10 via-card to-card hover:shadow-lg hover:border-red-500/30 transition-all shadow-sm">
-            <header className="flex flex-row items-center justify-between p-6 pb-2">
-              <h3 className="text-sm font-medium">Total Expenses</h3>
-              <div className="p-2 rounded-lg bg-red-500/10">
-                <ArrowDownIcon className="h-4 w-4 text-red-700 dark:text-red-400" />
+          <PerAccountTooltip accounts={summary?.per_account ?? []} field="total_debits">
+            <section className="rounded-xl border border-red-500/20 bg-gradient-to-br from-red-500/10 via-card to-card hover:shadow-lg hover:border-red-500/30 transition-all shadow-sm cursor-help">
+              <header className="flex flex-row items-center justify-between p-6 pb-2">
+                <h3 className="text-sm font-medium">Total Debits</h3>
+                <div className="p-2 rounded-lg bg-red-500/10">
+                  <ArrowDownIcon className="h-4 w-4 text-red-700 dark:text-red-400" />
+                </div>
+              </header>
+              <div className="p-6 pt-0">
+                <FormattedCurrency amount={summary?.total_debits ?? 0} className="text-2xl font-bold text-red-700 dark:text-red-400" />
               </div>
-            </header>
-            <div className="p-6 pt-0">
-              <div className="text-2xl font-bold text-red-700 dark:text-red-400">
-                {formatCurrency(summary?.total_debits ?? 0)}
-              </div>
-            </div>
-          </section>
+            </section>
+          </PerAccountTooltip>
 
-          <section className="rounded-xl border border-purple-500/20 bg-gradient-to-br from-purple-500/10 via-card to-card hover:shadow-lg hover:border-purple-500/30 transition-all shadow-sm">
-            <header className="flex flex-row items-center justify-between p-6 pb-2">
-              <h3 className="text-sm font-medium">Transactions</h3>
-              <div className="p-2 rounded-lg bg-purple-500/10">
-                <ActivityIcon className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+          <PerAccountTooltip accounts={summary?.per_account ?? []} field="unaccounted">
+            <section className="rounded-xl border border-amber-500/20 bg-gradient-to-br from-amber-500/10 via-card to-card hover:shadow-lg hover:border-amber-500/30 transition-all shadow-sm cursor-help">
+              <header className="flex flex-row items-center justify-between p-6 pb-2">
+                <h3 className="text-sm font-medium">Unaccounted</h3>
+                <div className="p-2 rounded-lg bg-amber-500/10">
+                  <HelpCircleIcon className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                </div>
+              </header>
+              <div className="p-6 pt-0">
+                <span className="text-2xl font-bold text-amber-600 dark:text-amber-400 inline-flex items-center gap-1">
+                  <FormattedCurrency amount={summary?.unaccounted ?? 0} />
+                  {(summary?.unaccounted ?? 0) > 0 ? (
+                    <ArrowUpIcon className="h-5 w-5" />
+                  ) : (summary?.unaccounted ?? 0) < 0 ? (
+                    <ArrowDownIcon className="h-5 w-5" />
+                  ) : null}
+                </span>
               </div>
-            </header>
-            <div className="p-6 pt-0">
-              <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                {summary?.transaction_count ?? 0}
+            </section>
+          </PerAccountTooltip>
+
+          <PerAccountTooltip accounts={summary?.per_account ?? []} field="current_balance">
+            <section className="rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 via-card to-card hover:shadow-lg hover:border-blue-500/30 transition-all shadow-sm cursor-help">
+              <header className="flex flex-row items-center justify-between p-6 pb-2">
+                <h3 className="text-sm font-medium">Current Balance</h3>
+                <div className="p-2 rounded-lg bg-blue-500/10">
+                  <WalletIcon className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                </div>
+              </header>
+              <div className="p-6 pt-0">
+                <FormattedCurrency amount={summary?.current_balance ?? 0} className="text-2xl font-bold text-blue-600 dark:text-blue-400" />
               </div>
+            </section>
+          </PerAccountTooltip>
+        </div>
+
+        {/* Balance Formula */}
+        {summary && (
+          <div className="mb-8 p-4 rounded-xl border border-border bg-card/50">
+            <div className="flex flex-wrap items-center justify-center gap-2 text-sm font-mono">
+              <span className="text-slate-600 dark:text-slate-400">Starting Balance</span>
+              <span className="text-muted-foreground">+</span>
+              <span className="text-green-700 dark:text-green-400">Total Credits</span>
+              <span className="text-muted-foreground">−</span>
+              <span className="text-red-700 dark:text-red-400">Total Debits</span>
+              <span className="text-muted-foreground">=</span>
+              <span className="text-blue-600 dark:text-blue-400">Current Balance</span>
+              {Math.abs(summary.unaccounted) > 0.01 ? (
+                <>
+                  <span className="text-muted-foreground mx-2">→</span>
+                  <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                    Current is {formatCurrency(Math.abs(summary.unaccounted))} {summary.unaccounted > 0 ? 'more' : 'less'} than expected
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="text-muted-foreground mx-2">→</span>
+                  <span className="px-2 py-1 rounded bg-green-500/10 text-green-600 dark:text-green-400">
+                    ✓ Balanced
+                  </span>
+                </>
+              )}
             </div>
-          </section>
+          </div>
+        )}
+
+        {/* Income & Expenses Breakdown */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          <PerAccountTooltip accounts={summary?.per_account ?? []} field="salary_income">
+            <section className="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-card to-card hover:shadow-lg hover:border-emerald-500/30 transition-all shadow-sm cursor-help">
+              <header className="flex flex-row items-center justify-between p-6 pb-2">
+                <h3 className="text-sm font-medium">Salary Income</h3>
+                <div className="p-2 rounded-lg bg-emerald-500/10">
+                  <BriefcaseIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                </div>
+              </header>
+              <div className="p-6 pt-0">
+                <FormattedCurrency amount={summary?.salary_income ?? 0} className="text-2xl font-bold text-emerald-600 dark:text-emerald-400" />
+              </div>
+            </section>
+          </PerAccountTooltip>
+
+          <PerAccountTooltip accounts={summary?.per_account ?? []} field="other_income">
+            <section className="rounded-xl border border-teal-500/20 bg-gradient-to-br from-teal-500/10 via-card to-card hover:shadow-lg hover:border-teal-500/30 transition-all shadow-sm cursor-help">
+              <header className="flex flex-row items-center justify-between p-6 pb-2">
+                <h3 className="text-sm font-medium">Other Income</h3>
+                <div className="p-2 rounded-lg bg-teal-500/10">
+                  <ArrowUpIcon className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                </div>
+              </header>
+              <div className="p-6 pt-0">
+                <FormattedCurrency amount={summary?.other_income ?? 0} className="text-2xl font-bold text-teal-600 dark:text-teal-400" />
+              </div>
+            </section>
+          </PerAccountTooltip>
+
+          <PerAccountTooltip accounts={summary?.per_account ?? []} field="expenses">
+            <section className="rounded-xl border border-orange-500/20 bg-gradient-to-br from-orange-500/10 via-card to-card hover:shadow-lg hover:border-orange-500/30 transition-all shadow-sm cursor-help">
+              <header className="flex flex-row items-center justify-between p-6 pb-2">
+                <h3 className="text-sm font-medium">Expenses</h3>
+                <div className="p-2 rounded-lg bg-orange-500/10">
+                  <ReceiptIcon className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                </div>
+              </header>
+              <div className="p-6 pt-0">
+                <FormattedCurrency amount={summary?.expenses ?? 0} className="text-2xl font-bold text-orange-600 dark:text-orange-400" />
+              </div>
+            </section>
+          </PerAccountTooltip>
+
+          <PerAccountTooltip accounts={summary?.per_account ?? []} field="transaction_count">
+            <section className="rounded-xl border border-purple-500/20 bg-gradient-to-br from-purple-500/10 via-card to-card hover:shadow-lg hover:border-purple-500/30 transition-all shadow-sm cursor-help">
+              <header className="flex flex-row items-center justify-between p-6 pb-2">
+                <h3 className="text-sm font-medium">Transactions</h3>
+                <div className="p-2 rounded-lg bg-purple-500/10">
+                  <ActivityIcon className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                </div>
+              </header>
+              <div className="p-6 pt-0">
+                <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                  {summary?.transaction_count ?? 0}
+                </div>
+              </div>
+            </section>
+          </PerAccountTooltip>
         </div>
 
         {/* Charts Row */}
@@ -324,13 +433,24 @@ export function Dashboard() {
               </h3>
             </header>
             <div className="p-6 pt-0">
+              {/* Fixed Legend */}
+              <div className="flex items-center justify-center gap-6 mb-3 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-green-500" />
+                  <span className="text-muted-foreground">Income</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-red-500" />
+                  <span className="text-muted-foreground">Expenses</span>
+                </div>
+              </div>
               <div className="flex">
                 {/* Fixed Y-axis */}
                 <div className="flex-shrink-0">
                   <LineChart
                     data={monthly}
                     width={60}
-                    height={300}
+                    height={280}
                     margin={{ top: 5, right: 0, left: 0, bottom: 25 }}
                   >
                     <YAxis
@@ -340,6 +460,9 @@ export function Dashboard() {
                       tickLine={false}
                       width={55}
                     />
+                    {/* Invisible lines to set Y-axis domain */}
+                    <Line dataKey="credits" stroke="transparent" dot={false} />
+                    <Line dataKey="debits" stroke="transparent" dot={false} />
                   </LineChart>
                 </div>
                 {/* Scrollable chart area */}
@@ -353,7 +476,7 @@ export function Dashboard() {
                     <LineChart
                       data={monthly}
                       width={Math.max(monthly.length * 50, 500)}
-                      height={300}
+                      height={280}
                       margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
@@ -361,12 +484,25 @@ export function Dashboard() {
                       <RechartsTooltip
                         formatter={(value) => formatCurrency(value as number)}
                         contentStyle={{
-                          backgroundColor: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
+                          backgroundColor: 'hsl(var(--card) / 0.85)',
+                          backdropFilter: 'blur(8px)',
+                          border: '1px solid hsl(var(--foreground) / 0.15)',
                           borderRadius: '8px',
+                          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                          padding: '8px 12px',
+                        }}
+                        labelStyle={{
+                          color: 'hsl(var(--foreground) / 0.7)',
+                          fontWeight: 500,
+                          fontSize: '11px',
+                          marginBottom: '2px',
+                        }}
+                        itemStyle={{
+                          color: 'hsl(var(--foreground) / 0.8)',
+                          fontSize: '12px',
+                          padding: '1px 0',
                         }}
                       />
-                      <Legend />
                       <Line
                         type="monotone"
                         dataKey="credits"
@@ -462,12 +598,14 @@ export function Dashboard() {
                         </td>
                         <td className="p-4 align-middle text-right">
                           {t.credit > 0 ? (
-                            <span className="text-green-700 dark:text-green-400 font-medium">
-                              +{formatCurrency(t.credit)}
+                            <span className="text-green-700 dark:text-green-400 font-medium inline-flex items-center gap-1">
+                              <FormattedCurrency amount={t.credit} />
+                              <ArrowUpIcon className="h-3 w-3" />
                             </span>
                           ) : (
-                            <span className="text-red-700 dark:text-red-400 font-medium">
-                              -{formatCurrency(t.debit)}
+                            <span className="text-red-700 dark:text-red-400 font-medium inline-flex items-center gap-1">
+                              <FormattedCurrency amount={t.debit} />
+                              <ArrowDownIcon className="h-3 w-3" />
                             </span>
                           )}
                         </td>
@@ -521,8 +659,9 @@ export function Dashboard() {
                           {t.bank_account?.nickname || <span className="text-muted-foreground/40">NA</span>}
                         </td>
                         <td className="p-4 align-middle text-right">
-                          <span className="text-red-700 dark:text-red-400 font-medium">
-                            {formatCurrency(t.amount)}
+                          <span className="text-red-700 dark:text-red-400 font-medium inline-flex items-center gap-1">
+                            <FormattedCurrency amount={t.amount} />
+                            <ArrowDownIcon className="h-3 w-3" />
                           </span>
                         </td>
                       </tr>

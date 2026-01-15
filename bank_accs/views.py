@@ -6,6 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 from django.db.models import Min, Max
 from .models import BankAccount, SourceFile
+from dashboard.models import AccountLog, Transaction
 
 # Supported file extensions
 PARSED_EXTENSIONS = ['.txt', '.xlsx', '.xls']  # Supported formats
@@ -45,21 +46,16 @@ def get_source_files_with_stats():
                 'bank_account_id': sf.bank_account.id if sf.bank_account else None,
             }
 
-            # Get date range from transactions linked to this file's account
-            if sf.bank_account:
-                date_range = Transaction.objects.filter(
-                    bank_account=sf.bank_account
-                ).aggregate(
-                    first_date=Min('date'),
-                    last_date=Max('date')
-                )
-                file_info['first_transaction_date'] = date_range['first_date'].isoformat() if date_range['first_date'] else None
-                file_info['last_transaction_date'] = date_range['last_date'].isoformat() if date_range['last_date'] else None
-                file_info['transaction_count'] = Transaction.objects.filter(bank_account=sf.bank_account).count()
-            else:
-                file_info['first_transaction_date'] = None
-                file_info['last_transaction_date'] = None
-                file_info['transaction_count'] = 0
+            # Get date range from transactions linked to this source file
+            date_range = Transaction.objects.filter(
+                source_file=sf
+            ).aggregate(
+                first_date=Min('date'),
+                last_date=Max('date')
+            )
+            file_info['first_transaction_date'] = date_range['first_date'].isoformat() if date_range['first_date'] else None
+            file_info['last_transaction_date'] = date_range['last_date'].isoformat() if date_range['last_date'] else None
+            file_info['transaction_count'] = Transaction.objects.filter(source_file=sf).count()
 
             files.append(file_info)
         elif ext in PENDING_EXTENSIONS:
@@ -96,10 +92,17 @@ def get_account_stats(account):
     # Earliest transaction (last in the queryset)
     earliest = transactions.order_by('date', 'id').first()
 
+    # Calculate starting balance by reversing the first transaction
+    # closing_balance = opening_balance + credit - debit
+    # So: opening_balance = closing_balance - credit + debit
+    starting_balance = None
+    if earliest:
+        starting_balance = float(earliest.closing_balance) - float(earliest.credit_amount) + float(earliest.debit_amount)
+
     return {
         'current_balance': float(latest.closing_balance) if latest else None,
         'last_transaction_date': latest.date.isoformat() if latest else None,
-        'starting_balance': float(earliest.closing_balance) if earliest else None,
+        'starting_balance': starting_balance,
         'first_transaction_date': earliest.date.isoformat() if earliest else None,
         'transaction_count': transactions.count()
     }
@@ -143,6 +146,13 @@ def account_list(request):
                 branch=data.get('branch', ''),
             )
 
+            # Log account creation
+            AccountLog.objects.create(
+                bank_account=account,
+                action='CREATE',
+                new_value=account.nickname,
+            )
+
             # Link source files to the account
             source_files = data.get('source_files', [])
             if isinstance(source_files, str):
@@ -151,6 +161,15 @@ def account_list(request):
                 sf, _ = SourceFile.objects.get_or_create(filename=filename)
                 sf.bank_account = account
                 sf.save()
+                # Update transactions from this source file to link to account
+                Transaction.objects.filter(source_file=sf).update(bank_account=account)
+                # Log source file linking
+                AccountLog.objects.create(
+                    bank_account=account,
+                    action='LINK_SOURCE',
+                    new_value=filename,
+                    source_file=sf,
+                )
 
             return JsonResponse({
                 'id': account.id,
@@ -187,12 +206,22 @@ def account_detail(request, account_id):
     elif request.method == "PUT":
         try:
             data = json.loads(request.body)
+            old_nickname = account.nickname
             account.nickname = data.get('nickname', account.nickname)
             account.bank_name = data.get('bank_name', account.bank_name)
             account.account_number = data.get('account_number', account.account_number)
             account.ifsc_code = data.get('ifsc_code', account.ifsc_code)
             account.branch = data.get('branch', account.branch)
             account.save()
+
+            # Log account update if nickname changed
+            if old_nickname != account.nickname:
+                AccountLog.objects.create(
+                    bank_account=account,
+                    action='UPDATE',
+                    old_value=old_nickname,
+                    new_value=account.nickname,
+                )
 
             # Update source files if provided
             if 'source_files' in data:
@@ -207,6 +236,15 @@ def account_detail(request, account_id):
                 # Unlink files that are no longer associated
                 for sf in account.source_files.all():
                     if sf.filename not in new_filenames:
+                        # Log source file unlinking
+                        AccountLog.objects.create(
+                            bank_account=account,
+                            action='UNLINK_SOURCE',
+                            old_value=sf.filename,
+                            source_file=sf,
+                        )
+                        # Update transactions from this source file to unlink from account
+                        Transaction.objects.filter(source_file=sf).update(bank_account=None)
                         sf.bank_account = None
                         sf.save()
 
@@ -215,6 +253,15 @@ def account_detail(request, account_id):
                     sf, _ = SourceFile.objects.get_or_create(filename=filename)
                     sf.bank_account = account
                     sf.save()
+                    # Update transactions from this source file to link to account
+                    Transaction.objects.filter(source_file=sf).update(bank_account=account)
+                    # Log source file linking
+                    AccountLog.objects.create(
+                        bank_account=account,
+                        action='LINK_SOURCE',
+                        new_value=filename,
+                        source_file=sf,
+                    )
 
             return JsonResponse({
                 'id': account.id,
@@ -229,5 +276,11 @@ def account_detail(request, account_id):
             return JsonResponse({'error': str(e)}, status=400)
 
     elif request.method == "DELETE":
+        # Log account deletion before deleting
+        AccountLog.objects.create(
+            bank_account=None,  # Will be null after deletion
+            action='DELETE',
+            old_value=account.nickname,
+        )
         account.delete()
         return JsonResponse({'success': True})

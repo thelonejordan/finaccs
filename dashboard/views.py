@@ -6,7 +6,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 
-from .models import Transaction
+from .models import Transaction, TransactionLog, AccountLog, FileLoadLog
 
 # Categories to exclude from income/expense calculations (internal transfers)
 EXCLUDED_CATEGORIES = ['Self Transfer']
@@ -14,40 +14,129 @@ EXCLUDED_CATEGORIES = ['Self Transfer']
 
 def api_summary(request):
     all_transactions = Transaction.objects.all()
-
-    # Exclude self transfers from income/expense totals
-    transactions = all_transactions.exclude(category__in=EXCLUDED_CATEGORIES)
-
-    total_credits = transactions.aggregate(total=Sum('credit_amount'))['total'] or 0
-    total_debits = transactions.aggregate(total=Sum('debit_amount'))['total'] or 0
-    net_flow = total_credits - total_debits
-
-    # Calculate total balance as sum of latest closing balance from each account
-    # Get the latest transaction for each bank_account
+    from django.db.models import Q
     from bank_accs.models import BankAccount
 
-    total_balance = 0
-    accounts = BankAccount.objects.all()
+    # For income/expense breakdown, exclude linked self transfers (both sides of the link)
+    # Exclude transactions that link TO another (linked_transaction is set)
+    # AND transactions that are linked FROM another (linked_from exists)
+    filtered_transactions = all_transactions.exclude(
+        Q(category__in=EXCLUDED_CATEGORIES) & (
+            Q(linked_transaction__isnull=False) | Q(linked_from__isnull=False)
+        )
+    )
 
-    if accounts.exists():
-        for account in accounts:
-            # Get latest transaction for this account's source file
-            latest_txn = all_transactions.filter(
-                bank_account=account
-            ).first()
-            if latest_txn:
-                total_balance += float(latest_txn.closing_balance)
-    else:
-        # Fallback: if no accounts, use latest transaction balance
-        latest_balance = all_transactions.first()
-        total_balance = float(latest_balance.closing_balance) if latest_balance else 0
+    # Income breakdown (excluding linked self transfers)
+    income_categories = ['Salary/Income']
+    salary_income = (
+        filtered_transactions
+        .filter(category__in=income_categories)
+        .aggregate(total=Sum('credit_amount'))['total'] or 0
+    )
+
+    other_income = (
+        filtered_transactions
+        .exclude(category__in=income_categories)
+        .aggregate(total=Sum('credit_amount'))['total'] or 0
+    )
+
+    expenses = filtered_transactions.aggregate(total=Sum('debit_amount'))['total'] or 0
+
+    # For balance equation, exclude linked self transfers (consistent with income/expense)
+    total_credits = filtered_transactions.aggregate(total=Sum('credit_amount'))['total'] or 0
+    total_debits = filtered_transactions.aggregate(total=Sum('debit_amount'))['total'] or 0
+    net_flow = total_credits - total_debits
+
+    # Calculate per-account breakdown
+    accounts = BankAccount.objects.all()
+    per_account = []
+    starting_balance = 0
+    current_balance = 0
+
+    for account in accounts:
+        account_txns = list(all_transactions.filter(bank_account=account).order_by('date', 'id'))
+        if not account_txns:
+            continue
+
+        # Filtered transactions for this account (excluding linked self transfers)
+        account_filtered = filtered_transactions.filter(bank_account=account)
+
+        # Latest transaction for current balance
+        latest_txn = account_txns[-1]
+        acc_current = float(latest_txn.closing_balance)
+
+        # Earliest transaction for starting balance
+        earliest_txn = account_txns[0]
+        acc_starting = float(earliest_txn.closing_balance) - float(earliest_txn.credit_amount) + float(earliest_txn.debit_amount)
+
+        # Credits and debits for this account (excluding linked self transfers)
+        credits_agg = account_filtered.aggregate(total=Sum('credit_amount'))['total']
+        acc_credits = float(credits_agg) if credits_agg is not None else 0.0
+
+        debits_agg = account_filtered.aggregate(total=Sum('debit_amount'))['total']
+        acc_debits = float(debits_agg) if debits_agg is not None else 0.0
+
+        # Income breakdown per account
+        salary_agg = account_filtered.filter(category__in=income_categories).aggregate(total=Sum('credit_amount'))['total']
+        acc_salary_income = float(salary_agg) if salary_agg is not None else 0.0
+
+        other_agg = account_filtered.exclude(category__in=income_categories).aggregate(total=Sum('credit_amount'))['total']
+        acc_other_income = float(other_agg) if other_agg is not None else 0.0
+
+        expenses_agg = account_filtered.aggregate(total=Sum('debit_amount'))['total']
+        acc_expenses = float(expenses_agg) if expenses_agg is not None else 0.0
+
+        # Unaccounted = sum of actual balance discontinuities (real missing transactions)
+        # Self transfers don't cause discontinuities since their amounts are correct
+        acc_unaccounted = 0.0
+        for i, txn in enumerate(account_txns):
+            if i == 0:
+                continue
+            prev = account_txns[i - 1]
+            expected_balance = float(prev.closing_balance) + float(txn.credit_amount) - float(txn.debit_amount)
+            if abs(float(txn.closing_balance) - expected_balance) > 0.001:
+                acc_unaccounted += float(txn.closing_balance) - expected_balance
+
+        per_account.append({
+            'id': account.id,
+            'nickname': account.nickname,
+            'starting_balance': acc_starting,
+            'current_balance': acc_current,
+            'total_credits': acc_credits,
+            'total_debits': acc_debits,
+            'salary_income': acc_salary_income,
+            'other_income': acc_other_income,
+            'expenses': acc_expenses,
+            'unaccounted': acc_unaccounted,
+            'transaction_count': account_filtered.count(),
+        })
+
+        starting_balance += acc_starting
+        current_balance += acc_current
+
+    # Fallback if no accounts
+    if not accounts.exists():
+        latest = all_transactions.first()
+        earliest = all_transactions.order_by('date', 'id').first()
+        current_balance = float(latest.closing_balance) if latest else 0
+        if earliest:
+            starting_balance = float(earliest.closing_balance) - float(earliest.credit_amount) + float(earliest.debit_amount)
+
+    # Total unaccounted = sum of per-account inconsistency gaps
+    unaccounted = sum(acc['unaccounted'] for acc in per_account)
 
     return JsonResponse({
+        'starting_balance': starting_balance,
+        'current_balance': current_balance,
         'total_credits': float(total_credits),
         'total_debits': float(total_debits),
         'net_flow': float(net_flow),
-        'current_balance': total_balance,
+        'salary_income': float(salary_income),
+        'other_income': float(other_income),
+        'expenses': float(expenses),
+        'unaccounted': unaccounted,
         'transaction_count': all_transactions.count(),
+        'per_account': per_account,
     })
 
 
@@ -94,12 +183,24 @@ def api_categories(request):
         .order_by('-total')
     )
 
-    data = []
+    # Build a dict of existing categories with their amounts
+    existing_categories = {}
     for item in category_data:
-        data.append({
-            'category': item['category'] or 'Other',
-            'amount': float(item['total'] or 0),
-        })
+        cat_name = item['category'] or 'Other'
+        existing_categories[cat_name] = float(item['total'] or 0)
+
+    # Import predefined categories and add any missing ones
+    from dashboard.management.commands.load_transactions import CATEGORY_PATTERNS
+    for cat_name in CATEGORY_PATTERNS.keys():
+        if cat_name not in existing_categories:
+            existing_categories[cat_name] = 0
+
+    # Convert to list and sort by amount (descending), with zero-amount categories at the end
+    data = [
+        {'category': cat, 'amount': amount}
+        for cat, amount in existing_categories.items()
+    ]
+    data.sort(key=lambda x: (-x['amount'], x['category']))
 
     return JsonResponse({'data': data})
 
@@ -125,6 +226,11 @@ def api_transactions(request):
         transactions = transactions.filter(credit_amount__gt=0)
     elif transaction_type == 'debit':
         transactions = transactions.filter(debit_amount__gt=0)
+
+    # Filter by source file
+    source_file_id = request.GET.get('source_file')
+    if source_file_id:
+        transactions = transactions.filter(source_file_id=source_file_id)
 
     # Calculate aggregate stats based on filtered results
     total_credits = transactions.aggregate(total=Sum('credit_amount'))['total'] or 0
@@ -227,8 +333,19 @@ def api_transaction_update(request, transaction_id):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     if 'category' in data:
-        transaction.category = data['category']
+        old_category = transaction.category or 'Uncategorized'
+        new_category = data['category'] or 'Uncategorized'
+        transaction.category = new_category
         transaction.save()
+
+        # Log category change in WAL
+        if old_category != new_category:
+            TransactionLog.objects.create(
+                transaction=transaction,
+                action='CATEGORY_CHANGE',
+                old_value=old_category,
+                new_value=new_category,
+            )
 
     return JsonResponse({
         'id': transaction.id,
@@ -321,6 +438,7 @@ def api_link_transaction(request, transaction_id):
 
     if request.method == 'DELETE':
         # Unlink the transaction
+        other = None
         if transaction.linked_transaction:
             other = transaction.linked_transaction
             transaction.linked_transaction = None
@@ -332,6 +450,19 @@ def api_link_transaction(request, transaction_id):
             other = transaction.linked_from
             other.linked_transaction = None
             other.save()
+
+        # Log unlink action in WAL for both transactions
+        if other:
+            TransactionLog.objects.create(
+                transaction=transaction,
+                action='UNLINK',
+                old_value=str(other.id),
+            )
+            TransactionLog.objects.create(
+                transaction=other,
+                action='UNLINK',
+                old_value=str(transaction.id),
+            )
 
         return JsonResponse({
             'id': transaction.id,
@@ -366,10 +497,39 @@ def api_link_transaction(request, transaction_id):
     # Create the link (only one direction needed with OneToOne)
     transaction.linked_transaction = link_to
     # Tag both transactions as Self Transfer
+    old_category_1 = transaction.category or ''
+    old_category_2 = link_to.category or ''
     transaction.category = 'Self Transfer'
     link_to.category = 'Self Transfer'
     transaction.save()
     link_to.save()
+
+    # Log link action in WAL for both transactions
+    TransactionLog.objects.create(
+        transaction=transaction,
+        action='LINK',
+        new_value=str(link_to.id),
+    )
+    TransactionLog.objects.create(
+        transaction=link_to,
+        action='LINK',
+        new_value=str(transaction.id),
+    )
+    # Also log category changes if they changed
+    if old_category_1 != 'Self Transfer':
+        TransactionLog.objects.create(
+            transaction=transaction,
+            action='CATEGORY_CHANGE',
+            old_value=old_category_1,
+            new_value='Self Transfer',
+        )
+    if old_category_2 != 'Self Transfer':
+        TransactionLog.objects.create(
+            transaction=link_to,
+            action='CATEGORY_CHANGE',
+            old_value=old_category_2,
+            new_value='Self Transfer',
+        )
 
     return JsonResponse({
         'id': transaction.id,
@@ -379,4 +539,198 @@ def api_link_transaction(request, transaction_id):
             'bank_account': link_to.bank_account.nickname if link_to.bank_account else None,
             'amount': float(link_to.debit_amount or link_to.credit_amount),
         },
+    })
+
+
+def api_transaction_logs(request):
+    """Fetch all logs (file loads, transaction changes, and account changes)."""
+    log_type = request.GET.get('type', 'all')  # 'all', 'transaction', 'account', 'file_load'
+    action = request.GET.get('action')
+    limit = int(request.GET.get('limit', 100))
+    offset = int(request.GET.get('offset', 0))
+
+    # Collect all logs
+    all_logs = []
+
+    # File load logs (initial loads)
+    if log_type in ('all', 'file_load') and (not action or action == 'LOAD'):
+        file_logs = FileLoadLog.objects.select_related(
+            'source_file',
+            'bank_account'
+        )
+        for log in file_logs:
+            all_logs.append({
+                'id': f'file_{log.id}',
+                'log_type': 'file_load',
+                'action': 'LOAD',
+                'action_display': 'File Loaded',
+                'old_value': '',
+                'new_value': '',
+                'created_at': log.created_at,
+                'transaction': None,
+                'bank_account': {
+                    'id': log.bank_account.id,
+                    'nickname': log.bank_account.nickname,
+                } if log.bank_account else None,
+                'source_file': log.source_file.filename if log.source_file else None,
+                'file_load': {
+                    'transaction_count': log.transaction_count,
+                    'category_summary': log.category_summary,
+                    'file_hash': log.file_hash,
+                    'source_file_id': log.source_file.id if log.source_file else None,
+                    'link_source': log.link_source,
+                    'link_source_display': log.get_link_source_display(),
+                },
+            })
+
+    # Transaction logs (category changes, links, unlinks)
+    if log_type in ('all', 'transaction') and (not action or action in ['CATEGORY_CHANGE', 'LINK', 'UNLINK']):
+        txn_logs = TransactionLog.objects.select_related(
+            'transaction',
+            'transaction__bank_account',
+        )
+        if action and action in ['CATEGORY_CHANGE', 'LINK', 'UNLINK']:
+            txn_logs = txn_logs.filter(action=action)
+
+        for log in txn_logs:
+            all_logs.append({
+                'id': f'txn_{log.id}',
+                'log_type': 'transaction',
+                'action': log.action,
+                'action_display': log.get_action_display(),
+                'old_value': log.old_value,
+                'new_value': log.new_value,
+                'created_at': log.created_at,
+                'transaction': {
+                    'id': log.transaction.id,
+                    'date': log.transaction.date.isoformat(),
+                    'narration': log.transaction.narration[:50] + '...' if len(log.transaction.narration) > 50 else log.transaction.narration,
+                    'bank_account': log.transaction.bank_account.nickname if log.transaction.bank_account else None,
+                },
+                'bank_account': None,
+                'source_file': None,
+                'file_load': None,
+            })
+
+    # Account logs
+    if log_type in ('all', 'account') and (not action or action in ['CREATE', 'UPDATE', 'DELETE', 'LINK_SOURCE', 'UNLINK_SOURCE']):
+        acc_logs = AccountLog.objects.select_related(
+            'bank_account',
+            'source_file'
+        )
+        if action and action in ['CREATE', 'UPDATE', 'DELETE', 'LINK_SOURCE', 'UNLINK_SOURCE']:
+            acc_logs = acc_logs.filter(action=action)
+
+        for log in acc_logs:
+            all_logs.append({
+                'id': f'acc_{log.id}',
+                'log_type': 'account',
+                'action': log.action,
+                'action_display': log.get_action_display(),
+                'old_value': log.old_value,
+                'new_value': log.new_value,
+                'created_at': log.created_at,
+                'transaction': None,
+                'bank_account': {
+                    'id': log.bank_account.id,
+                    'nickname': log.bank_account.nickname,
+                } if log.bank_account else None,
+                'source_file': log.source_file.filename if log.source_file else None,
+                'file_load': None,
+            })
+
+    # Sort by created_at descending
+    all_logs.sort(key=lambda x: x['created_at'], reverse=True)
+
+    total = len(all_logs)
+    logs_page = all_logs[offset:offset + limit]
+
+    # Convert datetime to isoformat for JSON
+    for log in logs_page:
+        log['created_at'] = log['created_at'].isoformat()
+
+    return JsonResponse({
+        'data': logs_page,
+        'total': total,
+        'limit': limit,
+        'offset': offset,
+    })
+
+
+def api_inconsistencies(request):
+    """Detect balance discontinuities in transactions.
+
+    For consecutive transactions (ordered by date ASC, id ASC):
+    expected_closing = previous_closing + credit - debit
+
+    If actual closing_balance != expected_closing, it's an inconsistency.
+    """
+    from bank_accs.models import BankAccount
+
+    bank_account_id = request.GET.get('bank_account')
+    limit = int(request.GET.get('limit', 100))
+    offset = int(request.GET.get('offset', 0))
+
+    # Get accounts to check
+    if bank_account_id:
+        accounts = BankAccount.objects.filter(id=bank_account_id)
+    else:
+        accounts = BankAccount.objects.all()
+
+    inconsistencies = []
+
+    for account in accounts:
+        # Get transactions ordered oldest to newest (reverse of default ordering)
+        transactions = list(
+            Transaction.objects
+            .filter(bank_account=account)
+            .order_by('date', 'id')  # Oldest first
+        )
+
+        for i, txn in enumerate(transactions):
+            if i == 0:
+                # First transaction - no previous to compare
+                continue
+
+            prev_txn = transactions[i - 1]
+            expected_balance = (
+                prev_txn.closing_balance
+                + txn.credit_amount
+                - txn.debit_amount
+            )
+
+            if txn.closing_balance != expected_balance:
+                gap = txn.closing_balance - expected_balance
+                inconsistencies.append({
+                    'transaction_id': txn.id,
+                    'date': txn.date.isoformat(),
+                    'narration': txn.narration,
+                    'debit': float(txn.debit_amount),
+                    'credit': float(txn.credit_amount),
+                    'actual_balance': float(txn.closing_balance),
+                    'expected_balance': float(expected_balance),
+                    'gap': float(gap),
+                    'reference': txn.reference_number,
+                    'bank_account': {
+                        'id': account.id,
+                        'nickname': account.nickname,
+                    },
+                    'previous_transaction': {
+                        'id': prev_txn.id,
+                        'date': prev_txn.date.isoformat(),
+                        'closing_balance': float(prev_txn.closing_balance),
+                    }
+                })
+
+    # Sort by date descending (most recent first)
+    inconsistencies.sort(key=lambda x: (x['date'], x['transaction_id']), reverse=True)
+
+    total = len(inconsistencies)
+    page = inconsistencies[offset:offset + limit]
+
+    return JsonResponse({
+        'data': page,
+        'total': total,
+        'limit': limit,
+        'offset': offset,
     })
