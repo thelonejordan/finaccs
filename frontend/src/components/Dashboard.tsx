@@ -7,7 +7,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip as RechartsTooltip,
-  ResponsiveContainer,
   Legend,
 } from "recharts"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
@@ -73,11 +72,17 @@ export function Dashboard() {
   const [allAccounts, setAllAccounts] = useState<BankAccount[]>([])
   const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([])
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
   const [addSourceFile, setAddSourceFile] = useState<string | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
   const { mode, setMode } = useTheme()
 
   useEffect(() => {
     async function loadData() {
+      // Show syncing indicator for refreshes (not initial load)
+      if (!loading) {
+        setSyncing(true)
+      }
       try {
         const [summaryData, monthlyData, categoryData, transactionsData, topExpensesData, accountsData] =
           await Promise.all([
@@ -100,11 +105,12 @@ export function Dashboard() {
         console.error("Failed to load data:", error)
       } finally {
         setLoading(false)
+        setSyncing(false)
       }
     }
 
     loadData()
-  }, [])
+  }, [refreshKey])
 
   if (loading) {
     return (
@@ -183,6 +189,24 @@ export function Dashboard() {
         </div>
       </header>
 
+      {/* Syncing indicator */}
+      {syncing && (
+        <div className="h-0.5 bg-muted overflow-hidden">
+          <div
+            className="h-full w-1/3 bg-primary rounded-full"
+            style={{
+              animation: 'slideSync 1s ease-in-out infinite',
+            }}
+          />
+          <style>{`
+            @keyframes slideSync {
+              0% { transform: translateX(-100%); }
+              100% { transform: translateX(400%); }
+            }
+          `}</style>
+        </div>
+      )}
+
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Accounts & Data Sources */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -199,6 +223,8 @@ export function Dashboard() {
                 }
                 return [...prev, account]
               })
+              // Refresh all data that depends on accounts
+              setRefreshKey((k) => k + 1)
             }}
             initialAddSourceFile={addSourceFile}
             onAddingStateChange={(isAdding) => {
@@ -219,7 +245,10 @@ export function Dashboard() {
                 }
                 return [...prev, account]
               })
+              // Refresh all data that depends on accounts
+              setRefreshKey((k) => k + 1)
             }}
+            onRefresh={() => setRefreshKey((k) => k + 1)}
           />
         </div>
 
@@ -295,40 +324,71 @@ export function Dashboard() {
               </h3>
             </header>
             <div className="p-6 pt-0">
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={monthly}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}k`} />
-                  <RechartsTooltip
-                    formatter={(value) => formatCurrency(value as number)}
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                    }}
-                  />
-                  <Legend />
-                  <Line
-                    type="monotone"
-                    dataKey="credits"
-                    name="Income"
-                    stroke="#22c55e"
-                    strokeWidth={2}
-                    dot={{ fill: '#22c55e', strokeWidth: 2, r: 4 }}
-                    activeDot={{ r: 6 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="debits"
-                    name="Expenses"
-                    stroke="#ef4444"
-                    strokeWidth={2}
-                    dot={{ fill: '#ef4444', strokeWidth: 2, r: 4 }}
-                    activeDot={{ r: 6 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <div className="flex">
+                {/* Fixed Y-axis */}
+                <div className="flex-shrink-0">
+                  <LineChart
+                    data={monthly}
+                    width={60}
+                    height={300}
+                    margin={{ top: 5, right: 0, left: 0, bottom: 25 }}
+                  >
+                    <YAxis
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}k`}
+                      axisLine={false}
+                      tickLine={false}
+                      width={55}
+                    />
+                  </LineChart>
+                </div>
+                {/* Scrollable chart area */}
+                <div
+                  className="flex-1 overflow-x-auto"
+                  ref={(el) => {
+                    if (el) el.scrollLeft = el.scrollWidth
+                  }}
+                >
+                  <div style={{ width: Math.max(monthly.length * 50, 500) }}>
+                    <LineChart
+                      data={monthly}
+                      width={Math.max(monthly.length * 50, 500)}
+                      height={300}
+                      margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                      <RechartsTooltip
+                        formatter={(value) => formatCurrency(value as number)}
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--card))',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px',
+                        }}
+                      />
+                      <Legend />
+                      <Line
+                        type="monotone"
+                        dataKey="credits"
+                        name="Income"
+                        stroke="#22c55e"
+                        strokeWidth={2}
+                        dot={{ fill: '#22c55e', strokeWidth: 2, r: 4 }}
+                        activeDot={{ r: 6 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="debits"
+                        name="Expenses"
+                        stroke="#ef4444"
+                        strokeWidth={2}
+                        dot={{ fill: '#ef4444', strokeWidth: 2, r: 4 }}
+                        activeDot={{ r: 6 }}
+                      />
+                    </LineChart>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -371,17 +431,18 @@ export function Dashboard() {
             </header>
             <div className="p-6 pt-0">
               <table className="w-full caption-bottom text-sm">
-                <thead className="border-b">
+                <thead className="border-b border-border/40">
                   <tr>
                     <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Date</th>
                     <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Description</th>
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Account</th>
                     <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Amount</th>
                   </tr>
                 </thead>
                 <tbody>
                   {transactions.map((t) => (
                     <TransactionTooltip key={t.id} transaction={t}>
-                      <tr className="border-b transition-colors hover:bg-muted/50 cursor-pointer">
+                      <tr className="border-b border-border/30 transition-colors hover:bg-muted/50 cursor-pointer">
                         <td className="p-4 align-middle text-sm text-muted-foreground">
                           {formatDate(t.date)}
                         </td>
@@ -392,9 +453,12 @@ export function Dashboard() {
                                 t.narration.substring(0, 30)}
                             </span>
                             <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground w-fit mt-1">
-                              {t.category}
+                              {t.category || "Uncategorized"}
                             </span>
                           </div>
+                        </td>
+                        <td className="p-4 align-middle text-sm text-muted-foreground">
+                          {t.bank_account?.nickname || <span className="text-muted-foreground/40">NA</span>}
                         </td>
                         <td className="p-4 align-middle text-right">
                           {t.credit > 0 ? (
@@ -427,17 +491,18 @@ export function Dashboard() {
             </header>
             <div className="p-6 pt-0">
               <table className="w-full caption-bottom text-sm">
-                <thead className="border-b">
+                <thead className="border-b border-border/40">
                   <tr>
                     <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Date</th>
                     <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Description</th>
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Account</th>
                     <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Amount</th>
                   </tr>
                 </thead>
                 <tbody>
                   {topExpenses.map((t) => (
                     <TransactionTooltip key={t.id} transaction={t}>
-                      <tr className="border-b transition-colors hover:bg-muted/50 cursor-pointer">
+                      <tr className="border-b border-border/30 transition-colors hover:bg-muted/50 cursor-pointer">
                         <td className="p-4 align-middle text-sm text-muted-foreground">
                           {formatDate(t.date)}
                         </td>
@@ -448,9 +513,12 @@ export function Dashboard() {
                                 t.narration.substring(0, 30)}
                             </span>
                             <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground w-fit mt-1">
-                              {t.category}
+                              {t.category || "Uncategorized"}
                             </span>
                           </div>
+                        </td>
+                        <td className="p-4 align-middle text-sm text-muted-foreground">
+                          {t.bank_account?.nickname || <span className="text-muted-foreground/40">NA</span>}
                         </td>
                         <td className="p-4 align-middle text-right">
                           <span className="text-red-700 dark:text-red-400 font-medium">

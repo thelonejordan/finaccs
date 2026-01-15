@@ -42,13 +42,14 @@ function AccountForm({
   defaultSourceFile?: string | null
 }) {
   const [saving, setSaving] = useState(false)
+  const initialSourceFiles = account?.source_files || (defaultSourceFile ? [defaultSourceFile] : [])
   const [formData, setFormData] = useState<BankAccountInput>({
     nickname: account?.nickname || "",
     bank_name: account?.bank_name || "",
     account_number: account?.account_number || "",
     ifsc_code: account?.ifsc_code || "",
     branch: account?.branch || "",
-    source_file: account?.source_file || defaultSourceFile || "",
+    source_files: initialSourceFiles,
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -127,11 +128,20 @@ function AccountForm({
             className="w-full px-3 py-1.5 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
           />
         </div>
-        {formData.source_file && (
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Linked Source File</label>
-            <div className="w-full px-3 py-1.5 rounded-md border border-input bg-muted/50 text-sm font-mono truncate">
-              {formData.source_file}
+        {formData.source_files.length > 0 && (
+          <div className="space-y-1 md:col-span-2">
+            <label className="text-xs font-medium text-muted-foreground">
+              Linked Source File{formData.source_files.length > 1 ? 's' : ''}
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {formData.source_files.map((file) => (
+                <div
+                  key={file}
+                  className="px-3 py-1.5 rounded-md border border-input bg-muted/50 text-sm font-mono truncate max-w-xs"
+                >
+                  {file}
+                </div>
+              ))}
             </div>
           </div>
         )}

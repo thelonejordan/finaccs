@@ -18,20 +18,29 @@ import {
   TrendingUpIcon,
   TrendingDownIcon,
   ActivityIcon,
+  Link2Icon,
+  Link2OffIcon,
+  XIcon,
 } from "lucide-react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
+import * as Dialog from "@radix-ui/react-dialog"
+import * as Tooltip from "@radix-ui/react-tooltip"
 import { useTheme } from "@/lib/theme"
 import {
   fetchTransactions,
   fetchCategories,
   fetchBankAccounts,
   updateTransactionCategory,
+  fetchPotentialLinks,
+  linkTransaction,
+  unlinkTransaction,
   type Transaction,
   type CategoryData,
   type BankAccount,
   type TransactionStats,
+  type PotentialLinkTransaction,
 } from "@/lib/api"
 
 function formatCurrency(amount: number): string {
@@ -162,6 +171,211 @@ function CategorySelect({
   )
 }
 
+function LinkDialog({
+  transaction,
+  onLink,
+  onUnlink,
+}: {
+  transaction: Transaction
+  onLink: (linkToId: number) => void
+  onUnlink: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [potentialLinks, setPotentialLinks] = useState<PotentialLinkTransaction[]>([])
+  const [loading, setLoading] = useState(false)
+  const [linking, setLinking] = useState<number | null>(null)
+
+  const isLinked = !!transaction.linked_transaction
+
+  const handleOpenChange = async (isOpen: boolean) => {
+    setOpen(isOpen)
+    if (isOpen && !isLinked) {
+      setLoading(true)
+      try {
+        const result = await fetchPotentialLinks(transaction.id)
+        setPotentialLinks(result.data)
+      } catch (error) {
+        console.error("Failed to fetch potential links:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+  }
+
+  const handleLink = async (linkToId: number) => {
+    setLinking(linkToId)
+    try {
+      await onLink(linkToId)
+      setOpen(false)
+    } finally {
+      setLinking(null)
+    }
+  }
+
+  const handleUnlink = async () => {
+    setLinking(-1)
+    try {
+      await onUnlink()
+      setOpen(false)
+    } finally {
+      setLinking(null)
+    }
+  }
+
+  return (
+    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
+      <Tooltip.Provider>
+        <Tooltip.Root>
+          <Tooltip.Trigger asChild>
+            <Dialog.Trigger asChild>
+              <button
+                className={`p-1 rounded transition-colors ${
+                  isLinked
+                    ? "text-green-600 dark:text-green-400 hover:bg-green-500/10"
+                    : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {isLinked ? (
+                  <Link2Icon className="h-4 w-4" />
+                ) : (
+                  <Link2OffIcon className="h-4 w-4" />
+                )}
+              </button>
+            </Dialog.Trigger>
+          </Tooltip.Trigger>
+          <Tooltip.Portal>
+            <Tooltip.Content
+              className="bg-card text-card-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm"
+              sideOffset={4}
+            >
+              {isLinked
+                ? `Linked to ${transaction.linked_transaction?.bank_account} on ${formatDate(transaction.linked_transaction?.date || "")}`
+                : "Find matching transaction"}
+              <Tooltip.Arrow className="fill-card" />
+            </Tooltip.Content>
+          </Tooltip.Portal>
+        </Tooltip.Root>
+      </Tooltip.Provider>
+
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 animate-in fade-in-0" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card rounded-xl border border-border shadow-xl w-full max-w-lg max-h-[85vh] overflow-hidden animate-in fade-in-0 zoom-in-95">
+          <div className="p-6 border-b border-border">
+            <Dialog.Title className="text-lg font-semibold">
+              {isLinked ? "Linked Transaction" : "Link Transaction"}
+            </Dialog.Title>
+            <Dialog.Description className="text-sm text-muted-foreground mt-1">
+              {isLinked
+                ? "This transaction is linked to a corresponding transaction."
+                : "Find matching transactions from other accounts (same amount, within 7 days)."}
+            </Dialog.Description>
+          </div>
+
+          <div className="p-6">
+            {/* Current transaction info */}
+            <div className="mb-4 p-3 rounded-lg bg-muted/50 border border-border">
+              <p className="text-sm text-muted-foreground mb-1">Current Transaction</p>
+              <p className="font-medium">{formatDate(transaction.date)}</p>
+              <p className="text-sm text-muted-foreground line-clamp-1">{transaction.narration}</p>
+              <p className="text-sm">
+                {transaction.bank_account?.nickname} •{" "}
+                <span className={transaction.debit > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}>
+                  {transaction.debit > 0 ? `-${formatCurrency(transaction.debit)}` : `+${formatCurrency(transaction.credit)}`}
+                </span>
+                {transaction.category && (
+                  <span className="ml-2 text-muted-foreground">• {transaction.category}</span>
+                )}
+              </p>
+            </div>
+
+            {isLinked ? (
+              /* Show linked transaction */
+              <div className="space-y-4">
+                <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                  <p className="text-sm text-muted-foreground mb-1">Linked To</p>
+                  <p className="font-medium">{formatDate(transaction.linked_transaction?.date || "")}</p>
+                  <p className="text-sm">
+                    {transaction.linked_transaction?.bank_account} •{" "}
+                    <span className="text-green-600 dark:text-green-400">
+                      {formatCurrency(transaction.linked_transaction?.amount || 0)}
+                    </span>
+                  </p>
+                </div>
+                <button
+                  onClick={handleUnlink}
+                  disabled={linking !== null}
+                  className="w-full py-2 px-4 rounded-lg border border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors disabled:opacity-50"
+                >
+                  {linking === -1 ? "Unlinking..." : "Unlink Transaction"}
+                </button>
+              </div>
+            ) : (
+              /* Show potential matches */
+              <div>
+                <p className="text-sm font-medium mb-2">Potential Matches (same amount, ±7 days)</p>
+                {loading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                  </div>
+                ) : potentialLinks.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Link2OffIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>No matching transactions found</p>
+                    <p className="text-sm mt-1">
+                      No transactions with matching amount in other accounts within 7 days
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {potentialLinks.map((t) => (
+                      <div
+                        key={t.id}
+                        className="p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium">{formatDate(t.date)}</p>
+                            <p className="text-sm text-muted-foreground line-clamp-1">{t.narration}</p>
+                            <p className="text-sm">
+                              {t.bank_account?.nickname} •{" "}
+                              <span className={t.debit > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}>
+                                {t.debit > 0 ? `-${formatCurrency(t.debit)}` : `+${formatCurrency(t.credit)}`}
+                              </span>
+                              {t.category && (
+                                <span className="ml-2 text-muted-foreground">• {t.category}</span>
+                              )}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleLink(t.id)}
+                            disabled={linking !== null}
+                            className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                          >
+                            {linking === t.id ? "..." : "Link"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <Dialog.Close asChild>
+            <button
+              className="absolute top-4 right-4 p-2 rounded-lg hover:bg-muted transition-colors"
+              aria-label="Close"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+          </Dialog.Close>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
+
 export function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [categories, setCategories] = useState<CategoryData[]>([])
@@ -190,6 +404,24 @@ export function TransactionsPage() {
       console.error("Failed to update category:", error)
     } finally {
       setUpdatingId(null)
+    }
+  }
+
+  const handleLink = async (transactionId: number, linkToId: number) => {
+    try {
+      await linkTransaction(transactionId, linkToId)
+      setRefreshKey((k) => k + 1)
+    } catch (error) {
+      console.error("Failed to link transaction:", error)
+    }
+  }
+
+  const handleUnlink = async (transactionId: number) => {
+    try {
+      await unlinkTransaction(transactionId)
+      setRefreshKey((k) => k + 1)
+    } catch (error) {
+      console.error("Failed to unlink transaction:", error)
     }
   }
 
@@ -363,8 +595,8 @@ export function TransactionsPage() {
                       </Select.Icon>
                     </Select.Trigger>
                     <Select.Portal>
-                      <Select.Content className="bg-card rounded-lg shadow-lg border border-border z-50 overflow-hidden">
-                        <Select.Viewport className="p-1 max-h-60">
+                      <Select.Content className="bg-card rounded-lg shadow-lg border border-border z-50 overflow-hidden" position="popper" sideOffset={4}>
+                        <Select.Viewport className="p-1 max-h-60 overflow-y-auto">
                           <Select.Item
                             value="all"
                             className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
@@ -567,19 +799,20 @@ export function TransactionsPage() {
                 <>
                   <div className="overflow-x-auto">
                     <table className="w-full caption-bottom text-sm">
-                      <thead className="border-b">
+                      <thead className="border-b border-border/40">
                         <tr>
                           <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[100px]">Date</th>
                           <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Description</th>
                           <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Account</th>
                           <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Category</th>
+                          <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground w-[60px]">Link</th>
                           <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Amount</th>
                           <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Balance</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredTransactions.map((t) => (
-                            <tr key={t.id} className="border-b transition-colors hover:bg-muted/50">
+                            <tr key={t.id} className="border-b border-border/30 transition-colors hover:bg-muted/50">
                               <td className="p-4 align-middle text-sm text-muted-foreground whitespace-nowrap">
                                 {formatDate(t.date)}
                               </td>
@@ -604,6 +837,17 @@ export function TransactionsPage() {
                                   onValueChange={(value) => handleCategoryChange(t.id, value)}
                                   disabled={updatingId === t.id}
                                 />
+                              </td>
+                              <td className="p-4 align-middle text-center">
+                                {t.category === "Self Transfer" ? (
+                                  <LinkDialog
+                                    transaction={t}
+                                    onLink={(linkToId) => handleLink(t.id, linkToId)}
+                                    onUnlink={() => handleUnlink(t.id)}
+                                  />
+                                ) : (
+                                  <span className="text-muted-foreground/40 text-xs">—</span>
+                                )}
                               </td>
                               <td className="p-4 align-middle text-right whitespace-nowrap">
                                 {t.credit > 0 ? (

@@ -281,10 +281,15 @@ class Command(BaseCommand):
 
         self.stdout.write(f'Loading transactions from {file_path}')
 
+        # Sync source files from disk to database
+        from bank_accs.views import sync_source_files
+        sync_source_files()
+
         # Find the bank account linked to this source file
-        from bank_accs.models import BankAccount
+        from bank_accs.models import SourceFile
         filename = file_path.name
-        bank_account = BankAccount.objects.filter(source_file=filename).first()
+        source_file = SourceFile.objects.filter(filename=filename).select_related('bank_account').first()
+        bank_account = source_file.bank_account if source_file else None
         if bank_account:
             self.stdout.write(f'Linking transactions to account: {bank_account.nickname}')
         else:

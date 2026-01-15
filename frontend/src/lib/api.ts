@@ -19,6 +19,13 @@ export interface CategoryData {
   amount: number
 }
 
+export interface LinkedTransaction {
+  id: number
+  date: string
+  bank_account: string | null
+  amount: number
+}
+
 export interface Transaction {
   id: number
   date: string
@@ -32,6 +39,7 @@ export interface Transaction {
     id: number
     nickname: string
   } | null
+  linked_transaction: LinkedTransaction | null
 }
 
 export interface TopExpense {
@@ -40,6 +48,10 @@ export interface TopExpense {
   narration: string
   amount: number
   category: string
+  bank_account: {
+    id: number
+    nickname: string
+  } | null
 }
 
 export interface TransactionStats {
@@ -55,7 +67,7 @@ export interface BankAccount {
   account_number: string
   ifsc_code: string
   branch: string
-  source_file: string
+  source_files: string[]
   created_at?: string
   updated_at?: string
   // Transaction stats
@@ -72,12 +84,14 @@ export interface BankAccountInput {
   account_number: string
   ifsc_code: string
   branch: string
-  source_file: string
+  source_files: string[]
 }
 
 export interface SourceFile {
+  id: number
   filename: string
   status: 'parsed' | 'pending'
+  bank_account_id: number | null
   first_transaction_date?: string | null
   last_transaction_date?: string | null
   transaction_count?: number
@@ -164,5 +178,54 @@ export async function updateTransactionCategory(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ category }),
   })
+  return res.json()
+}
+
+export interface PotentialLinkTransaction {
+  id: number
+  date: string
+  narration: string
+  debit: number
+  credit: number
+  category: string
+  bank_account: {
+    id: number
+    nickname: string
+  } | null
+}
+
+export async function fetchPotentialLinks(
+  transactionId: number
+): Promise<{ data: PotentialLinkTransaction[] }> {
+  const res = await fetch(
+    `${API_BASE}/api/transactions/${transactionId}/potential-links/`
+  )
+  return res.json()
+}
+
+export async function linkTransaction(
+  transactionId: number,
+  linkToId: number
+): Promise<{ id: number; linked_transaction: LinkedTransaction }> {
+  const res = await fetch(
+    `${API_BASE}/api/transactions/${transactionId}/link/`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ link_to: linkToId }),
+    }
+  )
+  return res.json()
+}
+
+export async function unlinkTransaction(
+  transactionId: number
+): Promise<{ id: number; linked_transaction: null }> {
+  const res = await fetch(
+    `${API_BASE}/api/transactions/${transactionId}/link/`,
+    {
+      method: "DELETE",
+    }
+  )
   return res.json()
 }

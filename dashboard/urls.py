@@ -10,5 +10,7 @@ urlpatterns = [
     path('api/categories/', views.api_categories, name='api_categories'),
     path('api/transactions/', views.api_transactions, name='api_transactions'),
     path('api/transactions/<int:transaction_id>/', views.api_transaction_update, name='api_transaction_update'),
+    path('api/transactions/<int:transaction_id>/potential-links/', views.api_potential_links, name='api_potential_links'),
+    path('api/transactions/<int:transaction_id>/link/', views.api_link_transaction, name='api_link_transaction'),
     path('api/top-expenses/', views.api_top_expenses, name='api_top_expenses'),
 ]

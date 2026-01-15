@@ -105,7 +105,11 @@ def api_categories(request):
 
 
 def api_transactions(request):
-    transactions = Transaction.objects.all()
+    transactions = Transaction.objects.select_related(
+        'bank_account',
+        'linked_transaction',
+        'linked_transaction__bank_account'
+    ).prefetch_related('linked_from')
 
     # Filter by bank account
     bank_account_id = request.GET.get('bank_account')
@@ -134,6 +138,23 @@ def api_transactions(request):
 
     data = []
     for t in transactions_page:
+        # Get linked transaction (either via linked_transaction or linked_from)
+        linked = t.linked_transaction
+        if not linked:
+            try:
+                linked = t.linked_from
+            except Transaction.DoesNotExist:
+                linked = None
+
+        linked_data = None
+        if linked:
+            linked_data = {
+                'id': linked.id,
+                'date': linked.date.isoformat(),
+                'bank_account': linked.bank_account.nickname if linked.bank_account else None,
+                'amount': float(linked.debit_amount or linked.credit_amount),
+            }
+
         data.append({
             'id': t.id,
             'date': t.date.isoformat(),
@@ -147,6 +168,7 @@ def api_transactions(request):
                 'id': t.bank_account.id,
                 'nickname': t.bank_account.nickname,
             } if t.bank_account else None,
+            'linked_transaction': linked_data,
         })
 
     return JsonResponse({
@@ -168,6 +190,7 @@ def api_top_expenses(request):
     # Exclude self transfers from top expenses
     top_expenses = (
         Transaction.objects
+        .select_related('bank_account')
         .filter(debit_amount__gt=0)
         .exclude(category__in=EXCLUDED_CATEGORIES)
         .order_by('-debit_amount')[:limit]
@@ -181,6 +204,10 @@ def api_top_expenses(request):
             'narration': t.narration,
             'amount': float(t.debit_amount),
             'category': t.category,
+            'bank_account': {
+                'id': t.bank_account.id,
+                'nickname': t.bank_account.nickname,
+            } if t.bank_account else None,
         })
 
     return JsonResponse({'data': data})
@@ -212,4 +239,144 @@ def api_transaction_update(request, transaction_id):
         'balance': float(transaction.closing_balance),
         'category': transaction.category,
         'reference': transaction.reference_number,
+    })
+
+
+def api_potential_links(request, transaction_id):
+    """Find potential matching transactions for linking based on amount, account, and date proximity."""
+    from datetime import timedelta
+
+    try:
+        transaction = Transaction.objects.select_related('bank_account').get(id=transaction_id)
+    except Transaction.DoesNotExist:
+        return JsonResponse({'error': 'Transaction not found'}, status=404)
+
+    # Must have a bank account
+    if not transaction.bank_account:
+        return JsonResponse({'data': []})
+
+    # Date range: look within 7 days before and after
+    date_range_days = int(request.GET.get('days', 7))
+    date_start = transaction.date - timedelta(days=date_range_days)
+    date_end = transaction.date + timedelta(days=date_range_days)
+
+    # Find matching transactions:
+    # - Different bank account
+    # - Not already linked
+    # - Amount matches (debit of one = credit of other)
+    # - Within date proximity
+    potential_matches = Transaction.objects.filter(
+        date__gte=date_start,
+        date__lte=date_end,
+    ).exclude(
+        bank_account=transaction.bank_account
+    ).exclude(
+        bank_account__isnull=True
+    ).exclude(
+        id=transaction.id
+    ).filter(
+        linked_transaction__isnull=True,
+        linked_from__isnull=True
+    ).select_related('bank_account')
+
+    # Match amounts: if this is a debit, look for credits with matching amount
+    if transaction.debit_amount > 0:
+        potential_matches = potential_matches.filter(credit_amount=transaction.debit_amount)
+    elif transaction.credit_amount > 0:
+        potential_matches = potential_matches.filter(debit_amount=transaction.credit_amount)
+    else:
+        return JsonResponse({'data': []})
+
+    # Order by date (closest to transaction date first)
+    potential_matches = list(potential_matches[:20])
+    # Sort by date proximity
+    potential_matches.sort(key=lambda t: abs((t.date - transaction.date).days))
+
+    data = []
+    for t in potential_matches:
+        data.append({
+            'id': t.id,
+            'date': t.date.isoformat(),
+            'narration': t.narration,
+            'debit': float(t.debit_amount),
+            'credit': float(t.credit_amount),
+            'category': t.category,
+            'bank_account': {
+                'id': t.bank_account.id,
+                'nickname': t.bank_account.nickname,
+            } if t.bank_account else None,
+        })
+
+    return JsonResponse({'data': data})
+
+
+@csrf_exempt
+@require_http_methods(["POST", "DELETE"])
+def api_link_transaction(request, transaction_id):
+    """Link or unlink self-transfer transactions."""
+    try:
+        transaction = Transaction.objects.select_related('bank_account', 'linked_transaction').get(id=transaction_id)
+    except Transaction.DoesNotExist:
+        return JsonResponse({'error': 'Transaction not found'}, status=404)
+
+    if request.method == 'DELETE':
+        # Unlink the transaction
+        if transaction.linked_transaction:
+            other = transaction.linked_transaction
+            transaction.linked_transaction = None
+            transaction.save()
+            # Also clear the reverse link if it exists
+            if hasattr(other, 'linked_from') and other.linked_from == transaction:
+                pass  # OneToOne already handles this
+        elif hasattr(transaction, 'linked_from') and transaction.linked_from:
+            other = transaction.linked_from
+            other.linked_transaction = None
+            other.save()
+
+        return JsonResponse({
+            'id': transaction.id,
+            'linked_transaction': None,
+        })
+
+    # POST - Link transactions
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    link_to_id = data.get('link_to')
+    if not link_to_id:
+        return JsonResponse({'error': 'link_to is required'}, status=400)
+
+    try:
+        link_to = Transaction.objects.select_related('bank_account').get(id=link_to_id)
+    except Transaction.DoesNotExist:
+        return JsonResponse({'error': 'Target transaction not found'}, status=404)
+
+    # Validate different bank accounts
+    if transaction.bank_account == link_to.bank_account:
+        return JsonResponse({'error': 'Transactions must be from different bank accounts'}, status=400)
+
+    # Validate neither is already linked
+    if transaction.linked_transaction or (hasattr(transaction, 'linked_from') and transaction.linked_from):
+        return JsonResponse({'error': 'Transaction is already linked'}, status=400)
+    if link_to.linked_transaction or (hasattr(link_to, 'linked_from') and link_to.linked_from):
+        return JsonResponse({'error': 'Target transaction is already linked'}, status=400)
+
+    # Create the link (only one direction needed with OneToOne)
+    transaction.linked_transaction = link_to
+    # Tag both transactions as Self Transfer
+    transaction.category = 'Self Transfer'
+    link_to.category = 'Self Transfer'
+    transaction.save()
+    link_to.save()
+
+    return JsonResponse({
+        'id': transaction.id,
+        'linked_transaction': {
+            'id': link_to.id,
+            'date': link_to.date.isoformat(),
+            'bank_account': link_to.bank_account.nickname if link_to.bank_account else None,
+            'amount': float(link_to.debit_amount or link_to.credit_amount),
+        },
     })

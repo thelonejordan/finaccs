@@ -5,42 +5,57 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 from django.db.models import Min, Max
-from .models import BankAccount
+from .models import BankAccount, SourceFile
 
 # Supported file extensions
 PARSED_EXTENSIONS = ['.txt', '.xlsx', '.xls']  # Supported formats
 PENDING_EXTENSIONS = ['.csv']  # Waiting to be parsed
 
 
+def sync_source_files():
+    """Sync SourceFile model with actual files in data directory."""
+    data_dir = os.path.join(settings.BASE_DIR, 'bank_accs', 'data')
+    if not os.path.exists(data_dir):
+        return
+
+    # Get all files in data directory
+    for f in os.listdir(data_dir):
+        ext = os.path.splitext(f)[1].lower()
+        if ext in PARSED_EXTENSIONS or ext in PENDING_EXTENSIONS:
+            # Create SourceFile if it doesn't exist
+            SourceFile.objects.get_or_create(filename=f)
+
+
 def get_source_files_with_stats():
     """Get list of bank statement files with transaction date ranges."""
     from dashboard.models import Transaction
 
-    data_dir = os.path.join(settings.BASE_DIR, 'bank_accs', 'data')
-    if not os.path.exists(data_dir):
-        return []
-
-    # Get all accounts to map source files to accounts
-    accounts = {acc.source_file: acc for acc in BankAccount.objects.all()}
+    # Sync files from disk to database
+    sync_source_files()
 
     files = []
-    for f in os.listdir(data_dir):
-        ext = os.path.splitext(f)[1].lower()
+    for sf in SourceFile.objects.select_related('bank_account').all():
+        ext = os.path.splitext(sf.filename)[1].lower()
+
         if ext in PARSED_EXTENSIONS:
-            file_info = {'filename': f, 'status': 'parsed'}
+            file_info = {
+                'id': sf.id,
+                'filename': sf.filename,
+                'status': 'parsed',
+                'bank_account_id': sf.bank_account.id if sf.bank_account else None,
+            }
 
             # Get date range from transactions linked to this file's account
-            account = accounts.get(f)
-            if account:
+            if sf.bank_account:
                 date_range = Transaction.objects.filter(
-                    bank_account=account
+                    bank_account=sf.bank_account
                 ).aggregate(
                     first_date=Min('date'),
                     last_date=Max('date')
                 )
                 file_info['first_transaction_date'] = date_range['first_date'].isoformat() if date_range['first_date'] else None
                 file_info['last_transaction_date'] = date_range['last_date'].isoformat() if date_range['last_date'] else None
-                file_info['transaction_count'] = Transaction.objects.filter(bank_account=account).count()
+                file_info['transaction_count'] = Transaction.objects.filter(bank_account=sf.bank_account).count()
             else:
                 file_info['first_transaction_date'] = None
                 file_info['last_transaction_date'] = None
@@ -49,8 +64,10 @@ def get_source_files_with_stats():
             files.append(file_info)
         elif ext in PENDING_EXTENSIONS:
             files.append({
-                'filename': f,
+                'id': sf.id,
+                'filename': sf.filename,
                 'status': 'pending',
+                'bank_account_id': sf.bank_account.id if sf.bank_account else None,
                 'first_transaction_date': None,
                 'last_transaction_date': None,
                 'transaction_count': 0
@@ -93,7 +110,7 @@ def get_account_stats(account):
 def account_list(request):
     if request.method == "GET":
         accounts_data = []
-        for account in BankAccount.objects.all():
+        for account in BankAccount.objects.prefetch_related('source_files').all():
             acc_dict = {
                 'id': account.id,
                 'nickname': account.nickname,
@@ -101,7 +118,7 @@ def account_list(request):
                 'account_number': account.account_number,
                 'ifsc_code': account.ifsc_code,
                 'branch': account.branch,
-                'source_file': account.source_file,
+                'source_files': [sf.filename for sf in account.source_files.all()],
                 'created_at': account.created_at.isoformat() if account.created_at else None,
                 'updated_at': account.updated_at.isoformat() if account.updated_at else None,
             }
@@ -124,8 +141,17 @@ def account_list(request):
                 account_number=data.get('account_number', ''),
                 ifsc_code=data.get('ifsc_code', ''),
                 branch=data.get('branch', ''),
-                source_file=data.get('source_file', ''),
             )
+
+            # Link source files to the account
+            source_files = data.get('source_files', [])
+            if isinstance(source_files, str):
+                source_files = [source_files] if source_files else []
+            for filename in source_files:
+                sf, _ = SourceFile.objects.get_or_create(filename=filename)
+                sf.bank_account = account
+                sf.save()
+
             return JsonResponse({
                 'id': account.id,
                 'nickname': account.nickname,
@@ -133,7 +159,7 @@ def account_list(request):
                 'account_number': account.account_number,
                 'ifsc_code': account.ifsc_code,
                 'branch': account.branch,
-                'source_file': account.source_file,
+                'source_files': [sf.filename for sf in account.source_files.all()],
             }, status=201)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=400)
@@ -143,7 +169,7 @@ def account_list(request):
 @require_http_methods(["GET", "PUT", "DELETE"])
 def account_detail(request, account_id):
     try:
-        account = BankAccount.objects.get(id=account_id)
+        account = BankAccount.objects.prefetch_related('source_files').get(id=account_id)
     except BankAccount.DoesNotExist:
         return JsonResponse({'error': 'Account not found'}, status=404)
 
@@ -155,7 +181,7 @@ def account_detail(request, account_id):
             'account_number': account.account_number,
             'ifsc_code': account.ifsc_code,
             'branch': account.branch,
-            'source_file': account.source_file,
+            'source_files': [sf.filename for sf in account.source_files.all()],
         })
 
     elif request.method == "PUT":
@@ -166,8 +192,30 @@ def account_detail(request, account_id):
             account.account_number = data.get('account_number', account.account_number)
             account.ifsc_code = data.get('ifsc_code', account.ifsc_code)
             account.branch = data.get('branch', account.branch)
-            account.source_file = data.get('source_file', account.source_file)
             account.save()
+
+            # Update source files if provided
+            if 'source_files' in data:
+                new_source_files = data['source_files']
+                if isinstance(new_source_files, str):
+                    new_source_files = [new_source_files] if new_source_files else []
+
+                # Get current filenames
+                current_filenames = set(sf.filename for sf in account.source_files.all())
+                new_filenames = set(new_source_files)
+
+                # Unlink files that are no longer associated
+                for sf in account.source_files.all():
+                    if sf.filename not in new_filenames:
+                        sf.bank_account = None
+                        sf.save()
+
+                # Link new files
+                for filename in new_filenames - current_filenames:
+                    sf, _ = SourceFile.objects.get_or_create(filename=filename)
+                    sf.bank_account = account
+                    sf.save()
+
             return JsonResponse({
                 'id': account.id,
                 'nickname': account.nickname,
@@ -175,7 +223,7 @@ def account_detail(request, account_id):
                 'account_number': account.account_number,
                 'ifsc_code': account.ifsc_code,
                 'branch': account.branch,
-                'source_file': account.source_file,
+                'source_files': [sf.filename for sf in account.source_files.all()],
             })
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=400)

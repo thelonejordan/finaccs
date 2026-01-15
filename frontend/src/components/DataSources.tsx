@@ -12,6 +12,7 @@ import {
   ChevronDownIcon,
   CalendarIcon,
   HashIcon,
+  RefreshCwIcon,
 } from "lucide-react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import { updateBankAccount, type BankAccount, type SourceFile } from "@/lib/api"
@@ -29,15 +30,29 @@ interface DataSourcesProps {
   accounts: BankAccount[]
   onCreateAccount: (filename: string) => void
   onAccountUpdated: (account: BankAccount) => void
+  onRefresh?: () => void
 }
 
-export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountUpdated }: DataSourcesProps) {
+export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountUpdated, onRefresh }: DataSourcesProps) {
   const [isLinking, setIsLinking] = useState(false)
-  // Create a map of source_file -> account for quick lookup
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    if (onRefresh) {
+      setIsRefreshing(true)
+      await onRefresh()
+      setIsRefreshing(false)
+    }
+  }
+
+  // Create a map of source_file -> account using bank_account_id from SourceFile
   const fileToAccount = new Map<string, BankAccount>()
-  accounts.forEach((acc) => {
-    if (acc.source_file) {
-      fileToAccount.set(acc.source_file, acc)
+  sourceFiles.forEach((sf) => {
+    if (sf.bank_account_id) {
+      const account = accounts.find((acc) => acc.id === sf.bank_account_id)
+      if (account) {
+        fileToAccount.set(sf.filename, account)
+      }
     }
   })
 
@@ -48,8 +63,13 @@ export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountU
   const handleLinkToAccount = async (filename: string, accountId: number) => {
     setIsLinking(true)
     try {
-      const updatedAccount = await updateBankAccount(accountId, { source_file: filename })
-      onAccountUpdated(updatedAccount)
+      // Find the account and add the file to its source_files array
+      const account = accounts.find((acc) => acc.id === accountId)
+      if (account) {
+        const newSourceFiles = [...(account.source_files || []), filename]
+        const updatedAccount = await updateBankAccount(accountId, { source_files: newSourceFiles })
+        onAccountUpdated(updatedAccount)
+      }
     } catch (error) {
       console.error("Failed to link account:", error)
     } finally {
@@ -60,11 +80,23 @@ export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountU
   return (
     <section className="rounded-xl border border-border bg-card shadow-sm">
       <header className="p-6 pb-3">
-        <h3 className="font-semibold flex items-center gap-2 text-lg">
-          <div className="p-1.5 rounded-lg bg-muted">
-            <DatabaseIcon className="h-5 w-5 text-muted-foreground" />
+        <h3 className="font-semibold flex items-center justify-between text-lg">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-muted">
+              <DatabaseIcon className="h-5 w-5 text-muted-foreground" />
+            </div>
+            Data Sources
           </div>
-          Data Sources
+          {onRefresh && (
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+              title="Refresh data sources"
+            >
+              <RefreshCwIcon className={`h-4 w-4 text-muted-foreground ${isRefreshing ? 'animate-spin' : ''}`} />
+            </button>
+          )}
         </h3>
       </header>
       <div className="p-6 pt-0">
