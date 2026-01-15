@@ -13,7 +13,12 @@ EXCLUDED_CATEGORIES = ['Self Transfer']
 
 
 def api_summary(request):
-    all_transactions = Transaction.objects.all()
+    # Exclude transactions from disabled source files
+    all_transactions = Transaction.objects.filter(
+        source_file__isnull=True
+    ) | Transaction.objects.filter(
+        source_file__disabled=False
+    )
     from django.db.models import Q
     from bank_accs.models import BankAccount
 
@@ -141,8 +146,11 @@ def api_summary(request):
 
 
 def api_monthly(request):
-    # Exclude self transfers from monthly breakdown
-    transactions = Transaction.objects.exclude(category__in=EXCLUDED_CATEGORIES)
+    from django.db.models import Q
+    # Exclude self transfers and disabled sources from monthly breakdown
+    transactions = Transaction.objects.filter(
+        Q(source_file__isnull=True) | Q(source_file__disabled=False)
+    ).exclude(category__in=EXCLUDED_CATEGORIES)
 
     monthly_data = (
         transactions
@@ -167,10 +175,14 @@ def api_monthly(request):
 
 
 def api_categories(request):
+    from django.db.models import Q
     # Check if we should include all categories (for filtering purposes)
     include_all = request.GET.get('include_all', 'false').lower() == 'true'
 
-    queryset = Transaction.objects.filter(debit_amount__gt=0)
+    # Exclude disabled sources
+    queryset = Transaction.objects.filter(
+        Q(source_file__isnull=True) | Q(source_file__disabled=False)
+    ).filter(debit_amount__gt=0)
 
     # Exclude self transfers from category breakdown unless include_all is set
     if not include_all:
@@ -206,11 +218,15 @@ def api_categories(request):
 
 
 def api_transactions(request):
+    from django.db.models import Q
     transactions = Transaction.objects.select_related(
         'bank_account',
+        'source_file',
         'linked_transaction',
         'linked_transaction__bank_account'
-    ).prefetch_related('linked_from')
+    ).prefetch_related('linked_from').filter(
+        Q(source_file__isnull=True) | Q(source_file__disabled=False)
+    )
 
     # Filter by bank account
     bank_account_id = request.GET.get('bank_account')
@@ -274,6 +290,10 @@ def api_transactions(request):
                 'id': t.bank_account.id,
                 'nickname': t.bank_account.nickname,
             } if t.bank_account else None,
+            'source_file': {
+                'id': t.source_file.id,
+                'filename': t.source_file.filename,
+            } if t.source_file else None,
             'linked_transaction': linked_data,
         })
 
@@ -291,12 +311,14 @@ def api_transactions(request):
 
 
 def api_top_expenses(request):
+    from django.db.models import Q
     limit = int(request.GET.get('limit', 10))
 
-    # Exclude self transfers from top expenses
+    # Exclude self transfers and disabled sources from top expenses
     top_expenses = (
         Transaction.objects
         .select_related('bank_account')
+        .filter(Q(source_file__isnull=True) | Q(source_file__disabled=False))
         .filter(debit_amount__gt=0)
         .exclude(category__in=EXCLUDED_CATEGORIES)
         .order_by('-debit_amount')[:limit]
@@ -382,7 +404,10 @@ def api_potential_links(request, transaction_id):
     # - Not already linked
     # - Amount matches (debit of one = credit of other)
     # - Within date proximity
+    from django.db.models import Q
     potential_matches = Transaction.objects.filter(
+        Q(source_file__isnull=True) | Q(source_file__disabled=False)
+    ).filter(
         date__gte=date_start,
         date__lte=date_end,
     ).exclude(
@@ -681,9 +706,13 @@ def api_inconsistencies(request):
 
     for account in accounts:
         # Get transactions ordered oldest to newest (reverse of default ordering)
+        # Exclude transactions from disabled source files
+        from django.db.models import Q
         transactions = list(
             Transaction.objects
             .filter(bank_account=account)
+            .filter(Q(source_file__isnull=True) | Q(source_file__disabled=False))
+            .select_related('source_file')
             .order_by('date', 'id')  # Oldest first
         )
 
@@ -715,6 +744,10 @@ def api_inconsistencies(request):
                         'id': account.id,
                         'nickname': account.nickname,
                     },
+                    'source_file': {
+                        'id': txn.source_file.id,
+                        'filename': txn.source_file.filename,
+                    } if txn.source_file else None,
                     'previous_transaction': {
                         'id': prev_txn.id,
                         'date': prev_txn.date.isoformat(),

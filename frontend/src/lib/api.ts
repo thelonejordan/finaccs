@@ -59,6 +59,10 @@ export interface Transaction {
     id: number
     nickname: string
   } | null
+  source_file: {
+    id: number
+    filename: string
+  } | null
   linked_transaction: LinkedTransaction | null
 }
 
@@ -112,9 +116,22 @@ export interface SourceFile {
   filename: string
   status: 'parsed' | 'pending'
   bank_account_id: number | null
+  disabled: boolean
   first_transaction_date?: string | null
   last_transaction_date?: string | null
   transaction_count?: number
+}
+
+export async function toggleSourceFileDisabled(
+  sourceFileId: number,
+  disabled: boolean
+): Promise<{ id: number; filename: string; disabled: boolean }> {
+  const res = await fetch(`${API_BASE}/api/source-files/${sourceFileId}/`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ disabled }),
+  })
+  return res.json()
 }
 
 export async function fetchSummary(): Promise<Summary> {
@@ -317,6 +334,10 @@ export interface Inconsistency {
     id: number
     nickname: string
   }
+  source_file: {
+    id: number
+    filename: string
+  } | null
   previous_transaction: PreviousTransaction
 }
 

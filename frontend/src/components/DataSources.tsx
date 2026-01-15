@@ -13,9 +13,12 @@ import {
   CalendarIcon,
   HashIcon,
   RefreshCwIcon,
+  EyeIcon,
+  EyeOffIcon,
 } from "lucide-react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
-import { updateBankAccount, type BankAccount, type SourceFile } from "@/lib/api"
+import * as Tooltip from "@radix-ui/react-tooltip"
+import { updateBankAccount, toggleSourceFileDisabled, type BankAccount, type SourceFile } from "@/lib/api"
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-IN", {
@@ -30,18 +33,32 @@ interface DataSourcesProps {
   accounts: BankAccount[]
   onCreateAccount: (filename: string) => void
   onAccountUpdated: (account: BankAccount) => void
+  onSourceFileUpdated: (sourceFile: SourceFile) => void
   onRefresh?: () => void
 }
 
-export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountUpdated, onRefresh }: DataSourcesProps) {
+export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountUpdated, onSourceFileUpdated, onRefresh }: DataSourcesProps) {
   const [isLinking, setIsLinking] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [togglingId, setTogglingId] = useState<number | null>(null)
 
   const handleRefresh = async () => {
     if (onRefresh) {
       setIsRefreshing(true)
       await onRefresh()
       setIsRefreshing(false)
+    }
+  }
+
+  const handleToggleDisabled = async (file: SourceFile) => {
+    setTogglingId(file.id)
+    try {
+      await toggleSourceFileDisabled(file.id, !file.disabled)
+      onSourceFileUpdated({ ...file, disabled: !file.disabled })
+    } catch (error) {
+      console.error("Failed to toggle source file:", error)
+    } finally {
+      setTogglingId(null)
     }
   }
 
@@ -155,26 +172,59 @@ export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountU
                     return (
                       <div
                         key={file.filename}
-                        className="p-4 rounded-lg border border-border transition-all hover:shadow-md"
+                        className={`p-4 rounded-lg border transition-all hover:shadow-md ${file.disabled ? 'border-border/50 bg-muted/30 opacity-60' : 'border-border'}`}
                       >
                         <div className="flex items-start gap-3">
-                          <div className="p-2.5 rounded-xl bg-muted">
-                            <FileTextIcon className="h-5 w-5 text-muted-foreground" />
+                          <div className={`p-2.5 rounded-xl ${file.disabled ? 'bg-muted/50' : 'bg-muted'}`}>
+                            <FileTextIcon className={`h-5 w-5 ${file.disabled ? 'text-muted-foreground/50' : 'text-muted-foreground'}`} />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-2">
-                              <p className="font-mono text-sm truncate font-medium">{file.filename}</p>
-                              {linkedAccount ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-700 dark:text-green-400 shrink-0">
-                                  <LinkIcon className="h-3 w-3" />
-                                  Linked
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">
-                                  <Link2OffIcon className="h-3 w-3" />
-                                  Not linked
-                                </span>
-                              )}
+                              <p className={`font-mono text-sm truncate font-medium ${file.disabled ? 'line-through text-muted-foreground' : ''}`}>{file.filename}</p>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {file.disabled ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/20 text-red-600 dark:text-red-400">
+                                    <EyeOffIcon className="h-3 w-3" />
+                                    Disabled
+                                  </span>
+                                ) : linkedAccount ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-700 dark:text-green-400">
+                                    <LinkIcon className="h-3 w-3" />
+                                    Linked
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                                    <Link2OffIcon className="h-3 w-3" />
+                                    Not linked
+                                  </span>
+                                )}
+                                <Tooltip.Provider>
+                                  <Tooltip.Root>
+                                    <Tooltip.Trigger asChild>
+                                      <button
+                                        onClick={() => handleToggleDisabled(file)}
+                                        disabled={togglingId === file.id}
+                                        className={`p-1.5 rounded-lg transition-colors ${file.disabled ? 'hover:bg-green-500/20 text-muted-foreground hover:text-green-600' : 'hover:bg-red-500/20 text-muted-foreground hover:text-red-600'} disabled:opacity-50`}
+                                      >
+                                        {file.disabled ? (
+                                          <EyeIcon className="h-4 w-4" />
+                                        ) : (
+                                          <EyeOffIcon className="h-4 w-4" />
+                                        )}
+                                      </button>
+                                    </Tooltip.Trigger>
+                                    <Tooltip.Portal>
+                                      <Tooltip.Content
+                                        className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
+                                        sideOffset={4}
+                                      >
+                                        {file.disabled ? 'Enable this source' : 'Disable this source'}
+                                        <Tooltip.Arrow className="fill-card" />
+                                      </Tooltip.Content>
+                                    </Tooltip.Portal>
+                                  </Tooltip.Root>
+                                </Tooltip.Provider>
+                              </div>
                             </div>
 
                             {/* Date range and transaction count */}

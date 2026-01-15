@@ -9,7 +9,7 @@ from .models import BankAccount, SourceFile
 from dashboard.models import AccountLog, Transaction
 
 # Supported file extensions
-PARSED_EXTENSIONS = ['.txt', '.xlsx', '.xls']  # Supported formats
+PARSED_EXTENSIONS = ['.txt', '.xlsx', '.xls', '.pdf']  # Supported formats
 PENDING_EXTENSIONS = ['.csv']  # Waiting to be parsed
 
 
@@ -44,6 +44,7 @@ def get_source_files_with_stats():
                 'filename': sf.filename,
                 'status': 'parsed',
                 'bank_account_id': sf.bank_account.id if sf.bank_account else None,
+                'disabled': sf.disabled,
             }
 
             # Get date range from transactions linked to this source file
@@ -64,10 +65,14 @@ def get_source_files_with_stats():
                 'filename': sf.filename,
                 'status': 'pending',
                 'bank_account_id': sf.bank_account.id if sf.bank_account else None,
+                'disabled': sf.disabled,
                 'first_transaction_date': None,
                 'last_transaction_date': None,
                 'transaction_count': 0
             })
+
+    # Sort by first_transaction_date descending (newest first, files without transactions go to the end)
+    files.sort(key=lambda f: (f['first_transaction_date'] is not None, f['first_transaction_date'] or ''), reverse=True)
 
     return files
 
@@ -284,3 +289,28 @@ def account_detail(request, account_id):
         )
         account.delete()
         return JsonResponse({'success': True})
+
+
+@csrf_exempt
+@require_http_methods(["PATCH"])
+def source_file_toggle(request, source_file_id):
+    """Toggle the disabled state of a source file."""
+    try:
+        source_file = SourceFile.objects.get(id=source_file_id)
+    except SourceFile.DoesNotExist:
+        return JsonResponse({'error': 'Source file not found'}, status=404)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    if 'disabled' in data:
+        source_file.disabled = data['disabled']
+        source_file.save()
+
+    return JsonResponse({
+        'id': source_file.id,
+        'filename': source_file.filename,
+        'disabled': source_file.disabled,
+    })

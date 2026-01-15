@@ -28,6 +28,7 @@ class SourceFile(models.Model):
     )
     file_hash = models.CharField(max_length=64, blank=True)  # SHA-256 hash
     last_loaded_at = models.DateTimeField(null=True, blank=True)
+    disabled = models.BooleanField(default=False)  # Exclude from calculations when True
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

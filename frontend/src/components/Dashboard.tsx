@@ -245,6 +245,19 @@ export function Dashboard() {
               // Refresh all data that depends on accounts
               setRefreshKey((k) => k + 1)
             }}
+            onSourceFileUpdated={(updatedFile) => {
+              setSourceFiles((prev) => {
+                const existing = prev.findIndex((sf) => sf.id === updatedFile.id)
+                if (existing >= 0) {
+                  const updated = [...prev]
+                  updated[existing] = updatedFile
+                  return updated
+                }
+                return prev
+              })
+              // Refresh all data that depends on source files
+              setRefreshKey((k) => k + 1)
+            }}
             onRefresh={() => setRefreshKey((k) => k + 1)}
           />
         </div>

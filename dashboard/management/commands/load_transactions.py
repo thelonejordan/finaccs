@@ -28,6 +28,12 @@ try:
 except ImportError:
     MSOFFCRYPTO_AVAILABLE = False
 
+try:
+    import pdfplumber
+    PDFPLUMBER_AVAILABLE = True
+except ImportError:
+    PDFPLUMBER_AVAILABLE = False
+
 
 CATEGORY_PATTERNS = {
     'Food Delivery': ['SWIGGY', 'ZOMATO', 'BLINKIT', 'GROFERS'],
@@ -249,8 +255,125 @@ def compute_file_hash(file_path):
     return sha256_hash.hexdigest()
 
 
+def parse_pdf_amount(amount_str):
+    """Parse amount from PDF table cell. Returns 0 for '-' or empty values."""
+    if amount_str is None:
+        return Decimal('0.00')
+    amount_str = str(amount_str).strip()
+    if not amount_str or amount_str == '-':
+        return Decimal('0.00')
+    # Remove commas and clean up
+    cleaned = amount_str.replace(',', '')
+    try:
+        return Decimal(cleaned)
+    except Exception:
+        return Decimal('0.00')
+
+
+def parse_pdf_date(date_str):
+    """Parse date from PDF in DD-MM-YY format."""
+    if date_str is None:
+        return None
+    date_str = str(date_str).strip()
+    # Try DD-MM-YY format (SBI format)
+    try:
+        return datetime.strptime(date_str, '%d-%m-%y').date()
+    except ValueError:
+        pass
+    # Try other formats
+    formats = ['%d-%m-%Y', '%d/%m/%y', '%d/%m/%Y']
+    for fmt in formats:
+        try:
+            return datetime.strptime(date_str, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def is_valid_pdf_transaction_row(row):
+    """Check if a PDF row looks like a valid transaction row."""
+    if not row or len(row) < 5:
+        return False
+
+    # Filter out None values for checking
+    non_empty = [c for c in row if c is not None and str(c).strip()]
+    if len(non_empty) < 3:
+        return False
+
+    # First cell should be a date (DD-MM-YY pattern)
+    first_cell = str(row[0]).strip() if row[0] else ''
+    if not re.match(r'\d{2}-\d{2}-\d{2}', first_cell):
+        return False
+
+    return True
+
+
+def parse_pdf_transactions(pdf, password=None):
+    """Extract transactions from a PDF bank statement."""
+    transactions = []
+
+    for page in pdf.pages:
+        tables = page.extract_tables()
+        for table in tables:
+            if not table:
+                continue
+
+            for row in table:
+                if not is_valid_pdf_transaction_row(row):
+                    continue
+
+                try:
+                    # Row format: Date, Transaction Reference, [None/extra], Ref.No./Chq.No., Credit, Debit, Balance
+                    # Or: Date, Transaction Reference, Ref.No./Chq.No., Credit, Debit, Balance
+                    date_str = str(row[0]).strip()
+                    date = parse_pdf_date(date_str)
+                    if date is None:
+                        continue
+
+                    # Transaction reference (narration) is typically column 1
+                    narration = str(row[1] or '').strip()
+
+                    # Determine column positions based on row length and None positions
+                    # SBI format varies: sometimes has extra None column
+                    if len(row) >= 7:
+                        # Format: Date, Narration, None/extra, Ref, Credit, Debit, Balance
+                        credit = parse_pdf_amount(row[4])
+                        debit = parse_pdf_amount(row[5])
+                        balance = parse_pdf_amount(row[6])
+                        ref = str(row[3] or '').strip()
+                    elif len(row) >= 6:
+                        # Format: Date, Narration, Ref, Credit, Debit, Balance
+                        credit = parse_pdf_amount(row[3])
+                        debit = parse_pdf_amount(row[4])
+                        balance = parse_pdf_amount(row[5])
+                        ref = str(row[2] or '').strip()
+                    else:
+                        continue
+
+                    # Skip rows with no transaction amounts
+                    if credit == 0 and debit == 0:
+                        continue
+
+                    category = categorize_transaction(narration)
+
+                    transactions.append({
+                        'date': date,
+                        'narration': narration,
+                        'value_date': date,  # PDF doesn't have separate value date
+                        'debit_amount': debit,
+                        'credit_amount': credit,
+                        'reference_number': ref,
+                        'closing_balance': balance,
+                        'category': category,
+                    })
+                except (ValueError, IndexError, TypeError):
+                    continue
+
+    return transactions
+
+
 class Command(BaseCommand):
-    help = 'Load transactions from bank statement file (.txt or .xlsx)'
+    help = 'Load transactions from bank statement file (.txt, .xlsx, or .pdf)'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -300,8 +423,8 @@ class Command(BaseCommand):
 
         if not file_path:
             data_dir = Path('bank_accs/data')
-            # Look for both txt and xlsx files
-            files = list(data_dir.glob('*.txt')) + list(data_dir.glob('*.xlsx')) + list(data_dir.glob('*.xls'))
+            # Look for txt, xlsx, and pdf files
+            files = list(data_dir.glob('*.txt')) + list(data_dir.glob('*.xlsx')) + list(data_dir.glob('*.xls')) + list(data_dir.glob('*.pdf'))
             if not files:
                 self.stderr.write(self.style.ERROR('No statement files found in bank_accs/data/'))
                 return
@@ -319,7 +442,7 @@ class Command(BaseCommand):
     def load_all_files(self, password=None):
         """Load all files from bank_accs/data/"""
         data_dir = Path('bank_accs/data')
-        files = list(data_dir.glob('*.txt')) + list(data_dir.glob('*.xlsx')) + list(data_dir.glob('*.xls'))
+        files = list(data_dir.glob('*.txt')) + list(data_dir.glob('*.xlsx')) + list(data_dir.glob('*.xls')) + list(data_dir.glob('*.pdf'))
 
         if not files:
             self.stderr.write(self.style.ERROR('No statement files found in bank_accs/data/'))
@@ -384,6 +507,8 @@ class Command(BaseCommand):
         suffix = file_path.suffix.lower()
         if suffix in ['.xlsx', '.xls']:
             transactions_created, category_counts = self.load_xlsx(file_path, password, bank_account, source_file)
+        elif suffix == '.pdf':
+            transactions_created, category_counts = self.load_pdf(file_path, password, bank_account, source_file)
         else:
             transactions_created, category_counts = self.load_txt(file_path, bank_account, source_file)
 
@@ -504,3 +629,61 @@ class Command(BaseCommand):
                 continue
 
         return transactions_created, category_counts
+
+    def load_pdf(self, file_path, password=None, bank_account=None, source_file=None):
+        """Load transactions from a PDF bank statement."""
+        if not PDFPLUMBER_AVAILABLE:
+            self.stderr.write(self.style.ERROR('pdfplumber is required for PDF parsing. Install with: uv add pdfplumber'))
+            return 0, {}
+
+        # Try passwords in order: provided, env var, empty
+        env_password = os.getenv('PDF_PASSWORD') or os.getenv('XLSX_PASSWORD')
+        passwords_to_try = []
+        if password:
+            passwords_to_try.append(password)
+        if env_password:
+            passwords_to_try.append(env_password)
+        passwords_to_try.append(None)  # Try without password
+
+        pdf = None
+        for pwd in passwords_to_try:
+            try:
+                pdf = pdfplumber.open(file_path, password=pwd)
+                break
+            except Exception:
+                continue
+
+        if pdf is None:
+            self.stderr.write(self.style.ERROR(
+                f'Failed to open PDF file. Set PDF_PASSWORD in .env or use --password option.'
+            ))
+            return 0, {}
+
+        try:
+            self.stdout.write(f'  PDF has {len(pdf.pages)} pages')
+
+            # Parse transactions from PDF
+            transactions = parse_pdf_transactions(pdf)
+
+            self.stdout.write(f'  Found {len(transactions)} transactions in PDF')
+
+            # Save to database
+            transactions_created = 0
+            category_counts = {}
+            for txn_data in transactions:
+                try:
+                    Transaction.objects.create(
+                        **txn_data,
+                        bank_account=bank_account,
+                        source_file=source_file,
+                    )
+                    category = txn_data.get('category', 'Uncategorized')
+                    category_counts[category] = category_counts.get(category, 0) + 1
+                    transactions_created += 1
+                except Exception as e:
+                    self.stderr.write(f'Error saving transaction: {e}')
+                    continue
+
+            return transactions_created, category_counts
+        finally:
+            pdf.close()

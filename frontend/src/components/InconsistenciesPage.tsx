@@ -13,6 +13,7 @@ import {
   CheckCircleIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
+import * as Tooltip from "@radix-ui/react-tooltip"
 import { Header } from "@/components/Header"
 import {
   fetchInconsistencies,
@@ -210,6 +211,7 @@ export function InconsistenciesPage() {
                       <tr>
                         <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Date</th>
                         <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Account</th>
+                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Source</th>
                         <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Description</th>
                         <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Amount</th>
                         <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Expected</th>
@@ -227,9 +229,48 @@ export function InconsistenciesPage() {
                             {item.bank_account.nickname}
                           </td>
                           <td className="p-4 align-middle">
-                            <span className="text-sm line-clamp-2" title={item.narration}>
-                              {item.narration}
-                            </span>
+                            {item.source_file ? (
+                              <Tooltip.Provider>
+                                <Tooltip.Root>
+                                  <Tooltip.Trigger asChild>
+                                    <span className="text-sm text-muted-foreground whitespace-nowrap truncate max-w-[120px] inline-block cursor-default">
+                                      {item.source_file.filename}
+                                    </span>
+                                  </Tooltip.Trigger>
+                                  <Tooltip.Portal>
+                                    <Tooltip.Content
+                                      className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
+                                      sideOffset={4}
+                                    >
+                                      {item.source_file.filename}
+                                      <Tooltip.Arrow className="fill-card" />
+                                    </Tooltip.Content>
+                                  </Tooltip.Portal>
+                                </Tooltip.Root>
+                              </Tooltip.Provider>
+                            ) : (
+                              <span className="text-sm text-muted-foreground/50">—</span>
+                            )}
+                          </td>
+                          <td className="p-4 align-middle">
+                            <Tooltip.Provider>
+                              <Tooltip.Root>
+                                <Tooltip.Trigger asChild>
+                                  <span className="text-sm line-clamp-2 cursor-default">
+                                    {item.narration}
+                                  </span>
+                                </Tooltip.Trigger>
+                                <Tooltip.Portal>
+                                  <Tooltip.Content
+                                    className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm max-w-md"
+                                    sideOffset={4}
+                                  >
+                                    {item.narration}
+                                    <Tooltip.Arrow className="fill-card" />
+                                  </Tooltip.Content>
+                                </Tooltip.Portal>
+                              </Tooltip.Root>
+                            </Tooltip.Provider>
                           </td>
                           <td className="p-4 align-middle text-right whitespace-nowrap">
                             {item.credit > 0 ? (

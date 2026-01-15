@@ -520,6 +520,11 @@ export function TransactionsPage() {
       )
     : transactions
 
+  // Filter source files by selected bank account
+  const filteredSourceFiles = selectedBankAccount
+    ? sourceFiles.filter((sf) => sf.bank_account_id === selectedBankAccount)
+    : sourceFiles
+
   const totalPages = Math.ceil(total / pageSize)
 
   return (
@@ -643,7 +648,15 @@ export function TransactionsPage() {
                   <Select.Root
                     value={selectedBankAccount?.toString() || "all"}
                     onValueChange={(value) => {
-                      setSelectedBankAccount(value === "all" ? null : parseInt(value, 10))
+                      const newBankAccount = value === "all" ? null : parseInt(value, 10)
+                      setSelectedBankAccount(newBankAccount)
+                      // Reset source file if it's not linked to the new bank account
+                      if (selectedSourceFile && newBankAccount) {
+                        const sourceFile = sourceFiles.find((sf) => sf.id === selectedSourceFile)
+                        if (sourceFile && sourceFile.bank_account_id !== newBankAccount) {
+                          setSelectedSourceFile(null)
+                        }
+                      }
                       setPage(1)
                     }}
                   >
@@ -692,7 +705,7 @@ export function TransactionsPage() {
                 )}
 
                 {/* Source File Filter */}
-                {sourceFiles.length > 0 && (
+                {filteredSourceFiles.length > 0 && (
                   <Select.Root
                     value={selectedSourceFile?.toString() || "all"}
                     onValueChange={(value) => {
@@ -721,7 +734,7 @@ export function TransactionsPage() {
                               <CheckIcon className="h-4 w-4" />
                             </Select.ItemIndicator>
                           </Select.Item>
-                          {sourceFiles.map((file) => (
+                          {filteredSourceFiles.map((file) => (
                             <Select.Item
                               key={file.id}
                               value={file.id.toString()}
@@ -814,6 +827,7 @@ export function TransactionsPage() {
                           <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[100px]">Date</th>
                           <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Description</th>
                           <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Account</th>
+                          <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Source</th>
                           <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Category</th>
                           <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground w-[60px]">Link</th>
                           <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Amount</th>
@@ -827,15 +841,54 @@ export function TransactionsPage() {
                                 {formatDate(t.date)}
                               </td>
                               <td className="p-4 align-middle">
-                                <span className="text-sm line-clamp-2">
-                                  {t.narration}
-                                </span>
+                                <Tooltip.Provider>
+                                  <Tooltip.Root>
+                                    <Tooltip.Trigger asChild>
+                                      <span className="text-sm line-clamp-2 cursor-default">
+                                        {t.narration}
+                                      </span>
+                                    </Tooltip.Trigger>
+                                    <Tooltip.Portal>
+                                      <Tooltip.Content
+                                        className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm max-w-md"
+                                        sideOffset={4}
+                                      >
+                                        {t.narration}
+                                        <Tooltip.Arrow className="fill-card" />
+                                      </Tooltip.Content>
+                                    </Tooltip.Portal>
+                                  </Tooltip.Root>
+                                </Tooltip.Provider>
                               </td>
                               <td className="p-4 align-middle">
                                 {t.bank_account ? (
                                   <span className="text-sm text-muted-foreground whitespace-nowrap">
                                     {t.bank_account.nickname}
                                   </span>
+                                ) : (
+                                  <span className="text-sm text-muted-foreground/50">—</span>
+                                )}
+                              </td>
+                              <td className="p-4 align-middle">
+                                {t.source_file ? (
+                                  <Tooltip.Provider>
+                                    <Tooltip.Root>
+                                      <Tooltip.Trigger asChild>
+                                        <span className="text-sm text-muted-foreground whitespace-nowrap truncate max-w-[120px] inline-block cursor-default">
+                                          {t.source_file.filename}
+                                        </span>
+                                      </Tooltip.Trigger>
+                                      <Tooltip.Portal>
+                                        <Tooltip.Content
+                                          className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
+                                          sideOffset={4}
+                                        >
+                                          {t.source_file.filename}
+                                          <Tooltip.Arrow className="fill-card" />
+                                        </Tooltip.Content>
+                                      </Tooltip.Portal>
+                                    </Tooltip.Root>
+                                  </Tooltip.Provider>
                                 ) : (
                                   <span className="text-sm text-muted-foreground/50">—</span>
                                 )}
