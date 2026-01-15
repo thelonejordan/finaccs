@@ -323,8 +323,10 @@ def parse_pdf_transactions(pdf, password=None):
                     continue
 
                 try:
-                    # Row format: Date, Transaction Reference, [None/extra], Ref.No./Chq.No., Credit, Debit, Balance
-                    # Or: Date, Transaction Reference, Ref.No./Chq.No., Credit, Debit, Balance
+                    # Row format varies but last 3 columns are always: Credit, Debit, Balance
+                    # Examples:
+                    #   len=7: Date, Narration, None, Ref, Credit, Debit, Balance
+                    #   len=8: Date, Narration, None, None, Ref, Credit, Debit, Balance
                     date_str = str(row[0]).strip()
                     date = parse_pdf_date(date_str)
                     if date is None:
@@ -333,20 +335,13 @@ def parse_pdf_transactions(pdf, password=None):
                     # Transaction reference (narration) is typically column 1
                     narration = str(row[1] or '').strip()
 
-                    # Determine column positions based on row length and None positions
-                    # SBI format varies: sometimes has extra None column
-                    if len(row) >= 7:
-                        # Format: Date, Narration, None/extra, Ref, Credit, Debit, Balance
-                        credit = parse_pdf_amount(row[4])
-                        debit = parse_pdf_amount(row[5])
-                        balance = parse_pdf_amount(row[6])
-                        ref = str(row[3] or '').strip()
-                    elif len(row) >= 6:
-                        # Format: Date, Narration, Ref, Credit, Debit, Balance
-                        credit = parse_pdf_amount(row[3])
-                        debit = parse_pdf_amount(row[4])
-                        balance = parse_pdf_amount(row[5])
-                        ref = str(row[2] or '').strip()
+                    # Use negative indexing - last 3 columns are always Credit, Debit, Balance
+                    if len(row) >= 6:
+                        credit = parse_pdf_amount(row[-3])
+                        debit = parse_pdf_amount(row[-2])
+                        balance = parse_pdf_amount(row[-1])
+                        # Ref is typically at index -4 or column before Credit
+                        ref = str(row[-4] or '').strip() if len(row) >= 7 else ''
                     else:
                         continue
 

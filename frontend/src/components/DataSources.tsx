@@ -94,6 +94,46 @@ export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountU
     }
   }
 
+  const handleUnlinkFromAccount = async (filename: string, currentAccountId: number) => {
+    setIsLinking(true)
+    try {
+      const account = accounts.find((acc) => acc.id === currentAccountId)
+      if (account) {
+        const newSourceFiles = (account.source_files || []).filter((f) => f !== filename)
+        const updatedAccount = await updateBankAccount(currentAccountId, { source_files: newSourceFiles })
+        onAccountUpdated(updatedAccount)
+      }
+    } catch (error) {
+      console.error("Failed to unlink account:", error)
+    } finally {
+      setIsLinking(false)
+    }
+  }
+
+  const handleChangeLinkToAccount = async (filename: string, currentAccountId: number, newAccountId: number) => {
+    setIsLinking(true)
+    try {
+      // Remove from current account
+      const currentAccount = accounts.find((acc) => acc.id === currentAccountId)
+      if (currentAccount) {
+        const newCurrentSourceFiles = (currentAccount.source_files || []).filter((f) => f !== filename)
+        const updatedCurrentAccount = await updateBankAccount(currentAccountId, { source_files: newCurrentSourceFiles })
+        onAccountUpdated(updatedCurrentAccount)
+      }
+      // Add to new account
+      const newAccount = accounts.find((acc) => acc.id === newAccountId)
+      if (newAccount) {
+        const newSourceFiles = [...(newAccount.source_files || []), filename]
+        const updatedNewAccount = await updateBankAccount(newAccountId, { source_files: newSourceFiles })
+        onAccountUpdated(updatedNewAccount)
+      }
+    } catch (error) {
+      console.error("Failed to change link:", error)
+    } finally {
+      setIsLinking(false)
+    }
+  }
+
   return (
     <section className="rounded-xl border border-border bg-card shadow-sm">
       <header className="p-6 pb-3">
@@ -245,10 +285,55 @@ export function DataSources({ sourceFiles, accounts, onCreateAccount, onAccountU
 
                             {linkedAccount ? (
                               <div className="mt-2 flex items-center gap-2 flex-wrap text-sm">
-                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/50">
-                                  <BuildingIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                                  <span className="font-medium">{linkedAccount.nickname}</span>
-                                </div>
+                                <DropdownMenu.Root>
+                                  <DropdownMenu.Trigger asChild>
+                                    <button className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 hover:bg-blue-500/25 text-blue-600 dark:text-blue-400 transition-colors cursor-pointer">
+                                      <BuildingIcon className="h-3.5 w-3.5" />
+                                      <span className="font-medium">{linkedAccount.nickname}</span>
+                                      <ChevronDownIcon className="h-3 w-3 opacity-60" />
+                                    </button>
+                                  </DropdownMenu.Trigger>
+                                  <DropdownMenu.Portal>
+                                    <DropdownMenu.Content
+                                      className="w-64 bg-card rounded-lg shadow-lg border border-border z-50 p-2 animate-in fade-in-0 zoom-in-95"
+                                      sideOffset={4}
+                                      align="start"
+                                    >
+                                      {accounts.filter((acc) => acc.id !== linkedAccount.id).length > 0 && (
+                                        <>
+                                          <DropdownMenu.Label className="text-xs font-medium text-muted-foreground px-2 py-1">
+                                            Change to different account
+                                          </DropdownMenu.Label>
+                                          {accounts.filter((acc) => acc.id !== linkedAccount.id).map((acc) => (
+                                            <DropdownMenu.Item
+                                              key={acc.id}
+                                              disabled={isLinking}
+                                              onSelect={() => handleChangeLinkToAccount(file.filename, linkedAccount.id, acc.id)}
+                                              className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none disabled:opacity-50"
+                                            >
+                                              <BuildingIcon className="h-4 w-4 text-muted-foreground" />
+                                              <div className="flex-1 min-w-0">
+                                                <p className="font-medium truncate">{acc.nickname}</p>
+                                                <p className="text-xs text-muted-foreground truncate">
+                                                  {acc.bank_name} • ****{acc.account_number.slice(-4)}
+                                                </p>
+                                              </div>
+                                            </DropdownMenu.Item>
+                                          ))}
+                                          <DropdownMenu.Separator className="h-px bg-border my-1" />
+                                        </>
+                                      )}
+                                      <DropdownMenu.Item
+                                        disabled={isLinking}
+                                        onSelect={() => handleUnlinkFromAccount(file.filename, linkedAccount.id)}
+                                        className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-red-500/10 text-red-600 dark:text-red-400 transition-colors cursor-pointer outline-none disabled:opacity-50"
+                                      >
+                                        <Link2OffIcon className="h-4 w-4" />
+                                        Unlink from account
+                                      </DropdownMenu.Item>
+                                    </DropdownMenu.Content>
+                                  </DropdownMenu.Portal>
+                                </DropdownMenu.Root>
                                 <span className="text-muted-foreground">
                                   {linkedAccount.bank_name} • <span className="font-mono">****{linkedAccount.account_number.slice(-4)}</span>
                                 </span>
