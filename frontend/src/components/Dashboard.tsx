@@ -449,11 +449,11 @@ export function Dashboard() {
               {/* Fixed Legend */}
               <div className="flex items-center justify-center gap-6 mb-3 text-sm">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-green-500" />
+                  <div className="w-3 h-3 rounded-full bg-(--color-income)" />
                   <span className="text-muted-foreground">Income</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-red-500" />
+                  <div className="w-3 h-3 rounded-full bg-(--color-expense)" />
                   <span className="text-muted-foreground">Expenses</span>
                 </div>
               </div>
@@ -520,18 +520,18 @@ export function Dashboard() {
                         type="monotone"
                         dataKey="credits"
                         name="Income"
-                        stroke="#22c55e"
+                        stroke="var(--color-income)"
                         strokeWidth={2}
-                        dot={{ fill: '#22c55e', strokeWidth: 2, r: 4 }}
+                        dot={{ fill: 'var(--color-income)', strokeWidth: 2, r: 4 }}
                         activeDot={{ r: 6 }}
                       />
                       <Line
                         type="monotone"
                         dataKey="debits"
                         name="Expenses"
-                        stroke="#ef4444"
+                        stroke="var(--color-expense)"
                         strokeWidth={2}
-                        dot={{ fill: '#ef4444', strokeWidth: 2, r: 4 }}
+                        dot={{ fill: 'var(--color-expense)', strokeWidth: 2, r: 4 }}
                         activeDot={{ r: 6 }}
                       />
                     </LineChart>

@@ -1,3 +1,4 @@
+import fnmatch
 import hashlib
 import io
 import os
@@ -255,6 +256,16 @@ def compute_file_hash(file_path):
     return sha256_hash.hexdigest()
 
 
+def find_matching_pipeline(filename):
+    """Find a pipeline that matches the given filename based on file_pattern."""
+    from bank_accs.models import ExtractionPipeline
+
+    for pipeline in ExtractionPipeline.objects.all():
+        if pipeline.file_pattern and fnmatch.fnmatch(filename, pipeline.file_pattern):
+            return pipeline
+    return None
+
+
 def parse_pdf_amount(amount_str):
     """Parse amount from PDF table cell. Returns 0 for '-' or empty values."""
     if amount_str is None:
@@ -467,7 +478,26 @@ class Command(BaseCommand):
         # Find or create the source file record
         from bank_accs.models import SourceFile
         source_file, _ = SourceFile.objects.get_or_create(filename=filename)
+
+        # Find matching pipeline for this file
+        pipeline = source_file.pipeline or find_matching_pipeline(filename)
+        if pipeline and not source_file.pipeline:
+            source_file.pipeline = pipeline
+            source_file.save(update_fields=['pipeline'])
+            self.stdout.write(f'  Matched pipeline: {pipeline.name}')
+
+        # Use pipeline password if no password provided
+        if not password and pipeline and pipeline.password:
+            password = pipeline.password
+            self.stdout.write(f'  Using password from pipeline: {pipeline.name}')
+
+        # Use pipeline's default bank account if source file not linked
         bank_account = source_file.bank_account
+        if not bank_account and pipeline and pipeline.default_bank_account:
+            bank_account = pipeline.default_bank_account
+            source_file.bank_account = bank_account
+            source_file.save(update_fields=['bank_account'])
+            self.stdout.write(f'  Auto-linked to account: {bank_account.nickname} (from pipeline)')
 
         # Compute file hash
         current_hash = compute_file_hash(file_path)

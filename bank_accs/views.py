@@ -5,7 +5,7 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 from django.db.models import Min, Max
-from .models import BankAccount, SourceFile
+from .models import BankAccount, SourceFile, ExtractionPipeline
 from dashboard.models import AccountLog, Transaction
 
 # Supported file extensions
@@ -314,3 +314,24 @@ def source_file_toggle(request, source_file_id):
         'filename': source_file.filename,
         'disabled': source_file.disabled,
     })
+
+
+@require_http_methods(["GET"])
+def pipeline_list(request):
+    """List all extraction pipelines with their associated source files."""
+    pipelines = []
+    for pipeline in ExtractionPipeline.objects.select_related('default_bank_account').prefetch_related('source_files').all():
+        pipelines.append({
+            'id': pipeline.id,
+            'name': pipeline.name,
+            'extractor': pipeline.extractor,
+            'file_pattern': pipeline.file_pattern,
+            'has_password': bool(pipeline.password),
+            'default_bank_account_id': pipeline.default_bank_account.id if pipeline.default_bank_account else None,
+            'default_bank_account_name': pipeline.default_bank_account.nickname if pipeline.default_bank_account else None,
+            'description': pipeline.description,
+            'source_file_count': pipeline.source_files.count(),
+            'source_files': [sf.filename for sf in pipeline.source_files.all()],
+        })
+
+    return JsonResponse({'pipelines': pipelines})

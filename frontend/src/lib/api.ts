@@ -155,6 +155,8 @@ export async function fetchTransactions(params?: {
   type?: string
   bank_account?: number
   source_file?: number
+  year?: number
+  month?: number
   limit?: number
   offset?: number
 }): Promise<{ data: Transaction[]; total: number; stats: TransactionStats }> {
@@ -163,6 +165,8 @@ export async function fetchTransactions(params?: {
   if (params?.type) searchParams.set("type", params.type)
   if (params?.bank_account) searchParams.set("bank_account", params.bank_account.toString())
   if (params?.source_file) searchParams.set("source_file", params.source_file.toString())
+  if (params?.year) searchParams.set("year", params.year.toString())
+  if (params?.month) searchParams.set("month", params.month.toString())
   if (params?.limit) searchParams.set("limit", params.limit.toString())
   if (params?.offset) searchParams.set("offset", params.offset.toString())
 
@@ -352,5 +356,14 @@ export async function fetchInconsistencies(params?: {
   if (params?.offset) searchParams.set("offset", params.offset.toString())
 
   const res = await fetch(`${API_BASE}/api/inconsistencies/?${searchParams}`)
+  return res.json()
+}
+
+export interface DateRange {
+  years: Record<string, number[]>  // { "2024": [1, 2, 3, ...], "2023": [...] }
+}
+
+export async function fetchDateRange(): Promise<DateRange> {
+  const res = await fetch(`${API_BASE}/api/date-range/`)
   return res.json()
 }

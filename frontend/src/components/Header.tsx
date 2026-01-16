@@ -6,6 +6,7 @@ import {
   CheckIcon,
   LayoutDashboardIcon,
   ListIcon,
+  CalendarIcon,
   AlertTriangleIcon,
   ScrollTextIcon,
 } from "lucide-react"
@@ -15,6 +16,7 @@ import { useTheme } from "@/lib/theme"
 const NAV_ITEMS = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboardIcon },
   { path: "/transactions", label: "Transactions", icon: ListIcon },
+  { path: "/transactions-modern", label: "Monthly", icon: CalendarIcon },
   { path: "/inconsistencies", label: "Inconsistencies", icon: AlertTriangleIcon },
   { path: "/logs", label: "Activity Log", icon: ScrollTextIcon },
 ]

@@ -248,6 +248,14 @@ def api_transactions(request):
     if source_file_id:
         transactions = transactions.filter(source_file_id=source_file_id)
 
+    # Filter by year and month
+    year = request.GET.get('year')
+    month = request.GET.get('month')
+    if year:
+        transactions = transactions.filter(date__year=int(year))
+    if month:
+        transactions = transactions.filter(date__month=int(month))
+
     # Calculate aggregate stats based on filtered results
     total_credits = transactions.aggregate(total=Sum('credit_amount'))['total'] or 0
     total_debits = transactions.aggregate(total=Sum('debit_amount'))['total'] or 0
@@ -680,6 +688,27 @@ def api_transaction_logs(request):
         'limit': limit,
         'offset': offset,
     })
+
+
+def api_date_range(request):
+    """Get available years and months with transaction data."""
+    from django.db.models import Q
+
+    # Get all distinct months with transactions (excluding disabled sources)
+    dates = Transaction.objects.filter(
+        Q(source_file__isnull=True) | Q(source_file__disabled=False)
+    ).dates('date', 'month', order='ASC')
+
+    # Group by year
+    years = {}
+    for d in dates:
+        year = str(d.year)
+        month = d.month
+        if year not in years:
+            years[year] = []
+        years[year].append(month)
+
+    return JsonResponse({'years': years})
 
 
 def api_inconsistencies(request):

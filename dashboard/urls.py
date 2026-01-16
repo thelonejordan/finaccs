@@ -15,4 +15,5 @@ urlpatterns = [
     path('api/top-expenses/', views.api_top_expenses, name='api_top_expenses'),
     path('api/logs/', views.api_transaction_logs, name='api_transaction_logs'),
     path('api/inconsistencies/', views.api_inconsistencies, name='api_inconsistencies'),
+    path('api/date-range/', views.api_date_range, name='api_date_range'),
 ]
