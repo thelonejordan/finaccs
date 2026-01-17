@@ -1,10 +1,31 @@
 import json
 import os
 from django.http import JsonResponse
-from django.views.decorators.http import require_http_methods
-from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 from django.db.models import Min, Max
+from rest_framework.decorators import api_view
+
+# Conditional import for API docs (dev only)
+try:
+    from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
+    from drf_spectacular.types import OpenApiTypes
+except ImportError:
+    # No-op decorator and mocks when drf-spectacular is not installed
+    def extend_schema(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+    class _MockCallable:
+        QUERY = 'query'
+        PATH = 'path'
+        def __init__(self, *args, **kwargs):
+            pass
+
+    OpenApiParameter = _MockCallable
+    OpenApiExample = _MockCallable
+    OpenApiTypes = type('OpenApiTypes', (), {'OBJECT': object, 'INT': int, 'STR': str, 'BOOL': bool})()
+
 from .models import BankAccount, SourceFile, ExtractionPipeline
 from dashboard.models import AccountLog, Transaction
 
@@ -113,8 +134,37 @@ def get_account_stats(account):
     }
 
 
-@csrf_exempt
-@require_http_methods(["GET", "POST"])
+@extend_schema(
+    methods=['GET'],
+    operation_id='accounts_list',
+    summary="List bank accounts",
+    description="Get all bank accounts with their transaction statistics and linked source files.",
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Bank Accounts'],
+)
+@extend_schema(
+    methods=['POST'],
+    summary="Create bank account",
+    description="Create a new bank account and optionally link source files.",
+    request=OpenApiTypes.OBJECT,
+    responses={201: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+    tags=['Bank Accounts'],
+    examples=[
+        OpenApiExample(
+            'Create account',
+            value={
+                'nickname': 'My Savings',
+                'bank_name': 'HDFC Bank',
+                'account_number': '1234567890',
+                'ifsc_code': 'HDFC0001234',
+                'branch': 'Main Branch',
+                'source_files': ['statement1.pdf']
+            },
+            request_only=True,
+        )
+    ],
+)
+@api_view(['GET', 'POST'])
 def account_list(request):
     if request.method == "GET":
         accounts_data = []
@@ -189,8 +239,30 @@ def account_list(request):
             return JsonResponse({'error': str(e)}, status=400)
 
 
-@csrf_exempt
-@require_http_methods(["GET", "PUT", "DELETE"])
+@extend_schema(
+    methods=['GET'],
+    operation_id='accounts_detail',
+    summary="Get bank account",
+    description="Get details of a specific bank account.",
+    responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Bank Accounts'],
+)
+@extend_schema(
+    methods=['PUT'],
+    summary="Update bank account",
+    description="Update bank account details and source file linkage.",
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Bank Accounts'],
+)
+@extend_schema(
+    methods=['DELETE'],
+    summary="Delete bank account",
+    description="Delete a bank account.",
+    responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Bank Accounts'],
+)
+@api_view(['GET', 'PUT', 'DELETE'])
 def account_detail(request, account_id):
     try:
         account = BankAccount.objects.prefetch_related('source_files').get(id=account_id)
@@ -291,8 +363,21 @@ def account_detail(request, account_id):
         return JsonResponse({'success': True})
 
 
-@csrf_exempt
-@require_http_methods(["PATCH"])
+@extend_schema(
+    summary="Toggle source file",
+    description="Toggle the disabled state of a bank account source file.",
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Bank Accounts'],
+    examples=[
+        OpenApiExample(
+            'Toggle disabled',
+            value={'disabled': True},
+            request_only=True,
+        )
+    ],
+)
+@api_view(['PATCH'])
 def source_file_toggle(request, source_file_id):
     """Toggle the disabled state of a source file."""
     try:
@@ -316,7 +401,13 @@ def source_file_toggle(request, source_file_id):
     })
 
 
-@require_http_methods(["GET"])
+@extend_schema(
+    summary="List extraction pipelines",
+    description="Get all extraction pipelines with their associated source files.",
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Bank Accounts'],
+)
+@api_view(['GET'])
 def pipeline_list(request):
     """List all extraction pipelines with their associated source files."""
     pipelines = []

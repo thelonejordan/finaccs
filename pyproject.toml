@@ -10,10 +10,27 @@ requires-python = ">=3.11"
 dependencies = [
     "django>=5.2.10",
     "django-cors-headers>=4.9.0",
-    "django-extensions>=4.1",
+    "djangorestframework>=3.15.0",
+    "python-dotenv>=1.2.1",
+    "gunicorn>=23.0.0",
+    "mysqlclient>=2.2.0",
+    "whitenoise>=6.8.0",
+    "dj-database-url>=2.3.0",
+]
+
+[project.optional-dependencies]
+extraction = [
     "msoffcrypto-tool>=6.0.0",
     "openpyxl>=3.1.5",
     "pdfplumber>=0.11.0",
-    "python-dotenv>=1.2.1",
     "xlrd>=2.0.2",
+]
+dev = [
+    "django-extensions>=4.1",
+    "drf-spectacular>=0.28.0",
+]
+
+[dependency-groups]
+dev = [
+    "python-dotenv[cli]>=1.2.1",
 ]

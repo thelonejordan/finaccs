@@ -12,38 +12,30 @@ import {
   ChevronsRightIcon,
   ChevronDownIcon,
   CheckIcon,
-  BuildingIcon,
+  CreditCardIcon,
   FileIcon,
   TrendingUpIcon,
   TrendingDownIcon,
   ActivityIcon,
-  Link2Icon,
-  Link2OffIcon,
-  XIcon,
   CalendarIcon,
+  GlobeIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
-import * as Dialog from "@radix-ui/react-dialog"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import { Header } from "@/components/Header"
 import {
-  fetchTransactions,
-  fetchCategories,
-  fetchBankAccounts,
-  fetchDateRange,
-  updateTransactionCategory,
-  fetchPotentialLinks,
-  linkTransaction,
-  unlinkTransaction,
-  type Transaction,
-  type CategoryData,
-  type BankAccount,
-  type SourceFile,
-  type TransactionStats,
-  type PotentialLinkTransaction,
+  fetchCreditCards,
+  fetchCreditCardTransactions,
+  fetchCreditCardDateRange,
+  fetchCreditCardCategories,
+  updateCreditCardTransactionCategory,
+  type CreditCard,
+  type CreditCardTransaction,
+  type CreditCardSourceFile,
+  type CreditCardTransactionStats,
+  type CreditCardCategoryData,
   type DateRange,
-  type DateRangeFilters,
 } from "@/lib/api"
 
 const MONTH_NAMES = [
@@ -88,7 +80,7 @@ function CategorySelectContent({
   onSelect,
   onClose,
 }: {
-  categories: CategoryData[]
+  categories: CreditCardCategoryData[]
   currentValue: string
   onSelect: (value: string) => void
   onClose: () => void
@@ -115,7 +107,7 @@ function CategorySelectContent({
           placeholder="Search categories..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full px-2 py-1.5 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+          className="w-full px-2 py-1.5 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
           autoFocus
         />
       </div>
@@ -158,7 +150,7 @@ function CategorySelect({
   disabled,
 }: {
   value: string
-  categories: CategoryData[]
+  categories: CreditCardCategoryData[]
   onValueChange: (value: string) => void
   disabled: boolean
 }) {
@@ -191,215 +183,6 @@ function CategorySelect({
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
-  )
-}
-
-function LinkDialog({
-  transaction,
-  onLink,
-  onUnlink,
-}: {
-  transaction: Transaction
-  onLink: (linkToId: number) => void
-  onUnlink: () => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [potentialLinks, setPotentialLinks] = useState<PotentialLinkTransaction[]>([])
-  const [loading, setLoading] = useState(false)
-  const [linking, setLinking] = useState<number | null>(null)
-
-  const isLinked = !!transaction.linked_transaction
-
-  const handleOpenChange = async (isOpen: boolean) => {
-    setOpen(isOpen)
-    if (isOpen && !isLinked) {
-      setLoading(true)
-      try {
-        const result = await fetchPotentialLinks(transaction.id)
-        setPotentialLinks(result.data)
-      } catch (error) {
-        console.error("Failed to fetch potential links:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-  }
-
-  const handleLink = async (linkToId: number) => {
-    setLinking(linkToId)
-    try {
-      await onLink(linkToId)
-      setOpen(false)
-    } finally {
-      setLinking(null)
-    }
-  }
-
-  const handleUnlink = async () => {
-    setLinking(-1)
-    try {
-      await onUnlink()
-      setOpen(false)
-    } finally {
-      setLinking(null)
-    }
-  }
-
-  return (
-    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
-      <Tooltip.Provider>
-        <Tooltip.Root>
-          <Tooltip.Trigger asChild>
-            <Dialog.Trigger asChild>
-              <button
-                className={`p-1 rounded transition-colors ${
-                  isLinked
-                    ? "text-green-600 dark:text-green-400 hover:bg-green-500/10"
-                    : "text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                {isLinked ? (
-                  <Link2Icon className="h-4 w-4" />
-                ) : (
-                  <Link2OffIcon className="h-4 w-4" />
-                )}
-              </button>
-            </Dialog.Trigger>
-          </Tooltip.Trigger>
-          <Tooltip.Portal>
-            <Tooltip.Content
-              className="bg-card text-card-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm"
-              sideOffset={4}
-            >
-              {isLinked
-                ? `Linked to ${transaction.linked_transaction?.bank_account} on ${formatDate(transaction.linked_transaction?.date || "")}`
-                : "Find matching transaction"}
-              <Tooltip.Arrow className="fill-card" />
-            </Tooltip.Content>
-          </Tooltip.Portal>
-        </Tooltip.Root>
-      </Tooltip.Provider>
-
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 animate-in fade-in-0" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card rounded-xl border border-border shadow-xl w-full max-w-xl max-h-[85vh] overflow-hidden animate-in fade-in-0 zoom-in-95 z-50">
-          <div className="p-6 border-b border-border">
-            <Dialog.Title className="text-lg font-semibold">
-              {isLinked ? "Linked Transaction" : "Link Transaction"}
-            </Dialog.Title>
-            <Dialog.Description className="text-sm text-muted-foreground mt-1">
-              {isLinked
-                ? "This transaction is linked to a corresponding transaction."
-                : "Find matching transactions from other accounts (same amount, within 7 days)."}
-            </Dialog.Description>
-          </div>
-
-          <div className="p-6">
-            {/* Current transaction info */}
-            <div className="mb-4 p-3 rounded-lg bg-muted/50 border border-border">
-              <p className="text-sm text-muted-foreground mb-1">Current Transaction</p>
-              <p className="font-medium">{formatDate(transaction.date)}</p>
-              <p className="text-sm text-muted-foreground line-clamp-1">{transaction.narration}</p>
-              <p className="text-sm flex items-center gap-1 flex-wrap">
-                {transaction.bank_account?.nickname} •{" "}
-                <span className={`inline-flex items-center gap-0.5 ${transaction.debit > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
-                  <FormattedCurrency amount={transaction.debit > 0 ? transaction.debit : transaction.credit} />
-                  {transaction.debit > 0 ? <ArrowDownIcon className="h-3 w-3" /> : <ArrowUpIcon className="h-3 w-3" />}
-                </span>
-                {transaction.category && (
-                  <span className="ml-2 text-muted-foreground">• {transaction.category}</span>
-                )}
-              </p>
-            </div>
-
-            {isLinked ? (
-              /* Show linked transaction */
-              <div className="space-y-4">
-                <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                  <p className="text-sm text-muted-foreground mb-1">Linked To</p>
-                  <p className="font-medium">{formatDate(transaction.linked_transaction?.date || "")}</p>
-                  <p className="text-sm text-muted-foreground line-clamp-3 mb-1">{transaction.linked_transaction?.narration}</p>
-                  <p className="text-sm flex items-center gap-1">
-                    {transaction.linked_transaction?.bank_account} •{" "}
-                    <span className="text-green-600 dark:text-green-400 inline-flex items-center gap-0.5">
-                      <FormattedCurrency amount={transaction.linked_transaction?.amount || 0} />
-                      <ArrowUpIcon className="h-3 w-3" />
-                    </span>
-                  </p>
-                </div>
-                <button
-                  onClick={handleUnlink}
-                  disabled={linking !== null}
-                  className="w-full py-2 px-4 rounded-lg border border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors disabled:opacity-50"
-                >
-                  {linking === -1 ? "Unlinking..." : "Unlink Transaction"}
-                </button>
-              </div>
-            ) : (
-              /* Show potential matches */
-              <div>
-                <p className="text-sm font-medium mb-2">Potential Matches (same amount, ±7 days)</p>
-                {loading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-                  </div>
-                ) : potentialLinks.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Link2OffIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p>No matching transactions found</p>
-                    <p className="text-sm mt-1">
-                      No transactions with matching amount in other accounts within 7 days
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {potentialLinks.map((t) => (
-                      <div
-                        key={t.id}
-                        className="p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium">{formatDate(t.date)}</p>
-                            <p className="text-sm text-muted-foreground line-clamp-1">{t.narration}</p>
-                            <p className="text-sm flex items-center gap-1 flex-wrap">
-                              {t.bank_account?.nickname} •{" "}
-                              <span className={`inline-flex items-center gap-0.5 ${t.debit > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
-                                <FormattedCurrency amount={t.debit > 0 ? t.debit : t.credit} />
-                                {t.debit > 0 ? <ArrowDownIcon className="h-3 w-3" /> : <ArrowUpIcon className="h-3 w-3" />}
-                              </span>
-                              {t.category && (
-                                <span className="ml-2 text-muted-foreground">• {t.category}</span>
-                              )}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => handleLink(t.id)}
-                            disabled={linking !== null}
-                            className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-                          >
-                            {linking === t.id ? "..." : "Link"}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <Dialog.Close asChild>
-            <button
-              className="absolute top-4 right-4 p-2 rounded-lg hover:bg-muted transition-colors"
-              aria-label="Close"
-            >
-              <XIcon className="h-4 w-4" />
-            </button>
-          </Dialog.Close>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
   )
 }
 
@@ -487,7 +270,7 @@ function Pagination({
   )
 }
 
-export function TransactionsModernPage() {
+export function CreditCardsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Helper to get initial values from URL
@@ -500,11 +283,11 @@ export function TransactionsModernPage() {
     return month ? parseInt(month, 10) : null
   }
 
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [categories, setCategories] = useState<CategoryData[]>([])
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
-  const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([])
-  const [stats, setStats] = useState<TransactionStats | null>(null)
+  const [transactions, setTransactions] = useState<CreditCardTransaction[]>([])
+  const [categories, setCategories] = useState<CreditCardCategoryData[]>([])
+  const [creditCards, setCreditCards] = useState<CreditCard[]>([])
+  const [sourceFiles, setSourceFiles] = useState<CreditCardSourceFile[]>([])
+  const [stats, setStats] = useState<CreditCardTransactionStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [total, setTotal] = useState(0)
   const [updatingId, setUpdatingId] = useState<number | null>(null)
@@ -512,7 +295,6 @@ export function TransactionsModernPage() {
 
   // Date range state - initialize from URL
   const [dateRange, setDateRange] = useState<DateRange | null>(null)
-  const [fullDateRange, setFullDateRange] = useState<DateRange | null>(null)
   const [selectedYear, setSelectedYear] = useState<number | null>(getInitialYear)
   const [selectedMonth, setSelectedMonth] = useState<number | null>(getInitialMonth)
 
@@ -521,8 +303,8 @@ export function TransactionsModernPage() {
   const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get('search') || "")
   const [selectedCategory, setSelectedCategory] = useState<string>(searchParams.get('category') || "")
   const [selectedType, setSelectedType] = useState<string>(searchParams.get('type') || "")
-  const [selectedBankAccount, setSelectedBankAccount] = useState<number | null>(() => {
-    const val = searchParams.get('bank_account')
+  const [selectedCreditCard, setSelectedCreditCard] = useState<number | null>(() => {
+    const val = searchParams.get('credit_card')
     return val ? parseInt(val, 10) : null
   })
   const [selectedSourceFile, setSelectedSourceFile] = useState<number | null>(() => {
@@ -591,7 +373,7 @@ export function TransactionsModernPage() {
   }, [setSearchParams])
 
   useEffect(() => {
-    document.title = "Transactions | FinAccs"
+    document.title = "Credit Cards | FinAccs"
     window.scrollTo(0, 0)
   }, [])
 
@@ -603,11 +385,11 @@ export function TransactionsModernPage() {
       search: debouncedSearch || null,
       category: selectedCategory || null,
       type: selectedType || null,
-      bank_account: selectedBankAccount,
+      credit_card: selectedCreditCard,
       source_file: selectedSourceFile,
       page: page,
     })
-  }, [selectedYear, selectedMonth, debouncedSearch, selectedCategory, selectedType, selectedBankAccount, selectedSourceFile, page, updateURL])
+  }, [selectedYear, selectedMonth, debouncedSearch, selectedCategory, selectedType, selectedCreditCard, selectedSourceFile, page, updateURL])
 
   // Debounce search
   useEffect(() => {
@@ -616,33 +398,13 @@ export function TransactionsModernPage() {
       setPage(1)
     }, 300)
     return () => clearTimeout(timer)
-  }, [search])
+  }, [search, setPage])
 
-  // Load full date range once (unfiltered) for year tabs
-  useEffect(() => {
-    async function loadFullDateRange() {
-      try {
-        const data = await fetchDateRange({})
-        setFullDateRange(data)
-      } catch (error) {
-        console.error("Failed to load full date range:", error)
-      }
-    }
-    loadFullDateRange()
-  }, [])
-
-  // Load date range (re-fetch when filters change)
+  // Load date range
   useEffect(() => {
     async function loadDateRange() {
       try {
-        const filters: DateRangeFilters = {}
-        if (selectedBankAccount) filters.bank_account = selectedBankAccount
-        if (selectedCategory) filters.category = selectedCategory
-        if (selectedType) filters.type = selectedType
-        if (selectedSourceFile) filters.source_file = selectedSourceFile
-        if (debouncedSearch) filters.search = debouncedSearch
-
-        const data = await fetchDateRange(filters)
+        const data = await fetchCreditCardDateRange()
         setDateRange(data)
 
         const years = Object.keys(data.years).map(Number).sort((a, b) => b - a)
@@ -656,32 +418,12 @@ export function TransactionsModernPage() {
             setSelectedMonth(months[months.length - 1])
           }
         }
-        // If current year is no longer available, select the most recent available year
-        else if (selectedYear !== null && !years.includes(selectedYear) && years.length > 0) {
-          const latestYear = years[0]
-          setSelectedYear(latestYear)
-          const months = data.years[latestYear.toString()]
-          if (months && months.length > 0) {
-            setSelectedMonth(months[months.length - 1])
-          } else {
-            setSelectedMonth(null)
-          }
-        }
-        // If current month is no longer available in the selected year, select the most recent month
-        else if (selectedYear !== null && selectedMonth !== null) {
-          const months = data.years[selectedYear.toString()] || []
-          if (!months.includes(selectedMonth) && months.length > 0) {
-            setSelectedMonth(months[months.length - 1])
-          } else if (months.length === 0) {
-            setSelectedMonth(null)
-          }
-        }
       } catch (error) {
         console.error("Failed to load date range:", error)
       }
     }
     loadDateRange()
-  }, [selectedBankAccount, selectedCategory, selectedType, selectedSourceFile, debouncedSearch])
+  }, [])
 
   // Scroll pagination slider to show current page
   useEffect(() => {
@@ -700,7 +442,7 @@ export function TransactionsModernPage() {
   const handleCategoryChange = async (transactionId: number, newCategory: string) => {
     setUpdatingId(transactionId)
     try {
-      await updateTransactionCategory(transactionId, newCategory)
+      await updateCreditCardTransactionCategory(transactionId, newCategory)
       setRefreshKey((k) => k + 1)
     } catch (error) {
       console.error("Failed to update category:", error)
@@ -709,28 +451,10 @@ export function TransactionsModernPage() {
     }
   }
 
-  const handleLink = async (transactionId: number, linkToId: number) => {
-    try {
-      await linkTransaction(transactionId, linkToId)
-      setRefreshKey((k) => k + 1)
-    } catch (error) {
-      console.error("Failed to link transaction:", error)
-    }
-  }
-
-  const handleUnlink = async (transactionId: number) => {
-    try {
-      await unlinkTransaction(transactionId)
-      setRefreshKey((k) => k + 1)
-    } catch (error) {
-      console.error("Failed to unlink transaction:", error)
-    }
-  }
-
   useEffect(() => {
     async function loadCategories() {
       try {
-        const data = await fetchCategories(true)
+        const data = await fetchCreditCardCategories({ include_all: true })
         setCategories(data.data)
       } catch (error) {
         console.error("Failed to load categories:", error)
@@ -740,16 +464,16 @@ export function TransactionsModernPage() {
   }, [])
 
   useEffect(() => {
-    async function loadBankAccounts() {
+    async function loadCreditCards() {
       try {
-        const data = await fetchBankAccounts()
-        setBankAccounts(data.accounts)
+        const data = await fetchCreditCards()
+        setCreditCards(data.cards)
         setSourceFiles(data.source_files)
       } catch (error) {
-        console.error("Failed to load bank accounts:", error)
+        console.error("Failed to load credit cards:", error)
       }
     }
-    loadBankAccounts()
+    loadCreditCards()
   }, [])
 
   useEffect(() => {
@@ -763,10 +487,10 @@ export function TransactionsModernPage() {
       }
 
       try {
-        const data = await fetchTransactions({
+        const data = await fetchCreditCardTransactions({
           category: selectedCategory || undefined,
           type: selectedType || undefined,
-          bank_account: selectedBankAccount || undefined,
+          credit_card: selectedCreditCard || undefined,
           source_file: selectedSourceFile || undefined,
           year: selectedYear,
           month: selectedMonth,
@@ -809,11 +533,11 @@ export function TransactionsModernPage() {
       }
     }
     loadTransactions()
-  }, [selectedCategory, selectedType, selectedBankAccount, selectedSourceFile, selectedYear, selectedMonth, debouncedSearch, page, refreshKey])
+  }, [selectedCategory, selectedType, selectedCreditCard, selectedSourceFile, selectedYear, selectedMonth, debouncedSearch, page, refreshKey])
 
-  // Filter source files by selected bank account
-  const filteredSourceFiles = selectedBankAccount
-    ? sourceFiles.filter((sf) => sf.bank_account_id === selectedBankAccount)
+  // Filter source files by selected credit card
+  const filteredSourceFiles = selectedCreditCard
+    ? sourceFiles.filter((sf) => sf.credit_card_id === selectedCreditCard)
     : sourceFiles
 
   const totalPages = Math.ceil(total / pageSize)
@@ -823,7 +547,7 @@ export function TransactionsModernPage() {
   const availableMonths = selectedYear && dateRange ? (dateRange.years[selectedYear.toString()] || []) : []
 
   // Generate all years in range (from full/unfiltered date range)
-  const fullYears = fullDateRange ? Object.keys(fullDateRange.years).map(Number).sort((a, b) => b - a) : []
+  const fullYears = dateRange ? Object.keys(dateRange.years).map(Number).sort((a, b) => b - a) : []
   const allYearsInRange = fullYears.length > 0
     ? Array.from(
         { length: fullYears[0] - fullYears[fullYears.length - 1] + 1 },
@@ -1009,19 +733,19 @@ export function TransactionsModernPage() {
                         </Select.ItemIndicator>
                       </Select.Item>
                       <Select.Item
-                        value="credit"
+                        value="payment"
                         className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
                       >
-                        <Select.ItemText>Income Only</Select.ItemText>
+                        <Select.ItemText>Payments Only</Select.ItemText>
                         <Select.ItemIndicator>
                           <CheckIcon className="h-4 w-4" />
                         </Select.ItemIndicator>
                       </Select.Item>
                       <Select.Item
-                        value="debit"
+                        value="charge"
                         className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
                       >
-                        <Select.ItemText>Expenses Only</Select.ItemText>
+                        <Select.ItemText>Charges Only</Select.ItemText>
                         <Select.ItemIndicator>
                           <CheckIcon className="h-4 w-4" />
                         </Select.ItemIndicator>
@@ -1031,16 +755,16 @@ export function TransactionsModernPage() {
                 </Select.Portal>
               </Select.Root>
 
-              {/* Bank Account Filter */}
-              {bankAccounts.length > 0 && (
+              {/* Credit Card Filter */}
+              {creditCards.length > 0 && (
                 <Select.Root
-                  value={selectedBankAccount?.toString() || "all"}
+                  value={selectedCreditCard?.toString() || "all"}
                   onValueChange={(value) => {
-                    const newBankAccount = value === "all" ? null : parseInt(value, 10)
-                    setSelectedBankAccount(newBankAccount)
-                    if (selectedSourceFile && newBankAccount) {
+                    const newCreditCard = value === "all" ? null : parseInt(value, 10)
+                    setSelectedCreditCard(newCreditCard)
+                    if (selectedSourceFile && newCreditCard) {
                       const sourceFile = sourceFiles.find((sf) => sf.id === selectedSourceFile)
-                      if (sourceFile && sourceFile.bank_account_id !== newBankAccount) {
+                      if (sourceFile && sourceFile.credit_card_id !== newCreditCard) {
                         setSelectedSourceFile(null)
                       }
                     }
@@ -1049,8 +773,8 @@ export function TransactionsModernPage() {
                 >
                   <Select.Trigger className="inline-flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-w-[160px]">
                     <div className="flex items-center gap-2">
-                      <BuildingIcon className="h-4 w-4 text-muted-foreground" />
-                      <Select.Value placeholder="All Accounts" />
+                      <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
+                      <Select.Value placeholder="All Cards" />
                     </div>
                     <Select.Icon>
                       <ChevronDownIcon className="h-4 w-4 text-muted-foreground" />
@@ -1063,21 +787,21 @@ export function TransactionsModernPage() {
                           value="all"
                           className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
                         >
-                          <Select.ItemText>All Accounts</Select.ItemText>
+                          <Select.ItemText>All Cards</Select.ItemText>
                           <Select.ItemIndicator>
                             <CheckIcon className="h-4 w-4" />
                           </Select.ItemIndicator>
                         </Select.Item>
-                        {bankAccounts.map((acc) => (
+                        {creditCards.map((card) => (
                           <Select.Item
-                            key={acc.id}
-                            value={acc.id.toString()}
+                            key={card.id}
+                            value={card.id.toString()}
                             className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
                           >
                             <Select.ItemText>
-                              <span className="font-medium">{acc.nickname}</span>
+                              <span className="font-medium">{card.nickname}</span>
                               <span className="text-muted-foreground ml-1">
-                                ({acc.bank_name})
+                                ({card.issuer})
                               </span>
                             </Select.ItemText>
                             <Select.ItemIndicator>
@@ -1147,23 +871,23 @@ export function TransactionsModernPage() {
           <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div className="rounded-xl border border-border bg-card shadow-sm p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-green-500/10">
-                  <TrendingUpIcon className="h-5 w-5 text-(--color-income)" />
+                <div className="p-2 rounded-lg bg-red-500/10">
+                  <TrendingDownIcon className="h-5 w-5 text-(--color-expense)" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Credits</p>
-                  <FormattedCurrency amount={stats.total_credits} className="text-xl font-bold text-(--color-income)" />
+                  <p className="text-sm text-muted-foreground">Total Charges</p>
+                  <FormattedCurrency amount={stats.total_charges} className="text-xl font-bold text-(--color-expense)" />
                 </div>
               </div>
             </div>
             <div className="rounded-xl border border-border bg-card shadow-sm p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-red-500/10">
-                  <TrendingDownIcon className="h-5 w-5 text-(--color-expense)" />
+                <div className="p-2 rounded-lg bg-green-500/10">
+                  <TrendingUpIcon className="h-5 w-5 text-(--color-income)" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Debits</p>
-                  <FormattedCurrency amount={stats.total_debits} className="text-xl font-bold text-(--color-expense)" />
+                  <p className="text-sm text-muted-foreground">Total Payments</p>
+                  <FormattedCurrency amount={stats.total_payments} className="text-xl font-bold text-(--color-income)" />
                 </div>
               </div>
             </div>
@@ -1173,14 +897,14 @@ export function TransactionsModernPage() {
                   <ActivityIcon className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Net Flow</p>
+                  <p className="text-sm text-muted-foreground">Net</p>
                   <p className={`text-xl font-bold inline-flex items-center gap-1 ${
-                    stats.net_flow >= 0
+                    stats.net >= 0
                       ? "text-(--color-income)"
                       : "text-(--color-expense)"
                   }`}>
-                    <FormattedCurrency amount={Math.abs(stats.net_flow)} />
-                    {stats.net_flow >= 0 ? <ArrowUpIcon className="h-4 w-4" /> : <ArrowDownIcon className="h-4 w-4" />}
+                    <FormattedCurrency amount={Math.abs(stats.net)} />
+                    {stats.net >= 0 ? <ArrowUpIcon className="h-4 w-4" /> : <ArrowDownIcon className="h-4 w-4" />}
                   </p>
                 </div>
               </div>
@@ -1212,7 +936,7 @@ export function TransactionsModernPage() {
               </div>
             ) : transactions.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
-                <ActivityIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <CreditCardIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>No transactions found for this period</p>
               </div>
             ) : (
@@ -1236,19 +960,37 @@ export function TransactionsModernPage() {
                     <thead className="border-b border-border/40 sticky top-0 bg-card z-10 shadow-sm">
                       <tr>
                         <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[110px]">Date</th>
-                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[280px]">Description</th>
-                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[100px]">Account</th>
-                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[130px]">Source</th>
+                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[300px]">Description</th>
+                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[100px]">Card</th>
                         <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[130px]">Category</th>
-                        <th className="h-12 px-3 text-center align-middle font-medium text-muted-foreground w-[55px]">Link</th>
+                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground w-[100px]">
+                          <Tooltip.Provider>
+                            <Tooltip.Root>
+                              <Tooltip.Trigger asChild>
+                                <span className="inline-flex items-center gap-1 cursor-help">
+                                  <GlobeIcon className="h-3 w-3" />
+                                  Intl
+                                </span>
+                              </Tooltip.Trigger>
+                              <Tooltip.Portal>
+                                <Tooltip.Content
+                                  className="bg-card text-card-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm"
+                                  sideOffset={4}
+                                >
+                                  International Amount
+                                  <Tooltip.Arrow className="fill-card" />
+                                </Tooltip.Content>
+                              </Tooltip.Portal>
+                            </Tooltip.Root>
+                          </Tooltip.Provider>
+                        </th>
                         <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground w-[120px]">Amount</th>
-                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground w-[120px]">Balance</th>
                       </tr>
                     </thead>
                     <tbody>
                       {page > 1 && (
                         <tr ref={prevPageRowRef} className="border-b border-border/40 hover:bg-muted/30 transition-colors">
-                          <td colSpan={8} className="px-4 py-3 align-middle text-center">
+                          <td colSpan={6} className="px-4 py-3 align-middle text-center">
                             <button
                               onClick={() => setPage(page - 1)}
                               className="text-sm text-muted-foreground/80 hover:text-foreground transition-colors inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted/50 hover:bg-muted"
@@ -1269,15 +1011,15 @@ export function TransactionsModernPage() {
                               <Tooltip.Root>
                                 <Tooltip.Trigger asChild>
                                   <span className="text-sm truncate block cursor-default">
-                                    {t.narration}
+                                    {t.description}
                                   </span>
                                 </Tooltip.Trigger>
                                 <Tooltip.Portal>
                                   <Tooltip.Content
-                                    className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm max-w-md z-50"
+                                    className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm max-w-md"
                                     sideOffset={4}
                                   >
-                                    {t.narration}
+                                    {t.description}
                                     <Tooltip.Arrow className="fill-card" />
                                   </Tooltip.Content>
                                 </Tooltip.Portal>
@@ -1285,34 +1027,10 @@ export function TransactionsModernPage() {
                             </Tooltip.Provider>
                           </td>
                           <td className="px-4 py-3 align-middle overflow-hidden">
-                            {t.bank_account ? (
+                            {t.credit_card ? (
                               <span className="text-sm text-muted-foreground truncate block">
-                                {t.bank_account.nickname}
+                                {t.credit_card.nickname}
                               </span>
-                            ) : (
-                              <span className="text-sm text-muted-foreground/50">-</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 align-middle overflow-hidden">
-                            {t.source_file ? (
-                              <Tooltip.Provider>
-                                <Tooltip.Root>
-                                  <Tooltip.Trigger asChild>
-                                    <span className="text-sm text-muted-foreground truncate block cursor-default">
-                                      {t.source_file.filename}
-                                    </span>
-                                  </Tooltip.Trigger>
-                                  <Tooltip.Portal>
-                                    <Tooltip.Content
-                                      className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm z-50"
-                                      sideOffset={4}
-                                    >
-                                      {t.source_file.filename}
-                                      <Tooltip.Arrow className="fill-card" />
-                                    </Tooltip.Content>
-                                  </Tooltip.Portal>
-                                </Tooltip.Root>
-                              </Tooltip.Provider>
                             ) : (
                               <span className="text-sm text-muted-foreground/50">-</span>
                             )}
@@ -1325,38 +1043,27 @@ export function TransactionsModernPage() {
                               disabled={updatingId === t.id}
                             />
                           </td>
-                          <td className="px-3 py-3 align-middle text-center">
-                            {t.category === "Self Transfer" ? (
-                              <LinkDialog
-                                transaction={t}
-                                onLink={(linkToId) => handleLink(t.id, linkToId)}
-                                onUnlink={() => handleUnlink(t.id)}
-                              />
-                            ) : (
-                              <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
-                            )}
+                          <td className="px-4 py-3 align-middle text-right text-sm text-muted-foreground">
+                            {t.intl_amount > 0 ? formatCurrency(t.intl_amount) : "-"}
                           </td>
                           <td className="px-4 py-3 align-middle text-right">
-                            {t.credit > 0 ? (
+                            {t.amount < 0 ? (
                               <span className="text-(--color-income) font-medium flex items-center justify-end gap-1">
-                                <FormattedCurrency amount={t.credit} />
+                                <FormattedCurrency amount={Math.abs(t.amount)} />
                                 <ArrowUpIcon className="h-3 w-3 flex-shrink-0" />
                               </span>
                             ) : (
                               <span className="text-(--color-expense) font-medium flex items-center justify-end gap-1">
-                                <FormattedCurrency amount={t.debit} />
+                                <FormattedCurrency amount={t.amount} />
                                 <ArrowDownIcon className="h-3 w-3 flex-shrink-0" />
                               </span>
                             )}
-                          </td>
-                          <td className="px-4 py-3 align-middle text-right text-sm">
-                            <FormattedCurrency amount={t.balance} />
                           </td>
                         </tr>
                       ))}
                       {page < totalPages && (
                         <tr className="hover:bg-muted/30 transition-colors">
-                          <td colSpan={8} className="px-4 py-3 align-middle text-center">
+                          <td colSpan={6} className="px-4 py-3 align-middle text-center">
                             <button
                               onClick={() => setPage(page + 1)}
                               className="text-sm text-muted-foreground/80 hover:text-foreground transition-colors inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted/50 hover:bg-muted"

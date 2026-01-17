@@ -72,8 +72,58 @@ class SourceFile(models.Model):
     disabled = models.BooleanField(default=False)  # Exclude from calculations when True
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Blob storage for original file
+    file_data = models.BinaryField(null=True, blank=True)  # gzip compressed
+    file_size = models.IntegerField(default=0)  # original size in bytes
+    mime_type = models.CharField(max_length=100, blank=True)  # e.g., 'application/pdf'
+
+    # Date range of transactions in this file (for sorting overlapping files)
+    date_range_start = models.DateField(null=True, blank=True)
+    date_range_end = models.DateField(null=True, blank=True)
+
     class Meta:
         ordering = ['-created_at']
 
     def __str__(self):
         return self.filename
+
+
+class ExtractedCSV(models.Model):
+    """Stores extracted CSV data from source files."""
+    source_file = models.ForeignKey(
+        'SourceFile',
+        on_delete=models.CASCADE,
+        related_name='extracted_csvs'
+    )
+    pipeline = models.ForeignKey(
+        'ExtractionPipeline',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+
+    # Blob storage (gzip compressed)
+    csv_data = models.BinaryField()
+    csv_hash = models.CharField(max_length=64)  # SHA-256
+    row_count = models.IntegerField(default=0)
+
+    # Metadata
+    extracted_at = models.DateTimeField(auto_now_add=True)
+    extractor_version = models.CharField(max_length=20, default='1.0')
+
+    # Status
+    STATUS_CHOICES = [
+        ('extracted', 'Extracted'),
+        ('loaded', 'Loaded to DB'),
+        ('error', 'Load Error'),
+        ('superseded', 'Superseded'),
+    ]
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='extracted')
+    loaded_at = models.DateTimeField(null=True, blank=True)
+    error_message = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-extracted_at']
+
+    def __str__(self):
+        return f"CSV from {self.source_file.filename} ({self.status})"

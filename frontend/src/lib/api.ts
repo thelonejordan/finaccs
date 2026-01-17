@@ -42,6 +42,7 @@ export interface CategoryData {
 export interface LinkedTransaction {
   id: number
   date: string
+  narration: string
   bank_account: string | null
   amount: number
 }
@@ -157,6 +158,7 @@ export async function fetchTransactions(params?: {
   source_file?: number
   year?: number
   month?: number
+  search?: string
   limit?: number
   offset?: number
 }): Promise<{ data: Transaction[]; total: number; stats: TransactionStats }> {
@@ -167,6 +169,7 @@ export async function fetchTransactions(params?: {
   if (params?.source_file) searchParams.set("source_file", params.source_file.toString())
   if (params?.year) searchParams.set("year", params.year.toString())
   if (params?.month) searchParams.set("month", params.month.toString())
+  if (params?.search) searchParams.set("search", params.search)
   if (params?.limit) searchParams.set("limit", params.limit.toString())
   if (params?.offset) searchParams.set("offset", params.offset.toString())
 
@@ -363,7 +366,258 @@ export interface DateRange {
   years: Record<string, number[]>  // { "2024": [1, 2, 3, ...], "2023": [...] }
 }
 
-export async function fetchDateRange(): Promise<DateRange> {
-  const res = await fetch(`${API_BASE}/api/date-range/`)
+export interface DateRangeFilters {
+  bank_account?: number
+  category?: string
+  type?: string
+  source_file?: number
+  search?: string
+}
+
+export async function fetchDateRange(filters?: DateRangeFilters): Promise<DateRange> {
+  const searchParams = new URLSearchParams()
+  if (filters?.bank_account) searchParams.set('bank_account', filters.bank_account.toString())
+  if (filters?.category) searchParams.set('category', filters.category)
+  if (filters?.type) searchParams.set('type', filters.type)
+  if (filters?.source_file) searchParams.set('source_file', filters.source_file.toString())
+  if (filters?.search) searchParams.set('search', filters.search)
+
+  const queryString = searchParams.toString()
+  const url = queryString ? `${API_BASE}/api/date-range/?${queryString}` : `${API_BASE}/api/date-range/`
+  const res = await fetch(url)
+  return res.json()
+}
+
+// ==================== Credit Card API ====================
+
+export interface CreditCard {
+  id: number
+  nickname: string
+  card_name: string
+  card_number_mask: string
+  issuer: string
+  credit_limit: number | null
+  source_files: string[]
+  created_at?: string
+  updated_at?: string
+  total_charges?: number
+  total_payments?: number
+  last_transaction_date?: string | null
+  first_transaction_date?: string | null
+  transaction_count?: number
+}
+
+export interface CreditCardInput {
+  nickname: string
+  card_name: string
+  card_number_mask: string
+  issuer: string
+  credit_limit?: number | null
+  source_files: string[]
+}
+
+export interface CreditCardSourceFile {
+  id: number
+  filename: string
+  credit_card_id: number | null
+  credit_card_nickname: string | null
+  disabled: boolean
+  first_transaction_date?: string | null
+  last_transaction_date?: string | null
+  transaction_count?: number
+}
+
+export interface CreditCardTransaction {
+  id: number
+  date: string
+  description: string
+  amount: number
+  intl_amount: number
+  category: string
+  credit_card: {
+    id: number
+    nickname: string
+  } | null
+  source_file: {
+    id: number
+    filename: string
+  } | null
+}
+
+export interface CreditCardTransactionStats {
+  total_charges: number
+  total_payments: number
+  net: number
+}
+
+export interface CreditCardCategoryData {
+  category: string
+  count: number
+  total_charges: number
+  total_payments: number
+}
+
+export async function fetchCreditCards(): Promise<{
+  cards: CreditCard[]
+  source_files: CreditCardSourceFile[]
+}> {
+  const res = await fetch(`${API_BASE}/api/credit-cards/`)
+  return res.json()
+}
+
+export async function createCreditCard(data: CreditCardInput): Promise<CreditCard> {
+  const res = await fetch(`${API_BASE}/api/credit-cards/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+  return res.json()
+}
+
+export async function updateCreditCard(id: number, data: Partial<CreditCardInput>): Promise<CreditCard> {
+  const res = await fetch(`${API_BASE}/api/credit-cards/${id}/`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+  return res.json()
+}
+
+export async function deleteCreditCard(id: number): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/api/credit-cards/${id}/`, {
+    method: "DELETE",
+  })
+  return res.json()
+}
+
+export async function toggleCreditCardSourceFileDisabled(
+  sourceFileId: number,
+  disabled: boolean
+): Promise<{ id: number; filename: string; disabled: boolean }> {
+  const res = await fetch(`${API_BASE}/api/credit-card-source-files/${sourceFileId}/`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ disabled }),
+  })
+  return res.json()
+}
+
+export async function fetchCreditCardTransactions(params?: {
+  credit_card?: number
+  category?: string
+  type?: string  // 'charge' | 'payment'
+  source_file?: number
+  year?: number
+  month?: number
+  search?: string
+  limit?: number
+  offset?: number
+}): Promise<{ data: CreditCardTransaction[]; total: number; stats: CreditCardTransactionStats }> {
+  const searchParams = new URLSearchParams()
+  if (params?.credit_card) searchParams.set("credit_card", params.credit_card.toString())
+  if (params?.category) searchParams.set("category", params.category)
+  if (params?.type) searchParams.set("type", params.type)
+  if (params?.source_file) searchParams.set("source_file", params.source_file.toString())
+  if (params?.year) searchParams.set("year", params.year.toString())
+  if (params?.month) searchParams.set("month", params.month.toString())
+  if (params?.search) searchParams.set("search", params.search)
+  if (params?.limit) searchParams.set("limit", params.limit.toString())
+  if (params?.offset) searchParams.set("offset", params.offset.toString())
+
+  const res = await fetch(`${API_BASE}/api/credit-card-transactions/?${searchParams}`)
+  return res.json()
+}
+
+export async function fetchCreditCardDateRange(): Promise<DateRange> {
+  const res = await fetch(`${API_BASE}/api/credit-card-date-range/`)
+  return res.json()
+}
+
+export async function fetchCreditCardCategories(params?: {
+  credit_card?: number
+  include_all?: boolean
+}): Promise<{ data: CreditCardCategoryData[] }> {
+  const searchParams = new URLSearchParams()
+  if (params?.credit_card) searchParams.set("credit_card", params.credit_card.toString())
+  if (params?.include_all) searchParams.set("include_all", "true")
+
+  const res = await fetch(`${API_BASE}/api/credit-card-categories/?${searchParams}`)
+  return res.json()
+}
+
+export async function updateCreditCardTransactionCategory(
+  transactionId: number,
+  category: string
+): Promise<{ id: number; category: string }> {
+  const res = await fetch(`${API_BASE}/api/credit-card-transactions/${transactionId}/category/`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ category }),
+  })
+  return res.json()
+}
+
+export interface CreditCardInconsistency {
+  id: number
+  type: 'duplicate' | 'cross_card' | 'missing_description'
+  date: string
+  description: string
+  amount: number
+  category: string
+  credit_card: {
+    id: number
+    nickname: string
+  } | null
+  source_file: {
+    id: number
+    filename: string
+  } | null
+  message: string
+  related_ids: number[]
+  dismissed: boolean
+}
+
+export async function fetchCreditCardInconsistencies(params?: {
+  credit_card?: number
+  include_dismissed?: boolean
+}): Promise<{
+  data: CreditCardInconsistency[]
+  total: number
+  counts: {
+    duplicate: number
+    cross_card: number
+    missing_description: number
+  }
+}> {
+  const searchParams = new URLSearchParams()
+  if (params?.credit_card) searchParams.set("credit_card", params.credit_card.toString())
+  if (params?.include_dismissed) searchParams.set("include_dismissed", "true")
+
+  const res = await fetch(`${API_BASE}/api/credit-card-inconsistencies/?${searchParams}`)
+  return res.json()
+}
+
+export async function dismissCreditCardInconsistency(
+  type: 'duplicate' | 'cross_card' | 'missing_description',
+  transactionIds: number[],
+  reason?: string
+): Promise<{ success: boolean; created: boolean; id: number }> {
+  const res = await fetch(`${API_BASE}/api/credit-card-inconsistencies/dismiss/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type, transaction_ids: transactionIds, reason }),
+  })
+  return res.json()
+}
+
+export async function restoreCreditCardInconsistency(
+  type: 'duplicate' | 'cross_card' | 'missing_description',
+  transactionIds: number[]
+): Promise<{ success: boolean; deleted: boolean }> {
+  const res = await fetch(`${API_BASE}/api/credit-card-inconsistencies/restore/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type, transaction_ids: transactionIds }),
+  })
   return res.json()
 }

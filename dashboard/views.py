@@ -3,8 +3,27 @@ import json
 from django.db.models import Sum, Max, Subquery, OuterRef
 from django.db.models.functions import TruncMonth
 from django.http import JsonResponse
-from django.views.decorators.http import require_http_methods
-from django.views.decorators.csrf import csrf_exempt
+from rest_framework.decorators import api_view
+
+# Conditional import for API docs (dev only)
+try:
+    from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
+    from drf_spectacular.types import OpenApiTypes
+except ImportError:
+    def extend_schema(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+    class _MockCallable:
+        QUERY = 'query'
+        PATH = 'path'
+        def __init__(self, *args, **kwargs):
+            pass
+
+    OpenApiParameter = _MockCallable
+    OpenApiExample = _MockCallable
+    OpenApiTypes = type('OpenApiTypes', (), {'OBJECT': object, 'INT': int, 'STR': str, 'BOOL': bool})()
 
 from .models import Transaction, TransactionLog, AccountLog, FileLoadLog
 
@@ -12,13 +31,32 @@ from .models import Transaction, TransactionLog, AccountLog, FileLoadLog
 EXCLUDED_CATEGORIES = ['Self Transfer']
 
 
-def api_summary(request):
-    # Exclude transactions from disabled source files
-    all_transactions = Transaction.objects.filter(
-        source_file__isnull=True
-    ) | Transaction.objects.filter(
-        source_file__disabled=False
+def get_active_transactions():
+    """
+    Get transactions that are active (not from superseded ExtractedCSVs or disabled source files).
+
+    Excludes:
+    - Transactions from disabled source files
+    - Transactions from superseded ExtractedCSVs (archived data)
+    """
+    from django.db.models import Q
+    return Transaction.objects.filter(
+        Q(source_file__isnull=True) | Q(source_file__disabled=False)
+    ).filter(
+        Q(extracted_csv__isnull=True) | Q(extracted_csv__status__in=['extracted', 'loaded'])
     )
+
+
+@extend_schema(
+    summary="Get financial summary",
+    description="Get comprehensive financial summary including balance, credits, debits, income/expense breakdown, and per-account statistics.",
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Dashboard'],
+)
+@api_view(['GET'])
+def api_summary(request):
+    # Get active transactions (excludes disabled source files and superseded CSVs)
+    all_transactions = get_active_transactions()
     from django.db.models import Q
     from bank_accs.models import BankAccount
 
@@ -59,7 +97,7 @@ def api_summary(request):
     current_balance = 0
 
     for account in accounts:
-        account_txns = list(all_transactions.filter(bank_account=account).order_by('date', 'id'))
+        account_txns = list(all_transactions.filter(bank_account=account).order_by('date', 'source_file__date_range_start', 'row_number'))
         if not account_txns:
             continue
 
@@ -122,7 +160,7 @@ def api_summary(request):
     # Fallback if no accounts
     if not accounts.exists():
         latest = all_transactions.first()
-        earliest = all_transactions.order_by('date', 'id').first()
+        earliest = all_transactions.order_by('date', 'source_file__date_range_start', 'row_number').first()
         current_balance = float(latest.closing_balance) if latest else 0
         if earliest:
             starting_balance = float(earliest.closing_balance) - float(earliest.credit_amount) + float(earliest.debit_amount)
@@ -145,12 +183,16 @@ def api_summary(request):
     })
 
 
+@extend_schema(
+    summary="Get monthly breakdown",
+    description="Get monthly credit/debit breakdown, excluding self transfers.",
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Dashboard'],
+)
+@api_view(['GET'])
 def api_monthly(request):
-    from django.db.models import Q
-    # Exclude self transfers and disabled sources from monthly breakdown
-    transactions = Transaction.objects.filter(
-        Q(source_file__isnull=True) | Q(source_file__disabled=False)
-    ).exclude(category__in=EXCLUDED_CATEGORIES)
+    # Exclude self transfers from monthly breakdown
+    transactions = get_active_transactions().exclude(category__in=EXCLUDED_CATEGORIES)
 
     monthly_data = (
         transactions
@@ -174,15 +216,27 @@ def api_monthly(request):
     return JsonResponse({'data': data})
 
 
+@extend_schema(
+    summary="Get expense categories",
+    description="Get expense categories with totals.",
+    parameters=[
+        OpenApiParameter(
+            name='include_all',
+            type=OpenApiTypes.BOOL,
+            location=OpenApiParameter.QUERY,
+            description='Include self transfers if true (default: false)',
+        ),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Dashboard'],
+)
+@api_view(['GET'])
 def api_categories(request):
-    from django.db.models import Q
     # Check if we should include all categories (for filtering purposes)
     include_all = request.GET.get('include_all', 'false').lower() == 'true'
 
-    # Exclude disabled sources
-    queryset = Transaction.objects.filter(
-        Q(source_file__isnull=True) | Q(source_file__disabled=False)
-    ).filter(debit_amount__gt=0)
+    # Get active transactions with debits
+    queryset = get_active_transactions().filter(debit_amount__gt=0)
 
     # Exclude self transfers from category breakdown unless include_all is set
     if not include_all:
@@ -217,16 +271,32 @@ def api_categories(request):
     return JsonResponse({'data': data})
 
 
+@extend_schema(
+    summary="List transactions",
+    description="List bank transactions with filtering and pagination.",
+    parameters=[
+        OpenApiParameter(name='bank_account', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by bank account ID'),
+        OpenApiParameter(name='category', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Filter by category'),
+        OpenApiParameter(name='type', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Filter by type: credit or debit'),
+        OpenApiParameter(name='source_file', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by source file ID'),
+        OpenApiParameter(name='year', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by year'),
+        OpenApiParameter(name='month', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by month (1-12)'),
+        OpenApiParameter(name='search', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Search narration, category, or reference'),
+        OpenApiParameter(name='limit', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Number of results (default: 100)'),
+        OpenApiParameter(name='offset', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Pagination offset (default: 0)'),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Transactions'],
+)
+@api_view(['GET'])
 def api_transactions(request):
     from django.db.models import Q
-    transactions = Transaction.objects.select_related(
+    transactions = get_active_transactions().select_related(
         'bank_account',
         'source_file',
         'linked_transaction',
         'linked_transaction__bank_account'
-    ).prefetch_related('linked_from').filter(
-        Q(source_file__isnull=True) | Q(source_file__disabled=False)
-    )
+    ).prefetch_related('linked_from')
 
     # Filter by bank account
     bank_account_id = request.GET.get('bank_account')
@@ -256,6 +326,15 @@ def api_transactions(request):
     if month:
         transactions = transactions.filter(date__month=int(month))
 
+    # Search filter (narration, category, reference)
+    search = request.GET.get('search')
+    if search:
+        transactions = transactions.filter(
+            Q(narration__icontains=search) |
+            Q(category__icontains=search) |
+            Q(reference_number__icontains=search)
+        )
+
     # Calculate aggregate stats based on filtered results
     total_credits = transactions.aggregate(total=Sum('credit_amount'))['total'] or 0
     total_debits = transactions.aggregate(total=Sum('debit_amount'))['total'] or 0
@@ -281,6 +360,7 @@ def api_transactions(request):
             linked_data = {
                 'id': linked.id,
                 'date': linked.date.isoformat(),
+                'narration': linked.narration,
                 'bank_account': linked.bank_account.nickname if linked.bank_account else None,
                 'amount': float(linked.debit_amount or linked.credit_amount),
             }
@@ -318,15 +398,23 @@ def api_transactions(request):
     })
 
 
+@extend_schema(
+    summary="Get top expenses",
+    description="Get top N expenses, excluding self transfers.",
+    parameters=[
+        OpenApiParameter(name='limit', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Number of expenses to return (default: 10)'),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Dashboard'],
+)
+@api_view(['GET'])
 def api_top_expenses(request):
-    from django.db.models import Q
     limit = int(request.GET.get('limit', 10))
 
-    # Exclude self transfers and disabled sources from top expenses
+    # Exclude self transfers from top expenses
     top_expenses = (
-        Transaction.objects
+        get_active_transactions()
         .select_related('bank_account')
-        .filter(Q(source_file__isnull=True) | Q(source_file__disabled=False))
         .filter(debit_amount__gt=0)
         .exclude(category__in=EXCLUDED_CATEGORIES)
         .order_by('-debit_amount')[:limit]
@@ -349,8 +437,21 @@ def api_top_expenses(request):
     return JsonResponse({'data': data})
 
 
-@csrf_exempt
-@require_http_methods(["PUT", "PATCH"])
+@extend_schema(
+    summary="Update transaction category",
+    description="Update a transaction's category and log the change.",
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Transactions'],
+    examples=[
+        OpenApiExample(
+            'Update category',
+            value={'category': 'Food & Dining'},
+            request_only=True,
+        )
+    ],
+)
+@api_view(['PUT', 'PATCH'])
 def api_transaction_update(request, transaction_id):
     try:
         transaction = Transaction.objects.get(id=transaction_id)
@@ -389,6 +490,16 @@ def api_transaction_update(request, transaction_id):
     })
 
 
+@extend_schema(
+    summary="Get potential transaction links",
+    description="Find potential matching transactions for linking based on amount, account, and date proximity.",
+    parameters=[
+        OpenApiParameter(name='days', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Date range window in days (default: 7)'),
+    ],
+    responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Transactions'],
+)
+@api_view(['GET'])
 def api_potential_links(request, transaction_id):
     """Find potential matching transactions for linking based on amount, account, and date proximity."""
     from datetime import timedelta
@@ -412,10 +523,7 @@ def api_potential_links(request, transaction_id):
     # - Not already linked
     # - Amount matches (debit of one = credit of other)
     # - Within date proximity
-    from django.db.models import Q
-    potential_matches = Transaction.objects.filter(
-        Q(source_file__isnull=True) | Q(source_file__disabled=False)
-    ).filter(
+    potential_matches = get_active_transactions().filter(
         date__gte=date_start,
         date__lte=date_end,
     ).exclude(
@@ -460,8 +568,29 @@ def api_potential_links(request, transaction_id):
     return JsonResponse({'data': data})
 
 
-@csrf_exempt
-@require_http_methods(["POST", "DELETE"])
+@extend_schema(
+    methods=['POST'],
+    summary="Link transactions",
+    description="Link transactions as self-transfers.",
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Transactions'],
+    examples=[
+        OpenApiExample(
+            'Link transaction',
+            value={'link_to': 123},
+            request_only=True,
+        )
+    ],
+)
+@extend_schema(
+    methods=['DELETE'],
+    summary="Unlink transactions",
+    description="Unlink self-transfer transactions.",
+    responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Transactions'],
+)
+@api_view(['POST', 'DELETE'])
 def api_link_transaction(request, transaction_id):
     """Link or unlink self-transfer transactions."""
     try:
@@ -575,6 +704,19 @@ def api_link_transaction(request, transaction_id):
     })
 
 
+@extend_schema(
+    summary="Get transaction logs",
+    description="Fetch all logs (file loads, transaction changes, and account changes) with filtering.",
+    parameters=[
+        OpenApiParameter(name='type', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Log type: all, transaction, account, or file_load (default: all)'),
+        OpenApiParameter(name='action', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Filter by specific action'),
+        OpenApiParameter(name='limit', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Number of results (default: 100)'),
+        OpenApiParameter(name='offset', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Pagination offset (default: 0)'),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Logs'],
+)
+@api_view(['GET'])
 def api_transaction_logs(request):
     """Fetch all logs (file loads, transaction changes, and account changes)."""
     log_type = request.GET.get('type', 'all')  # 'all', 'transaction', 'account', 'file_load'
@@ -690,14 +832,55 @@ def api_transaction_logs(request):
     })
 
 
+@extend_schema(
+    summary="Get date range",
+    description="Get available years and months with transaction data, optionally filtered.",
+    parameters=[
+        OpenApiParameter(name='bank_account', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by bank account ID'),
+        OpenApiParameter(name='category', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Filter by category'),
+        OpenApiParameter(name='type', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Filter by type: credit or debit'),
+        OpenApiParameter(name='source_file', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by source file ID'),
+        OpenApiParameter(name='search', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Search narration, category, or reference'),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Dashboard'],
+)
+@api_view(['GET'])
 def api_date_range(request):
-    """Get available years and months with transaction data."""
+    """Get available years and months with transaction data, optionally filtered."""
     from django.db.models import Q
 
-    # Get all distinct months with transactions (excluding disabled sources)
-    dates = Transaction.objects.filter(
-        Q(source_file__isnull=True) | Q(source_file__disabled=False)
-    ).dates('date', 'month', order='ASC')
+    transactions = get_active_transactions()
+
+    # Apply filters
+    bank_account_id = request.GET.get('bank_account')
+    if bank_account_id:
+        transactions = transactions.filter(bank_account_id=bank_account_id)
+
+    category = request.GET.get('category')
+    if category:
+        transactions = transactions.filter(category=category)
+
+    transaction_type = request.GET.get('type')
+    if transaction_type == 'credit':
+        transactions = transactions.filter(credit_amount__gt=0)
+    elif transaction_type == 'debit':
+        transactions = transactions.filter(debit_amount__gt=0)
+
+    source_file_id = request.GET.get('source_file')
+    if source_file_id:
+        transactions = transactions.filter(source_file_id=source_file_id)
+
+    search = request.GET.get('search')
+    if search:
+        transactions = transactions.filter(
+            Q(narration__icontains=search) |
+            Q(category__icontains=search) |
+            Q(reference_number__icontains=search)
+        )
+
+    # Get all distinct months with matching transactions
+    dates = transactions.dates('date', 'month', order='ASC')
 
     # Group by year
     years = {}
@@ -711,6 +894,18 @@ def api_date_range(request):
     return JsonResponse({'years': years})
 
 
+@extend_schema(
+    summary="Get balance inconsistencies",
+    description="Detect balance discontinuities in transactions by comparing expected vs actual closing balance.",
+    parameters=[
+        OpenApiParameter(name='bank_account', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by bank account ID'),
+        OpenApiParameter(name='limit', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Number of results (default: 100)'),
+        OpenApiParameter(name='offset', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Pagination offset (default: 0)'),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Dashboard'],
+)
+@api_view(['GET'])
 def api_inconsistencies(request):
     """Detect balance discontinuities in transactions.
 
@@ -734,15 +929,12 @@ def api_inconsistencies(request):
     inconsistencies = []
 
     for account in accounts:
-        # Get transactions ordered oldest to newest (reverse of default ordering)
-        # Exclude transactions from disabled source files
-        from django.db.models import Q
+        # Get active transactions ordered oldest to newest
         transactions = list(
-            Transaction.objects
+            get_active_transactions()
             .filter(bank_account=account)
-            .filter(Q(source_file__isnull=True) | Q(source_file__disabled=False))
             .select_related('source_file')
-            .order_by('date', 'id')  # Oldest first
+            .order_by('date', 'source_file__date_range_start', 'row_number')  # Oldest first, preserving extraction order
         )
 
         for i, txn in enumerate(transactions):

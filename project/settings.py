@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 
+import dj_database_url
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -27,12 +28,12 @@ DEV_MODE = os.getenv('DEV_MODE', '0') == '1'
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-+l_i7^@7o#h8chvp68)7=8rq#rq-!dh45_v@)oeyvu3b6vp%k*'
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-+l_i7^@7o#h8chvp68)7=8rq#rq-!dh45_v@)oeyvu3b6vp%k*')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
 
 
 # Application definition
@@ -44,17 +45,23 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
     'corsheaders',
     'bank_accs',
     'dashboard',
+    'credit_cards',
 ]
 
 # Development tools
 if DEV_MODE:
-    INSTALLED_APPS += ['django_extensions']
+    INSTALLED_APPS += [
+        'django_extensions',
+        'drf_spectacular',
+    ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -65,7 +72,7 @@ MIDDLEWARE = [
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',
+    o.strip() for o in os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173').split(',') if o.strip()
 ]
 
 ROOT_URLCONF = 'project.urls'
@@ -73,7 +80,7 @@ ROOT_URLCONF = 'project.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'frontend_dist'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -90,12 +97,15 @@ WSGI_APPLICATION = 'project.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+# Set DATABASE_URL for MySQL: mysql://user:password@host:port/dbname
+# Falls back to SQLite if DATABASE_URL is not set
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': dj_database_url.config(
+        default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 }
 
 
@@ -133,9 +143,38 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_DIRS = [BASE_DIR / 'frontend_dist']
+
+# Whitenoise storage for compressed static files
+STORAGES = {
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# Security settings (production only)
+if not DEBUG:
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+
+
+# Django REST Framework
+REST_FRAMEWORK = {}
+
+# API documentation (dev only)
+if DEV_MODE:
+    REST_FRAMEWORK['DEFAULT_SCHEMA_CLASS'] = 'drf_spectacular.openapi.AutoSchema'
+    SPECTACULAR_SETTINGS = {
+        'TITLE': 'Finaccs API',
+        'DESCRIPTION': 'Personal finance tracking API',
+        'VERSION': '1.0.0',
+        'SERVE_INCLUDE_SCHEMA': False,
+    }

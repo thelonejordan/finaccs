@@ -1,8 +1,8 @@
 """
-Load transactions from ExtractedCSV blobs into the database.
+Load credit card transactions from CreditCardExtractedCSV blobs into the database.
 
 This is the second phase of the two-phase workflow:
-1. Extract: Original file blob → Standardized CSV blob (extract_transactions command)
+1. Extract: Original file blob → Standardized CSV blob (extract_credit_card_transactions command)
 2. Load: CSV blob → Transaction records (this command)
 """
 import csv
@@ -14,41 +14,37 @@ from decimal import Decimal
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from bank_accs.models import SourceFile, ExtractedCSV
-from dashboard.models import Transaction, FileLoadLog
+from credit_cards.models import (
+    CreditCard, CreditCardSourceFile, CreditCardExtractedCSV, CreditCardTransaction
+)
 
 
-# Category patterns for automatic categorization
+# Category patterns for credit card transactions
 CATEGORY_PATTERNS = {
+    'Credit Card Payment': ['BBPS', 'BILL PAYMENT', 'CC PAYMENT', 'UPI PAYMENT RECEIVED', 'PAYMENT RECEIVED'],
     'Food Delivery': ['SWIGGY', 'ZOMATO', 'BLINKIT', 'GROFERS'],
     'Transport': ['UBER', 'OLA', 'RAPIDO'],
-    'Shopping': ['AMAZON', 'FLIPKART', 'MYNTRA', 'VENUS TRADER'],
-    'Medical': ['WELLNESS FOREVER', 'MEDLIFE', 'PHARMACY', 'MEDICAL'],
-    'Utilities': ['ELECTRICITY', 'GAS', 'WATER', 'BROADBAND', 'TRAFFIC'],
-    'Bank Charges': ['AMB CHRG', 'CHRG INCL GST'],
-    'ATM': ['ATW-', 'NWD-'],
-    'Salary/Income': ['SALARY'],
-    'Interest': ['INTEREST PAID'],
-    'Rent': ['RENT'],
-    'Self Transfer': ['UPI-JYOTIRMAYA  MAHANTA', 'UPI-JYOTIRMAYA MAHANTA'],
-    'Credit Card Payment': ['PAID VIA CRED'],
+    'Shopping': ['AMAZON', 'FLIPKART', 'MYNTRA'],
+    'Entertainment': ['NETFLIX', 'SPOTIFY', 'YOUTUBE', 'GOOGLE PLAY'],
+    'Utilities': ['AIRTEL', 'JIO', 'VODAFONE', 'ELECTRICITY', 'GAS'],
+    'Rent': ['RENTOMOJO', 'NEST AWAY', 'RENT'],
     'Cafe & Restaurant': ['CAFE', 'HOTEL', 'RESTAURANT', 'MC DONALDS', 'MCDONALDS'],
-    'Groceries': ['WHOLE MART', 'GENERAL ST', 'SUPER MARKET', 'MAHALAXMI GENERAL'],
     'Personal Care': ['SALON', 'UNISEX', 'NATURALS'],
     'Legal Services': ['ONLINE LEGAL', 'LEGAL INDIA'],
-    'Entertainment': ['ELEPHANT AND CO'],
     'Sports': ['SPORT', 'CHAMPION'],
+    'Medical': ['WELLNESS FOREVER', 'MEDLIFE', 'PHARMACY', 'MEDICAL'],
+    'Groceries': ['WHOLE MART', 'GENERAL ST', 'SUPER MARKET', 'MAHALAXMI GENERAL'],
 }
 
 
-def categorize_transaction(narration):
-    """Categorize a transaction based on narration patterns."""
-    narration_upper = narration.upper()
+def categorize_transaction(description):
+    """Categorize a credit card transaction based on description."""
+    description_upper = description.upper()
     for category, patterns in CATEGORY_PATTERNS.items():
         for pattern in patterns:
-            if pattern in narration_upper:
+            if pattern in description_upper:
                 return category
-    return 'Uncategorized'
+    return ''
 
 
 def parse_date(date_str):
@@ -64,7 +60,7 @@ def parse_decimal(value_str):
 
 
 class Command(BaseCommand):
-    help = 'Load transactions from ExtractedCSV blobs into the database'
+    help = 'Load credit card transactions from CreditCardExtractedCSV blobs into the database'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -75,7 +71,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--csv-id',
             type=int,
-            help='ID of a specific ExtractedCSV to load',
+            help='ID of a specific CreditCardExtractedCSV to load',
         )
         parser.add_argument(
             '--all',
@@ -85,7 +81,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--clear',
             action='store_true',
-            help='Clear existing transactions before loading',
+            help='Clear existing credit card transactions before loading',
         )
         parser.add_argument(
             '--force',
@@ -100,10 +96,10 @@ class Command(BaseCommand):
         self.force = options.get('force', False)
 
         if options['clear']:
-            deleted_count, _ = Transaction.objects.all().delete()
-            self.stdout.write(self.style.WARNING(f'Deleted {deleted_count} transactions'))
-            # Reset all ExtractedCSV status to 'extracted'
-            ExtractedCSV.objects.filter(status='loaded').update(
+            deleted_count, _ = CreditCardTransaction.objects.all().delete()
+            self.stdout.write(self.style.WARNING(f'Deleted {deleted_count} credit card transactions'))
+            # Reset all CreditCardExtractedCSV status to 'extracted'
+            CreditCardExtractedCSV.objects.filter(status='loaded').update(
                 status='extracted',
                 loaded_at=None
             )
@@ -114,15 +110,15 @@ class Command(BaseCommand):
 
         if csv_id:
             try:
-                extracted_csv = ExtractedCSV.objects.get(id=csv_id)
+                extracted_csv = CreditCardExtractedCSV.objects.get(id=csv_id)
                 self.load_csv(extracted_csv)
-            except ExtractedCSV.DoesNotExist:
-                self.stderr.write(self.style.ERROR(f'ExtractedCSV with id {csv_id} not found'))
+            except CreditCardExtractedCSV.DoesNotExist:
+                self.stderr.write(self.style.ERROR(f'CreditCardExtractedCSV with id {csv_id} not found'))
             return
 
         if filename:
             try:
-                source_file = SourceFile.objects.get(filename=filename)
+                source_file = CreditCardSourceFile.objects.get(filename=filename)
                 # Get the latest non-superseded CSV
                 extracted_csv = source_file.extracted_csvs.filter(
                     status__in=['extracted', 'loaded']
@@ -130,25 +126,25 @@ class Command(BaseCommand):
 
                 if not extracted_csv:
                     self.stderr.write(self.style.ERROR(
-                        f'No extracted CSV found for {filename}. Run extract_transactions first.'
+                        f'No extracted CSV found for {filename}. Run extract_credit_card_transactions first.'
                     ))
                     return
 
                 self.load_csv(extracted_csv)
-            except SourceFile.DoesNotExist:
+            except CreditCardSourceFile.DoesNotExist:
                 self.stderr.write(self.style.ERROR(f'Source file {filename} not found'))
             return
 
         self.stderr.write(self.style.ERROR('Please specify --file, --csv-id, or --all'))
 
     def load_all_csvs(self):
-        """Load all ExtractedCSVs that are in 'extracted' status."""
+        """Load all CreditCardExtractedCSVs that are in 'extracted' status."""
         if self.force:
-            csvs_to_load = ExtractedCSV.objects.filter(
+            csvs_to_load = CreditCardExtractedCSV.objects.filter(
                 status__in=['extracted', 'loaded']
             ).exclude(status='superseded')
         else:
-            csvs_to_load = ExtractedCSV.objects.filter(status='extracted')
+            csvs_to_load = CreditCardExtractedCSV.objects.filter(status='extracted')
 
         if not csvs_to_load.exists():
             self.stdout.write('No extracted CSVs to load')
@@ -164,33 +160,33 @@ class Command(BaseCommand):
                 files_processed += 1
 
         self.stdout.write(self.style.SUCCESS(
-            f'Loaded {total_loaded} transactions from {files_processed} CSV blobs'
+            f'Loaded {total_loaded} credit card transactions from {files_processed} CSV blobs'
         ))
 
     def load_csv(self, extracted_csv):
         """
-        Load transactions from an ExtractedCSV blob.
+        Load transactions from a CreditCardExtractedCSV blob.
 
         Returns:
             int: Number of transactions loaded, -1 if skipped
         """
         source_file = extracted_csv.source_file
-        bank_account = source_file.bank_account
+        credit_card = source_file.credit_card
 
         # Check if already loaded
         if not self.force and extracted_csv.status == 'loaded':
             self.stdout.write(f'Skipping {source_file.filename} (already loaded)')
             return -1
 
-        self.stdout.write(f'Loading transactions from {source_file.filename}')
-        if bank_account:
-            self.stdout.write(f'  Linking to account: {bank_account.nickname}')
+        self.stdout.write(f'Loading credit card transactions from {source_file.filename}')
+        if credit_card:
+            self.stdout.write(f'  Linking to card: {credit_card.nickname}')
         else:
-            self.stdout.write(self.style.WARNING(f'  No bank account linked to {source_file.filename}'))
+            self.stdout.write(self.style.WARNING(f'  No credit card linked to {source_file.filename}'))
 
         # Delete existing transactions from this extracted CSV before reloading
         if self.force:
-            deleted_count = Transaction.objects.filter(extracted_csv=extracted_csv).delete()[0]
+            deleted_count = CreditCardTransaction.objects.filter(extracted_csv=extracted_csv).delete()[0]
             if deleted_count:
                 self.stdout.write(f'  Deleted {deleted_count} existing transactions from this CSV')
 
@@ -208,28 +204,21 @@ class Command(BaseCommand):
         # Parse CSV and create transactions
         transactions_created = 0
         duplicates_skipped = 0
-        category_counts = {}
 
         reader = csv.DictReader(io.StringIO(csv_string))
         for row_number, row in enumerate(reader, start=1):
             try:
                 date = parse_date(row['date'])
-                value_date = parse_date(row['value_date'])
-                narration = row['narration']
-                debit_amount = parse_decimal(row['debit_amount'])
-                credit_amount = parse_decimal(row['credit_amount'])
-                reference_number = row.get('reference_number', '')
-                closing_balance = parse_decimal(row['closing_balance'])
+                description = row['description']
+                amount = parse_decimal(row['amount'])
+                intl_amount = parse_decimal(row.get('intl_amount', '0.00'))
 
-                # Check for duplicate transaction (same key fields for the same account)
-                # Skip if an identical transaction already exists
-                existing = Transaction.objects.filter(
-                    bank_account=bank_account,
+                # Check for duplicate transaction (same key fields for the same card)
+                existing = CreditCardTransaction.objects.filter(
+                    credit_card=credit_card,
                     date=date,
-                    narration=narration,
-                    debit_amount=debit_amount,
-                    credit_amount=credit_amount,
-                    closing_balance=closing_balance,
+                    description=description,
+                    amount=amount,
                 ).first()
 
                 if existing:
@@ -237,24 +226,20 @@ class Command(BaseCommand):
                     continue
 
                 # Categorize transaction
-                category = categorize_transaction(narration)
+                category = categorize_transaction(description)
 
-                Transaction.objects.create(
+                CreditCardTransaction.objects.create(
                     date=date,
-                    value_date=value_date,
-                    narration=narration,
-                    debit_amount=debit_amount,
-                    credit_amount=credit_amount,
-                    reference_number=reference_number,
-                    closing_balance=closing_balance,
+                    description=description,
+                    amount=amount,
+                    intl_amount=intl_amount,
                     category=category,
-                    bank_account=bank_account,
+                    credit_card=credit_card,
                     source_file=source_file,
                     extracted_csv=extracted_csv,
                     row_number=row_number,
                 )
 
-                category_counts[category] = category_counts.get(category, 0) + 1
                 transactions_created += 1
 
             except Exception as e:
@@ -264,7 +249,7 @@ class Command(BaseCommand):
         if duplicates_skipped:
             self.stdout.write(f'  Skipped {duplicates_skipped} duplicate transactions')
 
-        # Update ExtractedCSV status
+        # Update CreditCardExtractedCSV status
         extracted_csv.status = 'loaded'
         extracted_csv.loaded_at = timezone.now()
         extracted_csv.save()
@@ -273,23 +258,12 @@ class Command(BaseCommand):
         source_file.last_loaded_at = timezone.now()
         # Compute date range from all transactions in this file
         from django.db.models import Min, Max
-        date_range = Transaction.objects.filter(source_file=source_file).aggregate(
+        date_range = CreditCardTransaction.objects.filter(source_file=source_file).aggregate(
             start=Min('date'), end=Max('date')
         )
         source_file.date_range_start = date_range['start']
         source_file.date_range_end = date_range['end']
         source_file.save(update_fields=['last_loaded_at', 'date_range_start', 'date_range_end'])
-
-        # Create FileLoadLog entry
-        if transactions_created > 0:
-            FileLoadLog.objects.create(
-                source_file=source_file,
-                bank_account=bank_account,
-                transaction_count=transactions_created,
-                file_hash=extracted_csv.csv_hash,
-                category_summary=category_counts,
-                link_source='pre_existing' if bank_account else 'none',
-            )
 
         self.stdout.write(self.style.SUCCESS(f'  Loaded {transactions_created} transactions'))
         return transactions_created

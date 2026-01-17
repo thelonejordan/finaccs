@@ -30,18 +30,13 @@ import {
   fetchCategories,
   fetchTransactions,
   fetchTopExpenses,
-  fetchBankAccounts,
   type Summary,
   type AccountSummary,
   type MonthlyData,
   type CategoryData,
   type Transaction,
   type TopExpense,
-  type BankAccount,
-  type SourceFile,
 } from "@/lib/api"
-import { AccountsSection } from "@/components/AccountsSection"
-import { DataSources } from "@/components/DataSources"
 import { WaffleChart } from "@/components/WaffleChart"
 
 function formatCurrency(amount: number): string {
@@ -127,12 +122,7 @@ export function Dashboard() {
   const [categories, setCategories] = useState<CategoryData[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [topExpenses, setTopExpenses] = useState<TopExpense[]>([])
-  const [allAccounts, setAllAccounts] = useState<BankAccount[]>([])
-  const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([])
   const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
-  const [addSourceFile, setAddSourceFile] = useState<string | null>(null)
-  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     document.title = "Dashboard | FinAccs"
@@ -140,19 +130,14 @@ export function Dashboard() {
 
   useEffect(() => {
     async function loadData() {
-      // Show syncing indicator for refreshes (not initial load)
-      if (!loading) {
-        setSyncing(true)
-      }
       try {
-        const [summaryData, monthlyData, categoryData, transactionsData, topExpensesData, accountsData] =
+        const [summaryData, monthlyData, categoryData, transactionsData, topExpensesData] =
           await Promise.all([
             fetchSummary(),
             fetchMonthly(),
             fetchCategories(),
             fetchTransactions({ limit: 10 }),
             fetchTopExpenses(10),
-            fetchBankAccounts(),
           ])
 
         setSummary(summaryData)
@@ -160,18 +145,15 @@ export function Dashboard() {
         setCategories(categoryData.data)
         setTransactions(transactionsData.data)
         setTopExpenses(topExpensesData.data)
-        setAllAccounts(accountsData.accounts)
-        setSourceFiles(accountsData.source_files)
       } catch (error) {
         console.error("Failed to load data:", error)
       } finally {
         setLoading(false)
-        setSyncing(false)
       }
     }
 
     loadData()
-  }, [refreshKey])
+  }, [])
 
   if (loading) {
     return (
@@ -186,82 +168,7 @@ export function Dashboard() {
     <div className="min-h-screen bg-muted/40">
       <Header />
 
-      {/* Syncing indicator */}
-      {syncing && (
-        <div className="h-0.5 bg-muted overflow-hidden">
-          <div
-            className="h-full w-1/3 bg-primary rounded-full"
-            style={{
-              animation: 'slideSync 1s ease-in-out infinite',
-            }}
-          />
-          <style>{`
-            @keyframes slideSync {
-              0% { transform: translateX(-100%); }
-              100% { transform: translateX(400%); }
-            }
-          `}</style>
-        </div>
-      )}
-
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Accounts & Data Sources */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <AccountsSection
-            accounts={allAccounts}
-            sourceFiles={sourceFiles}
-            onSave={(account) => {
-              setAllAccounts((prev) => {
-                const existing = prev.findIndex((a) => a.id === account.id)
-                if (existing >= 0) {
-                  const updated = [...prev]
-                  updated[existing] = account
-                  return updated
-                }
-                return [...prev, account]
-              })
-              // Refresh all data that depends on accounts
-              setRefreshKey((k) => k + 1)
-            }}
-            initialAddSourceFile={addSourceFile}
-            onAddingStateChange={(isAdding) => {
-              if (!isAdding) setAddSourceFile(null)
-            }}
-          />
-          <DataSources
-            sourceFiles={sourceFiles}
-            accounts={allAccounts}
-            onCreateAccount={(filename) => setAddSourceFile(filename)}
-            onAccountUpdated={(account) => {
-              setAllAccounts((prev) => {
-                const existing = prev.findIndex((a) => a.id === account.id)
-                if (existing >= 0) {
-                  const updated = [...prev]
-                  updated[existing] = account
-                  return updated
-                }
-                return [...prev, account]
-              })
-              // Refresh all data that depends on accounts
-              setRefreshKey((k) => k + 1)
-            }}
-            onSourceFileUpdated={(updatedFile) => {
-              setSourceFiles((prev) => {
-                const existing = prev.findIndex((sf) => sf.id === updatedFile.id)
-                if (existing >= 0) {
-                  const updated = [...prev]
-                  updated[existing] = updatedFile
-                  return updated
-                }
-                return prev
-              })
-              // Refresh all data that depends on source files
-              setRefreshKey((k) => k + 1)
-            }}
-            onRefresh={() => setRefreshKey((k) => k + 1)}
-          />
-        </div>
-
         {/* Balance Overview */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
           <PerAccountTooltip accounts={summary?.per_account ?? []} field="starting_balance">
@@ -345,25 +252,25 @@ export function Dashboard() {
         {/* Balance Formula */}
         {summary && (
           <div className="mb-8 p-4 rounded-xl border border-border bg-card/50">
-            <div className="flex flex-wrap items-center justify-center gap-2 text-sm font-mono">
-              <span className="text-slate-600 dark:text-slate-400">Starting Balance</span>
-              <span className="text-muted-foreground">+</span>
-              <span className="text-green-700 dark:text-green-400">Total Credits</span>
-              <span className="text-muted-foreground">−</span>
-              <span className="text-red-700 dark:text-red-400">Total Debits</span>
-              <span className="text-muted-foreground">=</span>
-              <span className="text-blue-600 dark:text-blue-400">Current Balance</span>
+            <div className="flex flex-wrap items-center justify-center gap-2 text-base">
+              <span className="text-slate-600 dark:text-slate-400" style={{ fontFamily: "'Rock Salt', cursive" }}>Starting Balance</span>
+              <span className="text-muted-foreground" style={{ fontFamily: "'Rock Salt', cursive" }}>+</span>
+              <span className="text-green-700 dark:text-green-400" style={{ fontFamily: "'Rock Salt', cursive" }}>Total Credits</span>
+              <span className="text-muted-foreground" style={{ fontFamily: "'Rock Salt', cursive" }}>−</span>
+              <span className="text-red-700 dark:text-red-400" style={{ fontFamily: "'Rock Salt', cursive" }}>Total Debits</span>
+              <span className="text-muted-foreground" style={{ fontFamily: "'Rock Salt', cursive" }}>=</span>
+              <span className="text-blue-600 dark:text-blue-400" style={{ fontFamily: "'Rock Salt', cursive" }}>Current Balance</span>
               {Math.abs(summary.unaccounted) > 0.01 ? (
                 <>
                   <span className="text-muted-foreground mx-2">→</span>
-                  <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                    Current is {formatCurrency(Math.abs(summary.unaccounted))} {summary.unaccounted > 0 ? 'more' : 'less'} than expected
+                  <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400" style={{ fontFamily: "'Shadows Into Light', cursive" }}>
+                    Current is <span className="text-xl" style={{ fontFamily: "'Permanent Marker', cursive" }}>{formatCurrency(Math.abs(summary.unaccounted))}</span> {summary.unaccounted > 0 ? 'more' : 'less'} than expected
                   </span>
                 </>
               ) : (
                 <>
                   <span className="text-muted-foreground mx-2">→</span>
-                  <span className="px-2 py-1 rounded bg-green-500/10 text-green-600 dark:text-green-400">
+                  <span className="px-2 py-1 rounded bg-green-500/10 text-green-600 dark:text-green-400" style={{ fontFamily: "'Shadows Into Light', cursive" }}>
                     ✓ Balanced
                   </span>
                 </>

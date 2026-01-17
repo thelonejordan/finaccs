@@ -24,6 +24,13 @@ class Transaction(models.Model):
         blank=True,
         related_name='transactions'
     )
+    extracted_csv = models.ForeignKey(
+        'bank_accs.ExtractedCSV',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transactions'
+    )
     linked_transaction = models.OneToOneField(
         'self',
         on_delete=models.SET_NULL,
@@ -31,9 +38,10 @@ class Transaction(models.Model):
         blank=True,
         related_name='linked_from'
     )
+    row_number = models.IntegerField(default=0)  # Position in extracted CSV for ordering
 
     class Meta:
-        ordering = ['-date', '-id']
+        ordering = ['-date', '-row_number']
 
     def __str__(self):
         return f"{self.date} - {self.narration[:50]}"

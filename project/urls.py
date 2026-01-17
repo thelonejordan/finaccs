@@ -14,11 +14,44 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+import subprocess
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
+from django.http import JsonResponse
+
+
+def get_git_commit():
+    try:
+        return subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'],
+            stderr=subprocess.DEVNULL
+        ).decode('utf-8').strip()
+    except Exception:
+        return None
+
+
+def health(request):
+    return JsonResponse({
+        'status': 'ok',
+        'project': 'finaccs',
+        'version': '1.0.0',
+        'git_commit': get_git_commit(),
+    })
+
 
 urlpatterns = [
+    path('api/health/', health, name='health'),
     path('admin/', admin.site.urls),
     path('', include('bank_accs.urls')),
     path('', include('dashboard.urls')),
+    path('', include('credit_cards.urls')),
 ]
+
+# API docs (dev only)
+if settings.DEV_MODE:
+    from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+    urlpatterns = [
+        path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+        path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    ] + urlpatterns
