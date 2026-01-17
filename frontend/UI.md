@@ -319,17 +319,19 @@ Mobile-first approach with Tailwind breakpoints:
 ```
 src/
 ├── components/
-│   ├── Dashboard.tsx        # Main dashboard view
-│   ├── TransactionsPage.tsx # All transactions view
-│   ├── AccountsSection.tsx  # Bank accounts management
-│   ├── DataSources.tsx      # Source file management
+│   ├── Dashboard.tsx          # Main dashboard view
+│   ├── TransactionsPage.tsx   # All transactions view
+│   ├── InconsistenciesPage.tsx # Balance inconsistencies view
+│   ├── AccountsSection.tsx    # Bank accounts management
+│   ├── DataSources.tsx        # Source file management
 │   ├── TransactionTooltip.tsx # Transaction detail tooltip
-│   └── WaffleChart.tsx      # Category breakdown chart
+│   └── WaffleChart.tsx        # Category breakdown chart
 ├── lib/
-│   ├── api.ts              # API client
-│   ├── theme.ts            # Theme context (light/dark)
-│   └── utils.ts            # Utility functions
-├── index.css               # Global styles & CSS variables
-├── App.tsx                 # Router setup
-└── main.tsx               # Entry point
+│   ├── api.ts                 # API client
+│   ├── inconsistency-cache.tsx # Inconsistency count cache (for header badge)
+│   ├── theme.ts               # Theme context (light/dark)
+│   └── utils.ts               # Utility functions
+├── index.css                  # Global styles & CSS variables
+├── App.tsx                    # Router setup
+└── main.tsx                   # Entry point
 ```

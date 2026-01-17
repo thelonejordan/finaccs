@@ -6,11 +6,13 @@ import { SettingsPage } from "@/components/SettingsPage"
 import { InconsistenciesPage } from "@/components/InconsistenciesPage"
 import { LogsPage } from "@/components/LogsPage"
 import { ThemeProvider } from "@/lib/theme"
+import { InconsistencyCacheProvider } from "@/lib/inconsistency-cache"
 
 function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
+        <InconsistencyCacheProvider>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
@@ -20,6 +22,7 @@ function App() {
           <Route path="/inconsistencies" element={<InconsistenciesPage />} />
           <Route path="/logs" element={<LogsPage />} />
         </Routes>
+        </InconsistencyCacheProvider>
       </BrowserRouter>
     </ThemeProvider>
   )

@@ -7,7 +7,6 @@ import {
   FilterIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  ChevronUpIcon,
   ChevronsLeftIcon,
   ChevronsRightIcon,
   ChevronDownIcon,
@@ -27,6 +26,7 @@ import * as Popover from "@radix-ui/react-popover"
 import * as Dialog from "@radix-ui/react-dialog"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import { Header } from "@/components/Header"
+import { Footer } from "@/components/Footer"
 import {
   fetchTransactions,
   fetchCategories,
@@ -39,7 +39,7 @@ import {
   type Transaction,
   type CategoryData,
   type BankAccount,
-  type SourceFile,
+  type ExtractedCSV,
   type TransactionStats,
   type PotentialLinkTransaction,
   type DateRange,
@@ -503,7 +503,7 @@ export function TransactionsModernPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [categories, setCategories] = useState<CategoryData[]>([])
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
-  const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([])
+  const [extractedCSVs, setExtractedCSVs] = useState<ExtractedCSV[]>([])
   const [stats, setStats] = useState<TransactionStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [total, setTotal] = useState(0)
@@ -541,6 +541,12 @@ export function TransactionsModernPage() {
   const [lockedHeight, setLockedHeight] = useState<number | null>(null)
   const isPageChangeRef = useRef(false)
   const shouldScrollToTableRef = useRef(false)
+
+  // Auto-scroll preference (synced with Header via custom event)
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
+    const saved = localStorage.getItem('autoScrollToTable')
+    return saved !== null ? saved === 'true' : true // default enabled
+  })
 
   // Cache scroll positions for last 3 pages (page number -> scroll position)
   const scrollCacheRef = useRef<Map<number, number>>(new Map())
@@ -593,6 +599,15 @@ export function TransactionsModernPage() {
   useEffect(() => {
     document.title = "Transactions | FinAccs"
     window.scrollTo(0, 0)
+  }, [])
+
+  // Listen for auto-scroll changes from Header
+  useEffect(() => {
+    const handleAutoScrollChange = (e: CustomEvent<boolean>) => {
+      setAutoScrollEnabled(e.detail)
+    }
+    window.addEventListener('autoScrollChange', handleAutoScrollChange as EventListener)
+    return () => window.removeEventListener('autoScrollChange', handleAutoScrollChange as EventListener)
   }, [])
 
   // Sync state to URL
@@ -744,7 +759,7 @@ export function TransactionsModernPage() {
       try {
         const data = await fetchBankAccounts()
         setBankAccounts(data.accounts)
-        setSourceFiles(data.source_files)
+        setExtractedCSVs(data.extracted_csvs)
       } catch (error) {
         console.error("Failed to load bank accounts:", error)
       }
@@ -786,14 +801,18 @@ export function TransactionsModernPage() {
         isPageChangeRef.current = false
         setLockedHeight(null)
 
-        // Scroll to table section if month/year changed
+        // Clear scroll cache when month/year changed
         if (shouldScrollToTableRef.current) {
           shouldScrollToTableRef.current = false
-          // Clear scroll cache when month/year changes
           scrollCacheRef.current.clear()
-          requestAnimationFrame(() => {
-            tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          })
+          if (autoScrollEnabled && tableSectionRef.current) {
+            requestAnimationFrame(() => {
+              const headerOffset = 56 + 16 // header height (h-14 = 56px) + margin
+              const elementPosition = tableSectionRef.current!.getBoundingClientRect().top
+              const offsetPosition = elementPosition + window.scrollY - headerOffset
+              window.scrollTo({ top: offsetPosition, behavior: 'smooth' })
+            })
+          }
         } else if (wasPageChange) {
           // Scroll table container past the "Previous page" row so first transaction is at top
           targetPageRef.current = null
@@ -811,10 +830,10 @@ export function TransactionsModernPage() {
     loadTransactions()
   }, [selectedCategory, selectedType, selectedBankAccount, selectedSourceFile, selectedYear, selectedMonth, debouncedSearch, page, refreshKey])
 
-  // Filter source files by selected bank account
-  const filteredSourceFiles = selectedBankAccount
-    ? sourceFiles.filter((sf) => sf.bank_account_id === selectedBankAccount)
-    : sourceFiles
+  // Filter extracted CSVs by selected bank account
+  const filteredExtractedCSVs = selectedBankAccount
+    ? extractedCSVs.filter((csv) => csv.bank_account_id === selectedBankAccount)
+    : extractedCSVs
 
   const totalPages = Math.ceil(total / pageSize)
 
@@ -1039,8 +1058,8 @@ export function TransactionsModernPage() {
                     const newBankAccount = value === "all" ? null : parseInt(value, 10)
                     setSelectedBankAccount(newBankAccount)
                     if (selectedSourceFile && newBankAccount) {
-                      const sourceFile = sourceFiles.find((sf) => sf.id === selectedSourceFile)
-                      if (sourceFile && sourceFile.bank_account_id !== newBankAccount) {
+                      const csv = extractedCSVs.find((csv) => csv.source_file_id === selectedSourceFile)
+                      if (csv && csv.bank_account_id !== newBankAccount) {
                         setSelectedSourceFile(null)
                       }
                     }
@@ -1092,7 +1111,7 @@ export function TransactionsModernPage() {
               )}
 
               {/* Source File Filter */}
-              {filteredSourceFiles.length > 0 && (
+              {filteredExtractedCSVs.length > 0 && (
                 <Select.Root
                   value={selectedSourceFile?.toString() || "all"}
                   onValueChange={(value) => {
@@ -1121,13 +1140,13 @@ export function TransactionsModernPage() {
                             <CheckIcon className="h-4 w-4" />
                           </Select.ItemIndicator>
                         </Select.Item>
-                        {filteredSourceFiles.map((file) => (
+                        {filteredExtractedCSVs.map((csv) => (
                           <Select.Item
-                            key={file.id}
-                            value={file.id.toString()}
+                            key={csv.id}
+                            value={csv.source_file_id.toString()}
                             className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
                           >
-                            <Select.ItemText>{file.filename}</Select.ItemText>
+                            <Select.ItemText>{csv.source_filename}</Select.ItemText>
                             <Select.ItemIndicator>
                               <CheckIcon className="h-4 w-4" />
                             </Select.ItemIndicator>
@@ -1386,6 +1405,7 @@ export function TransactionsModernPage() {
           </div>
         </section>
       </main>
+      <Footer />
     </div>
   )
 }

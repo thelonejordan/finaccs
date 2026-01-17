@@ -19,12 +19,12 @@ import {
   updateBankAccount,
   type BankAccount,
   type BankAccountInput,
-  type SourceFile,
+  type ExtractedCSV,
 } from "@/lib/api"
 
 interface AccountsSectionProps {
   accounts: BankAccount[]
-  sourceFiles: SourceFile[]
+  extractedCSVs: ExtractedCSV[]
   onSave: (account: BankAccount) => void
   initialAddSourceFile?: string | null
   onAddingStateChange?: (isAdding: boolean) => void
@@ -289,15 +289,13 @@ function AccountCard({
   )
 }
 
-export function AccountsSection({ accounts, sourceFiles, onSave, initialAddSourceFile, onAddingStateChange }: AccountsSectionProps) {
+export function AccountsSection({ accounts, extractedCSVs, onSave, initialAddSourceFile, onAddingStateChange }: AccountsSectionProps) {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [isAdding, setIsAdding] = useState(false)
   const [prefilledSourceFile, setPrefilledSourceFile] = useState<string | null>(null)
 
-  // Only parsed files can be linked to accounts
-  const parsedFileNames = sourceFiles
-    .filter((f) => f.status === 'parsed')
-    .map((f) => f.filename)
+  // Get unique source filenames from ExtractedCSVs (loaded ones are already associated)
+  const availableFileNames = [...new Set(extractedCSVs.map((csv) => csv.source_filename))]
 
   // Handle external trigger to add account with pre-filled source file
   useEffect(() => {
@@ -331,7 +329,7 @@ export function AccountsSection({ accounts, sourceFiles, onSave, initialAddSourc
             </div>
             Accounts
           </h3>
-          {!isAdding && parsedFileNames.length > 0 && accounts.length > 0 && (
+          {!isAdding && availableFileNames.length > 0 && accounts.length > 0 && (
             <button
               onClick={() => setIsAdding(true)}
               className="px-3 py-1.5 text-sm rounded-lg bg-muted text-foreground hover:bg-muted/80 transition-colors inline-flex items-center gap-1.5 font-medium"
@@ -351,7 +349,7 @@ export function AccountsSection({ accounts, sourceFiles, onSave, initialAddSourc
               </div>
               <p className="font-medium">No accounts configured</p>
               <p className="text-sm text-muted-foreground mt-1">Add a bank account to get started</p>
-              {parsedFileNames.length > 0 && (
+              {availableFileNames.length > 0 && (
                 <button
                   onClick={() => setIsAdding(true)}
                   className="mt-4 px-4 py-2 text-sm rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors inline-flex items-center gap-2 font-medium shadow-sm"
@@ -363,6 +361,14 @@ export function AccountsSection({ accounts, sourceFiles, onSave, initialAddSourc
             </div>
           ) : (
             <>
+              {isAdding && (
+                <AccountForm
+                  account={null}
+                  onSave={handleSave}
+                  onCancel={() => setIsAdding(false)}
+                  defaultSourceFile={prefilledSourceFile}
+                />
+              )}
               {accounts.map((account) =>
                 editingId === account.id ? (
                   <AccountForm
@@ -380,14 +386,6 @@ export function AccountsSection({ accounts, sourceFiles, onSave, initialAddSourc
                 )
               )}
             </>
-          )}
-          {isAdding && (
-            <AccountForm
-              account={null}
-              onSave={handleSave}
-              onCancel={() => setIsAdding(false)}
-              defaultSourceFile={prefilledSourceFile}
-            />
           )}
         </div>
         <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-card to-transparent pointer-events-none rounded-b-xl" />

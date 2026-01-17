@@ -23,6 +23,7 @@ import {
 import * as Select from "@radix-ui/react-select"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import { Header } from "@/components/Header"
+import { Footer } from "@/components/Footer"
 import {
   fetchInconsistencies,
   fetchBankAccounts,
@@ -35,6 +36,7 @@ import {
   type CreditCard,
   type CreditCardInconsistency,
 } from "@/lib/api"
+import { useInconsistencyCache } from "@/lib/inconsistency-cache"
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
@@ -92,7 +94,7 @@ function BankAccountInconsistencies() {
     loadBankAccounts()
   }, [])
 
-  // Load inconsistencies
+  // Always fetch data on mount and when filters/pagination change
   useEffect(() => {
     async function loadInconsistencies() {
       setLoading(true)
@@ -365,6 +367,7 @@ function BankAccountInconsistencies() {
 
 // Credit Card Inconsistencies Component
 function CreditCardInconsistencies() {
+  const { invalidate: invalidateInconsistencyCache } = useInconsistencyCache()
   const [inconsistencies, setInconsistencies] = useState<CreditCardInconsistency[]>([])
   const [creditCards, setCreditCards] = useState<CreditCard[]>([])
   const [counts, setCounts] = useState<{ duplicate: number; cross_card: number; missing_description: number }>({ duplicate: 0, cross_card: 0, missing_description: 0 })
@@ -388,7 +391,7 @@ function CreditCardInconsistencies() {
     loadCreditCards()
   }, [])
 
-  // Load inconsistencies
+  // Always fetch data on mount and when filters change
   useEffect(() => {
     async function loadInconsistencies() {
       setLoading(true)
@@ -420,6 +423,7 @@ function CreditCardInconsistencies() {
   async function handleDismiss(item: CreditCardInconsistency) {
     try {
       await dismissCreditCardInconsistency(item.type, item.related_ids)
+      invalidateInconsistencyCache()  // Count decreased
       setRefreshKey((k) => k + 1)
     } catch (error) {
       console.error("Failed to dismiss:", error)
@@ -429,6 +433,7 @@ function CreditCardInconsistencies() {
   async function handleRestore(item: CreditCardInconsistency) {
     try {
       await restoreCreditCardInconsistency(item.type, item.related_ids)
+      invalidateInconsistencyCache()  // Count increased
       setRefreshKey((k) => k + 1)
     } catch (error) {
       console.error("Failed to restore:", error)
@@ -860,6 +865,7 @@ export function InconsistenciesPage() {
         {activeTab === "bank" && <BankAccountInconsistencies />}
         {activeTab === "credit" && <CreditCardInconsistencies />}
       </main>
+      <Footer />
     </div>
   )
 }

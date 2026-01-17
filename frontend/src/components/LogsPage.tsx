@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import { Header } from "@/components/Header"
+import { Footer } from "@/components/Footer"
 import {
   fetchTransactionLogs,
   type TransactionLogEntry,
@@ -419,6 +420,7 @@ export function LogsPage() {
           )}
         </div>
       </div>
+      <Footer />
     </div>
   )
 }

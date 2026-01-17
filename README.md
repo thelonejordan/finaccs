@@ -7,7 +7,8 @@ A personal finance dashboard for tracking bank transactions, categorizing expens
 **Backend:**
 - Python 3.11+
 - Django 5.2
-- SQLite database
+- MySQL database
+- Redis (optional caching)
 
 **Frontend:**
 - React 19
@@ -22,6 +23,7 @@ A personal finance dashboard for tracking bank transactions, categorizing expens
 - [Python 3.11+](https://www.python.org/downloads/)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) - Python package manager
 - [Node.js 20+](https://nodejs.org/) and npm
+- [Redis](https://redis.io/) (optional) - For server-side caching
 
 ## Project Setup
 
@@ -72,13 +74,43 @@ mkdir -p bank_accs/data
 
 ### 5. Configure Environment Variables (Optional)
 
-For password-protected xlsx files, create a `.env` file:
+Copy the example environment file and customize:
 
 ```bash
-echo "XLSX_PASSWORD=your_password_here" > .env
+cp .env.example .env
 ```
 
-### 6. Load Transactions
+Edit `.env` with your settings:
+- `SECRET_KEY` - Django secret key
+- `DATABASE_URL` - Database connection string
+- `CORS_ALLOWED_ORIGINS` - Allowed frontend origins
+
+### 6. Enable Redis Caching (Optional)
+
+Redis caching improves API response times for dashboard data and inconsistency detection.
+
+**Install and start Redis:**
+```bash
+# macOS
+brew install redis
+brew services start redis
+
+# Ubuntu/Debian
+sudo apt install redis-server
+sudo systemctl start redis
+```
+
+**Enable in `.env`:**
+```bash
+REDIS_ENABLED=1
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_PASSWORD=your_redis_password  # If authentication is enabled
+```
+
+Without Redis, the application works normally but may have slower response times for complex queries.
+
+### 7. Load Transactions
 
 Load transactions from bank statement files:
 
@@ -164,7 +196,7 @@ finaccs/
 │   └── urls.py
 ├── pyproject.toml          # Python dependencies
 ├── manage.py               # Django CLI
-└── db.sqlite3              # SQLite database
+└── .env                    # Environment configuration
 ```
 
 ## Features
@@ -185,7 +217,7 @@ finaccs/
 To reset the database and start fresh:
 
 ```bash
-rm db.sqlite3
+# Drop and recreate the MySQL database, then run migrations
 uv run python manage.py migrate
 ```
 

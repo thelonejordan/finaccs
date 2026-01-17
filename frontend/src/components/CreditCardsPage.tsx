@@ -7,7 +7,6 @@ import {
   FilterIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  ChevronUpIcon,
   ChevronsLeftIcon,
   ChevronsRightIcon,
   ChevronDownIcon,
@@ -24,6 +23,7 @@ import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import { Header } from "@/components/Header"
+import { Footer } from "@/components/Footer"
 import {
   fetchCreditCards,
   fetchCreditCardTransactions,
@@ -324,6 +324,12 @@ export function CreditCardsPage() {
   const isPageChangeRef = useRef(false)
   const shouldScrollToTableRef = useRef(false)
 
+  // Auto-scroll preference (synced with Header via custom event)
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
+    const saved = localStorage.getItem('autoScrollToTable')
+    return saved !== null ? saved === 'true' : true // default enabled
+  })
+
   // Cache scroll positions for last 3 pages (page number -> scroll position)
   const scrollCacheRef = useRef<Map<number, number>>(new Map())
   const targetPageRef = useRef<number | null>(null)
@@ -375,6 +381,15 @@ export function CreditCardsPage() {
   useEffect(() => {
     document.title = "Credit Cards | FinAccs"
     window.scrollTo(0, 0)
+  }, [])
+
+  // Listen for auto-scroll changes from Header
+  useEffect(() => {
+    const handleAutoScrollChange = (e: CustomEvent<boolean>) => {
+      setAutoScrollEnabled(e.detail)
+    }
+    window.addEventListener('autoScrollChange', handleAutoScrollChange as EventListener)
+    return () => window.removeEventListener('autoScrollChange', handleAutoScrollChange as EventListener)
   }, [])
 
   // Sync state to URL
@@ -510,14 +525,18 @@ export function CreditCardsPage() {
         isPageChangeRef.current = false
         setLockedHeight(null)
 
-        // Scroll to table section if month/year changed
+        // Clear scroll cache when month/year changed
         if (shouldScrollToTableRef.current) {
           shouldScrollToTableRef.current = false
-          // Clear scroll cache when month/year changes
           scrollCacheRef.current.clear()
-          requestAnimationFrame(() => {
-            tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          })
+          if (autoScrollEnabled && tableSectionRef.current) {
+            requestAnimationFrame(() => {
+              const headerOffset = 56 + 16 // header height (h-14 = 56px) + margin
+              const elementPosition = tableSectionRef.current!.getBoundingClientRect().top
+              const offsetPosition = elementPosition + window.scrollY - headerOffset
+              window.scrollTo({ top: offsetPosition, behavior: 'smooth' })
+            })
+          }
         } else if (wasPageChange) {
           // Scroll table container past the "Previous page" row so first transaction is at top
           targetPageRef.current = null
@@ -1093,6 +1112,7 @@ export function CreditCardsPage() {
           </div>
         </section>
       </main>
+      <Footer />
     </div>
   )
 }

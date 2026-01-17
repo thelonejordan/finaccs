@@ -23,6 +23,7 @@ import {
   HelpCircleIcon,
 } from "lucide-react"
 import { Header } from "@/components/Header"
+import { Footer } from "@/components/Footer"
 import { TransactionTooltip } from "@/components/TransactionTooltip"
 import {
   fetchSummary,
@@ -593,6 +594,7 @@ export function Dashboard() {
           </section>
         </div>
       </main>
+      <Footer />
     </div>
     </Tooltip.Provider>
   )

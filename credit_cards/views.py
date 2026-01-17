@@ -1,9 +1,12 @@
 import json
 import os
+from django.core.cache import cache
 from django.http import JsonResponse
 from django.conf import settings
 from django.db.models import Min, Max, Sum, Q
 from rest_framework.decorators import api_view
+
+from project.cache_utils import get_cc_inconsistencies_key, invalidate_cc_inconsistencies
 
 # Conditional import for API docs (dev only)
 try:
@@ -83,6 +86,14 @@ def get_credit_card_source_files_with_stats():
         file_info['first_transaction_date'] = date_range['first_date'].isoformat() if date_range['first_date'] else None
         file_info['last_transaction_date'] = date_range['last_date'].isoformat() if date_range['last_date'] else None
         file_info['transaction_count'] = active_txns.count()
+
+        # Get extraction name from most recent non-superseded extracted CSV
+        latest_extraction = CreditCardExtractedCSV.objects.filter(
+            source_file=sf
+        ).exclude(
+            status='superseded'
+        ).order_by('-extracted_at').first()
+        file_info['extracted_csv_name'] = latest_extraction.name if latest_extraction else None
 
         files.append(file_info)
 
@@ -586,17 +597,23 @@ def credit_card_inconsistencies(request):
     from django.db.models import Count
     from .models import DismissedCreditCardInconsistency
 
+    # Filter by credit card if specified
+    card_id = request.GET.get('credit_card')
+    include_dismissed = request.GET.get('include_dismissed', 'false').lower() == 'true'
+
+    # Check cache first
+    cache_key = get_cc_inconsistencies_key(card_id, include_dismissed)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return JsonResponse(cached)
+
     transactions = get_active_cc_transactions().select_related(
         'credit_card',
         'source_file',
     )
 
-    # Filter by credit card if specified
-    card_id = request.GET.get('credit_card')
     if card_id:
         transactions = transactions.filter(credit_card_id=card_id)
-
-    include_dismissed = request.GET.get('include_dismissed', 'false').lower() == 'true'
 
     inconsistencies = []
 
@@ -746,7 +763,7 @@ def credit_card_inconsistencies(request):
     cross_card_count = sum(1 for i in inconsistencies if i['type'] == 'cross_card')
     missing_desc_count = sum(1 for i in inconsistencies if i['type'] == 'missing_description')
 
-    return JsonResponse({
+    result = {
         'data': inconsistencies,
         'total': len(inconsistencies),
         'counts': {
@@ -754,7 +771,12 @@ def credit_card_inconsistencies(request):
             'cross_card': cross_card_count,
             'missing_description': missing_desc_count,
         }
-    })
+    }
+
+    # Cache the result (no timeout, invalidated manually)
+    cache.set(cache_key, result, None)
+
+    return JsonResponse(result)
 
 
 @extend_schema(
@@ -809,6 +831,9 @@ def dismiss_credit_card_inconsistency(request):
             dismissed.reason = reason
             dismissed.save()
 
+        # Invalidate cache after successful dismiss
+        invalidate_cc_inconsistencies()
+
         return JsonResponse({
             'success': True,
             'created': created,
@@ -860,6 +885,9 @@ def restore_credit_card_inconsistency(request):
         inconsistency_type=inconsistency_type,
         transaction_ids=key
     ).delete()
+
+    # Invalidate cache after successful restore
+    invalidate_cc_inconsistencies()
 
     return JsonResponse({
         'success': True,

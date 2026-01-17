@@ -18,10 +18,15 @@ import {
   SparklesIcon,
   BuildingIcon,
   SettingsIcon,
+  ClockIcon,
+  TrendingDownIcon,
+  CheckCircleIcon,
+  RefreshCwIcon,
 } from "lucide-react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import { Header } from "@/components/Header"
+import { Footer } from "@/components/Footer"
 import { AccountsSection } from "@/components/AccountsSection"
 import { DataSources } from "@/components/DataSources"
 import {
@@ -34,7 +39,7 @@ import {
   type CreditCardInput,
   type CreditCardSourceFile,
   type BankAccount,
-  type SourceFile,
+  type ExtractedCSV,
 } from "@/lib/api"
 
 function formatDate(dateStr: string): string {
@@ -49,9 +54,23 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(amount)
+}
+
+function FormattedCurrency({ amount, className = "" }: { amount: number; className?: string }) {
+  const formatted = formatCurrency(amount)
+  const match = formatted.match(/^(.*?)(\.\d{2})$/)
+  if (match) {
+    return (
+      <span className={className}>
+        {match[1]}
+        <span className="opacity-50">{match[2]}</span>
+      </span>
+    )
+  }
+  return <span className={className}>{formatted}</span>
 }
 
 // Credit Card Form Component
@@ -226,19 +245,42 @@ function CreditCardCard({
         </button>
       </div>
 
-      {/* Card Stats */}
-      {(card.transaction_count != null && card.transaction_count > 0) && (
+      {/* Card Stats - matches AccountCard layout */}
+      {(card.total_charges != null && card.total_charges > 0) && (
         <div className="mt-3 p-3 rounded-lg border border-border">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Transactions</span>
-            <span className="font-medium">{card.transaction_count}</span>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground">Total Charges</p>
+              <FormattedCurrency
+                amount={card.total_charges}
+                className="text-lg font-bold text-red-600 dark:text-red-400"
+              />
+            </div>
+            {card.last_transaction_date && (
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
+                  <ClockIcon className="h-3 w-3" />
+                  Last transaction
+                </p>
+                <p className="text-sm font-medium">{formatDate(card.last_transaction_date)}</p>
+              </div>
+            )}
           </div>
-          {card.first_transaction_date && card.last_transaction_date && (
+          {(card.total_payments != null || card.first_transaction_date) && (
             <div className="mt-2 pt-2 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
-                <CalendarIcon className="h-3 w-3" />
-                {formatDate(card.first_transaction_date)} — {formatDate(card.last_transaction_date)}
+                <TrendingDownIcon className="h-3 w-3" />
+                Payments: <FormattedCurrency amount={card.total_payments || 0} />
+                {card.transaction_count != null && card.transaction_count > 0 && (
+                  <span className="ml-1">({card.transaction_count} txns)</span>
+                )}
               </span>
+              {card.first_transaction_date && (
+                <span className="flex items-center gap-1">
+                  <CalendarIcon className="h-3 w-3" />
+                  {formatDate(card.first_transaction_date)}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -338,6 +380,14 @@ function CreditCardsSection({
             </div>
           ) : (
             <>
+              {isAdding && (
+                <CreditCardForm
+                  card={null}
+                  onSave={handleSave}
+                  onCancel={() => setIsAdding(false)}
+                  defaultSourceFile={prefilledSourceFile}
+                />
+              )}
               {cards.map((card) =>
                 editingId === card.id ? (
                   <CreditCardForm
@@ -356,14 +406,6 @@ function CreditCardsSection({
               )}
             </>
           )}
-          {isAdding && (
-            <CreditCardForm
-              card={null}
-              onSave={handleSave}
-              onCancel={() => setIsAdding(false)}
-              defaultSourceFile={prefilledSourceFile}
-            />
-          )}
         </div>
         <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-card to-transparent pointer-events-none rounded-b-xl" />
       </div>
@@ -378,15 +420,28 @@ function CreditCardDataSources({
   onCreateCard,
   onCardUpdated,
   onSourceFileUpdated,
+  onRefresh,
 }: {
   sourceFiles: CreditCardSourceFile[]
   cards: CreditCard[]
   onCreateCard: (filename: string) => void
   onCardUpdated: () => void
   onSourceFileUpdated: (sourceFile: CreditCardSourceFile) => void
+  onRefresh?: () => void
 }) {
   const [isLinking, setIsLinking] = useState(false)
   const [togglingId, setTogglingId] = useState<number | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    if (!onRefresh) return
+    setIsRefreshing(true)
+    try {
+      await onRefresh()
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
 
   const handleToggleDisabled = async (file: CreditCardSourceFile) => {
     setTogglingId(file.id)
@@ -487,6 +542,18 @@ function CreditCardDataSources({
             <DatabaseIcon className="h-5 w-5 text-muted-foreground" />
           </div>
           Data Sources
+          <div className="ml-auto">
+            {onRefresh && (
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+                title="Refresh data sources"
+              >
+                <RefreshCwIcon className={`h-4 w-4 text-muted-foreground ${isRefreshing ? 'animate-spin' : ''}`} />
+              </button>
+            )}
+          </div>
         </h3>
       </header>
       <div className="relative">
@@ -502,7 +569,7 @@ function CreditCardDataSources({
               </p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {sourceFiles.map((file) => {
                 const linkedCard = fileToCard.get(file.filename)
                 return (
@@ -516,22 +583,28 @@ function CreditCardDataSources({
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <p className={`font-mono text-sm truncate font-medium ${file.disabled ? 'line-through text-muted-foreground' : ''}`}>{file.filename}</p>
+                          <div className="min-w-0">
+                            <p className={`font-mono text-sm truncate font-medium ${file.disabled ? 'line-through text-muted-foreground' : ''}`}>{file.extracted_csv_name || file.filename}</p>
+                            {file.extracted_csv_name && (
+                              <p className="text-xs text-muted-foreground truncate">{file.filename}</p>
+                            )}
+                          </div>
                           <div className="flex items-center gap-2 shrink-0">
                             {file.disabled ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/20 text-red-600 dark:text-red-400">
                                 <EyeOffIcon className="h-3 w-3" />
                                 Disabled
                               </span>
-                            ) : linkedCard ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-700 dark:text-green-400">
-                                <LinkIcon className="h-3 w-3" />
-                                Linked
-                              </span>
-                            ) : (
+                            ) : !linkedCard && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-600 dark:text-amber-400">
                                 <Link2OffIcon className="h-3 w-3" />
                                 Not linked
+                              </span>
+                            )}
+                            {file.extracted_csv_name && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-700 dark:text-green-400">
+                                <CheckCircleIcon className="h-3 w-3" />
+                                Loaded
                               </span>
                             )}
                             <Tooltip.Provider>
@@ -710,7 +783,7 @@ export function SettingsPage() {
 
   // Bank Accounts state
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
-  const [bankSourceFiles, setBankSourceFiles] = useState<SourceFile[]>([])
+  const [extractedCSVs, setExtractedCSVs] = useState<ExtractedCSV[]>([])
   const [bankAddSourceFile, setBankAddSourceFile] = useState<string | null>(null)
 
   // Credit Cards state
@@ -732,7 +805,7 @@ export function SettingsPage() {
           fetchCreditCards(),
         ])
         setBankAccounts(bankData.accounts)
-        setBankSourceFiles(bankData.source_files)
+        setExtractedCSVs(bankData.extracted_csvs)
         setCreditCards(creditData.cards)
         setCreditCardSourceFiles(creditData.source_files)
       } catch (error) {
@@ -747,7 +820,7 @@ export function SettingsPage() {
   const refreshBankData = async () => {
     const data = await fetchBankAccounts()
     setBankAccounts(data.accounts)
-    setBankSourceFiles(data.source_files)
+    setExtractedCSVs(data.extracted_csvs)
   }
 
   const refreshCreditData = async () => {
@@ -839,7 +912,7 @@ export function SettingsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <AccountsSection
               accounts={bankAccounts}
-              sourceFiles={bankSourceFiles}
+              extractedCSVs={extractedCSVs}
               onSave={handleBankAccountSave}
               initialAddSourceFile={bankAddSourceFile}
               onAddingStateChange={(isAdding) => {
@@ -847,32 +920,19 @@ export function SettingsPage() {
               }}
             />
             <DataSources
-              sourceFiles={bankSourceFiles}
+              extractedCSVs={extractedCSVs}
               accounts={bankAccounts}
               onCreateAccount={(filename) => setBankAddSourceFile(filename)}
-              onAccountUpdated={(account) => {
-                setBankAccounts((prev) => {
-                  const existing = prev.findIndex((a) => a.id === account.id)
+              onCSVUpdated={(updatedCSV) => {
+                setExtractedCSVs((prev) => {
+                  const existing = prev.findIndex((csv) => csv.id === updatedCSV.id)
                   if (existing >= 0) {
                     const updated = [...prev]
-                    updated[existing] = account
-                    return updated
-                  }
-                  return [...prev, account]
-                })
-                refreshBankData()
-              }}
-              onSourceFileUpdated={(updatedFile) => {
-                setBankSourceFiles((prev) => {
-                  const existing = prev.findIndex((sf) => sf.id === updatedFile.id)
-                  if (existing >= 0) {
-                    const updated = [...prev]
-                    updated[existing] = updatedFile
+                    updated[existing] = updatedCSV
                     return updated
                   }
                   return prev
                 })
-                refreshBankData()
               }}
               onRefresh={refreshBankData}
             />
@@ -899,10 +959,12 @@ export function SettingsPage() {
                   prev.map((sf) => (sf.id === sourceFile.id ? sourceFile : sf))
                 )
               }}
+              onRefresh={refreshCreditData}
             />
           </div>
         )}
       </main>
+      <Footer />
     </div>
   )
 }

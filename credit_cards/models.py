@@ -1,3 +1,4 @@
+import shortuuid
 from django.db import models
 
 
@@ -57,6 +58,9 @@ class CreditCardExtractedCSV(models.Model):
         related_name='extracted_csvs'
     )
 
+    # Unique identifier with clean format: cc_extraction_DDMMYYYY_xxxxxxxx
+    name = models.CharField(max_length=40, unique=True, blank=True)
+
     # Blob storage (gzip compressed)
     csv_data = models.BinaryField()
     csv_hash = models.CharField(max_length=64)  # SHA-256
@@ -80,8 +84,26 @@ class CreditCardExtractedCSV(models.Model):
     class Meta:
         ordering = ['-extracted_at']
 
+    @classmethod
+    def generate_unique_name(cls):
+        """Generate unique name in format: cc_extraction_DDMMYYYY_xxxxxxxx"""
+        from django.utils import timezone
+        date_str = timezone.now().strftime('%d%m%Y')
+
+        # Keep generating until we find a unique name
+        while True:
+            short_id = shortuuid.uuid()[:8]
+            candidate = f"cc_extraction_{date_str}_{short_id}"
+            if not cls.objects.filter(name=candidate).exists():
+                return candidate
+
+    def save(self, *args, **kwargs):
+        if not self.name:
+            self.name = self.generate_unique_name()
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"CSV from {self.source_file.filename} ({self.status})"
+        return self.name
 
 
 class CreditCardTransaction(models.Model):

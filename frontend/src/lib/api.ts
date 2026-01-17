@@ -123,6 +123,23 @@ export interface SourceFile {
   transaction_count?: number
 }
 
+export interface ExtractedCSV {
+  id: number
+  name: string
+  source_filename: string
+  source_file_id: number
+  status: 'extracted' | 'loading' | 'loaded' | 'error'
+  bank_account_id: number | null
+  disabled: boolean
+  row_count: number
+  extracted_at: string
+  loaded_at: string | null
+  first_transaction_date: string | null
+  last_transaction_date: string | null
+  transaction_count: number
+  error_message: string
+}
+
 export async function toggleSourceFileDisabled(
   sourceFileId: number,
   disabled: boolean
@@ -131,6 +148,37 @@ export async function toggleSourceFileDisabled(
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ disabled }),
+  })
+  return res.json()
+}
+
+export async function updateExtractedCSV(
+  csvId: number,
+  data: { bank_account_id?: number | null; disabled?: boolean }
+): Promise<ExtractedCSV> {
+  const res = await fetch(`${API_BASE}/api/extracted-csvs/${csvId}/`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  return res.json()
+}
+
+export interface LoadExtractedCSVResult {
+  id: number
+  source_filename: string
+  status: string
+  success: boolean
+  message: string
+}
+
+export async function loadExtractedCSVs(
+  csvIds: number[]
+): Promise<{ results: LoadExtractedCSVResult[] }> {
+  const res = await fetch(`${API_BASE}/api/extracted-csvs/load/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ csv_ids: csvIds }),
   })
   return res.json()
 }
@@ -186,7 +234,7 @@ export async function fetchTopExpenses(
 
 export async function fetchBankAccounts(): Promise<{
   accounts: BankAccount[]
-  source_files: SourceFile[]
+  extracted_csvs: ExtractedCSV[]
 }> {
   const res = await fetch(`${API_BASE}/api/accounts/`)
   return res.json()
@@ -425,6 +473,7 @@ export interface CreditCardSourceFile {
   first_transaction_date?: string | null
   last_transaction_date?: string | null
   transaction_count?: number
+  extracted_csv_name?: string | null
 }
 
 export interface CreditCardTransaction {

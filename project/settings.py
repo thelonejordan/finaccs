@@ -14,12 +14,15 @@ import os
 from pathlib import Path
 
 import dj_database_url
-from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv(BASE_DIR / '.env')
+# Load .env file in development (production uses real environment variables)
+_env_file = BASE_DIR / '.env'
+if _env_file.exists():
+    from dotenv import load_dotenv
+    load_dotenv(_env_file)
 
 DEV_MODE = os.getenv('DEV_MODE', '0') == '1'
 
@@ -177,4 +180,31 @@ if DEV_MODE:
         'DESCRIPTION': 'Personal finance tracking API',
         'VERSION': '1.0.0',
         'SERVE_INCLUDE_SCHEMA': False,
+    }
+
+
+# Cache configuration
+# Use Redis if enabled, fall back to local memory cache
+if os.getenv('REDIS_ENABLED', '0') == '1':
+    _redis_port = os.getenv('REDIS_PORT')
+    _redis_location = 'redis://{username}:{password}@{host}{port}'.format(
+        username=os.getenv('REDIS_USERNAME', 'default'),
+        password=os.getenv('REDIS_PASSWORD', ''),
+        host=os.getenv('REDIS_HOST', '127.0.0.1'),
+        port=f':{_redis_port}' if _redis_port else '',
+    )
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': _redis_location,
+            'TIMEOUT': None,  # No automatic expiry, we invalidate manually
+        }
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'unique-snowflake',
+            'TIMEOUT': None,  # No automatic expiry, we invalidate manually
+        }
     }

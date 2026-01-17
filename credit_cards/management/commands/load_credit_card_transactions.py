@@ -175,10 +175,10 @@ class Command(BaseCommand):
 
         # Check if already loaded
         if not self.force and extracted_csv.status == 'loaded':
-            self.stdout.write(f'Skipping {source_file.filename} (already loaded)')
+            self.stdout.write(f'Skipping {extracted_csv.name} (already loaded)')
             return -1
 
-        self.stdout.write(f'Loading credit card transactions from {source_file.filename}')
+        self.stdout.write(f'Loading credit card transactions from {extracted_csv.name}')
         if credit_card:
             self.stdout.write(f'  Linking to card: {credit_card.nickname}')
         else:

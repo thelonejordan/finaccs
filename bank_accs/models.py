@@ -1,3 +1,4 @@
+import shortuuid
 from django.db import models
 
 
@@ -101,6 +102,17 @@ class ExtractedCSV(models.Model):
         null=True,
         blank=True
     )
+    # Direct link to bank account (for UI linking)
+    bank_account = models.ForeignKey(
+        'BankAccount',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='extracted_csvs'
+    )
+
+    # Unique identifier with clean format: extraction_DDMMYYYY_xxxxxxxx
+    name = models.CharField(max_length=32, unique=True, blank=True)
 
     # Blob storage (gzip compressed)
     csv_data = models.BinaryField()
@@ -114,6 +126,7 @@ class ExtractedCSV(models.Model):
     # Status
     STATUS_CHOICES = [
         ('extracted', 'Extracted'),
+        ('loading', 'Loading'),
         ('loaded', 'Loaded to DB'),
         ('error', 'Load Error'),
         ('superseded', 'Superseded'),
@@ -121,9 +134,28 @@ class ExtractedCSV(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='extracted')
     loaded_at = models.DateTimeField(null=True, blank=True)
     error_message = models.TextField(blank=True)
+    disabled = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['-extracted_at']
 
+    @classmethod
+    def generate_unique_name(cls):
+        """Generate unique name in format: extraction_DDMMYYYY_xxxxxxxx"""
+        from django.utils import timezone
+        date_str = timezone.now().strftime('%d%m%Y')
+
+        # Keep generating until we find a unique name
+        while True:
+            short_id = shortuuid.uuid()[:8]
+            candidate = f"extraction_{date_str}_{short_id}"
+            if not cls.objects.filter(name=candidate).exists():
+                return candidate
+
+    def save(self, *args, **kwargs):
+        if not self.name:
+            self.name = self.generate_unique_name()
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"CSV from {self.source_file.filename} ({self.status})"
+        return self.name

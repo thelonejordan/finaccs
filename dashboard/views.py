@@ -1,9 +1,12 @@
 import json
 
+from django.core.cache import cache
 from django.db.models import Sum, Max, Subquery, OuterRef
 from django.db.models.functions import TruncMonth
 from django.http import JsonResponse
 from rest_framework.decorators import api_view
+
+from project.cache_utils import get_bank_inconsistencies_key
 
 # Conditional import for API docs (dev only)
 try:
@@ -920,6 +923,12 @@ def api_inconsistencies(request):
     limit = int(request.GET.get('limit', 100))
     offset = int(request.GET.get('offset', 0))
 
+    # Check cache first
+    cache_key = get_bank_inconsistencies_key(bank_account_id, limit, offset)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return JsonResponse(cached)
+
     # Get accounts to check
     if bank_account_id:
         accounts = BankAccount.objects.filter(id=bank_account_id)
@@ -982,9 +991,14 @@ def api_inconsistencies(request):
     total = len(inconsistencies)
     page = inconsistencies[offset:offset + limit]
 
-    return JsonResponse({
+    result = {
         'data': page,
         'total': total,
         'limit': limit,
         'offset': offset,
-    })
+    }
+
+    # Cache the result (no timeout, invalidated manually)
+    cache.set(cache_key, result, None)
+
+    return JsonResponse(result)

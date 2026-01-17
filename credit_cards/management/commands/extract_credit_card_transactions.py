@@ -219,6 +219,6 @@ class Command(BaseCommand):
         source_file.save()
 
         self.stdout.write(self.style.SUCCESS(
-            f'  Created CreditCardExtractedCSV #{extracted_csv.id} with {row_count} rows'
+            f'  Created {extracted_csv.name} with {row_count} rows'
         ))
         return row_count

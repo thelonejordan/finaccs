@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Link, useLocation } from "react-router-dom"
-import { fetchInconsistencies, fetchCreditCardInconsistencies } from "@/lib/api"
+import { useInconsistencyCache } from "@/lib/inconsistency-cache"
 import {
   SunIcon,
   MoonIcon,
@@ -12,8 +12,10 @@ import {
   SettingsIcon,
   AlertTriangleIcon,
   ScrollTextIcon,
+  FocusIcon,
 } from "lucide-react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
+import * as Tooltip from "@radix-ui/react-tooltip"
 import { useTheme } from "@/lib/theme"
 
 const NAV_ITEMS = [
@@ -28,28 +30,28 @@ const NAV_ITEMS = [
 export function Header() {
   const location = useLocation()
   const { mode, setMode } = useTheme()
-  const [inconsistencyCount, setInconsistencyCount] = useState(0)
+  const { cache } = useInconsistencyCache()
+  // Use count if available, fall back to previousCount during loading, then 0
+  const inconsistencyCount = cache.count ?? cache.previousCount ?? 0
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
+    const saved = localStorage.getItem('autoScrollToTable')
+    return saved !== null ? saved === 'true' : true
+  })
 
-  useEffect(() => {
-    async function loadCounts() {
-      try {
-        const [bankResult, creditResult] = await Promise.all([
-          fetchInconsistencies({ limit: 1 }),
-          fetchCreditCardInconsistencies(),
-        ])
-        setInconsistencyCount(bankResult.total + creditResult.total)
-      } catch (error) {
-        console.error("Failed to load inconsistency counts:", error)
-      }
-    }
-    loadCounts()
-  }, [])
+  const showAutoScrollToggle = location.pathname === '/transactions' || location.pathname === '/credit-cards'
+
+  const handleAutoScrollToggle = () => {
+    const newValue = !autoScrollEnabled
+    setAutoScrollEnabled(newValue)
+    localStorage.setItem('autoScrollToTable', String(newValue))
+    window.dispatchEvent(new CustomEvent('autoScrollChange', { detail: newValue }))
+  }
 
   return (
     <header className="sticky top-0 z-50 bg-card border-b border-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14">
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-2">
             {NAV_ITEMS.map(({ path, label, icon: Icon }) => {
               const isActive = location.pathname === path
               return (
@@ -74,49 +76,94 @@ export function Header() {
             })}
           </nav>
 
-          {/* Theme Toggle */}
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <button
-                className="p-2 rounded-lg hover:bg-accent transition-colors"
-                aria-label="Theme"
-              >
-                {mode === "light" && <SunIcon className="h-5 w-5" />}
-                {mode === "dark" && <MoonIcon className="h-5 w-5" />}
-                {mode === "system" && <MonitorIcon className="h-5 w-5" />}
-              </button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                className="bg-card rounded-lg shadow-lg border border-border p-1 min-w-[140px] z-50"
-                sideOffset={5}
-                align="end"
-              >
-                <DropdownMenu.RadioGroup
-                  value={mode}
-                  onValueChange={(value) =>
-                    setMode(value as "light" | "dark" | "system")
-                  }
-                >
-                  {[
-                    { value: "light", icon: SunIcon, label: "Light" },
-                    { value: "dark", icon: MoonIcon, label: "Dark" },
-                    { value: "system", icon: MonitorIcon, label: "System" },
-                  ].map(({ value, icon: Icon, label }) => (
-                    <DropdownMenu.RadioItem
-                      key={value}
-                      value={value}
-                      className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-md cursor-pointer hover:bg-accent outline-none"
+          <div className="flex items-center gap-1">
+            {/* Auto-scroll Toggle */}
+            {showAutoScrollToggle && (
+              <Tooltip.Provider>
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <button
+                      onClick={handleAutoScrollToggle}
+                      className={`p-2 rounded-lg transition-colors hover:bg-accent ${
+                        autoScrollEnabled ? 'text-primary' : 'text-muted-foreground'
+                      }`}
+                      aria-label="Toggle auto-scroll"
                     >
-                      <Icon className="h-4 w-4" />
-                      <span className="flex-1">{label}</span>
-                      {mode === value && <CheckIcon className="h-4 w-4" />}
-                    </DropdownMenu.RadioItem>
-                  ))}
-                </DropdownMenu.RadioGroup>
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
+                      <FocusIcon className="h-5 w-5" />
+                    </button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Portal>
+                    <Tooltip.Content
+                      className="bg-card text-card-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm"
+                      sideOffset={5}
+                    >
+                      Scroll table into view
+                      <Tooltip.Arrow className="fill-card" />
+                    </Tooltip.Content>
+                  </Tooltip.Portal>
+                </Tooltip.Root>
+              </Tooltip.Provider>
+            )}
+
+            {/* Theme Toggle */}
+            <DropdownMenu.Root>
+              <Tooltip.Provider>
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <DropdownMenu.Trigger asChild>
+                      <button
+                        className="p-2 rounded-lg hover:bg-accent transition-colors"
+                        aria-label="Change theme"
+                      >
+                        {mode === "light" && <SunIcon className="h-5 w-5" />}
+                        {mode === "dark" && <MoonIcon className="h-5 w-5" />}
+                        {mode === "system" && <MonitorIcon className="h-5 w-5" />}
+                      </button>
+                    </DropdownMenu.Trigger>
+                  </Tooltip.Trigger>
+                  <Tooltip.Portal>
+                    <Tooltip.Content
+                      className="bg-card text-card-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm"
+                      sideOffset={5}
+                    >
+                      Change theme
+                      <Tooltip.Arrow className="fill-card" />
+                    </Tooltip.Content>
+                  </Tooltip.Portal>
+                </Tooltip.Root>
+              </Tooltip.Provider>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  className="bg-card rounded-lg shadow-lg border border-border p-1 min-w-[140px] z-50"
+                  sideOffset={5}
+                  align="end"
+                >
+                  <DropdownMenu.RadioGroup
+                    value={mode}
+                    onValueChange={(value) =>
+                      setMode(value as "light" | "dark" | "system")
+                    }
+                  >
+                    {[
+                      { value: "light", icon: SunIcon, label: "Light" },
+                      { value: "dark", icon: MoonIcon, label: "Dark" },
+                      { value: "system", icon: MonitorIcon, label: "System" },
+                    ].map(({ value, icon: Icon, label }) => (
+                      <DropdownMenu.RadioItem
+                        key={value}
+                        value={value}
+                        className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-md cursor-pointer hover:bg-accent outline-none"
+                      >
+                        <Icon className="h-4 w-4" />
+                        <span className="flex-1">{label}</span>
+                        {mode === value && <CheckIcon className="h-4 w-4" />}
+                      </DropdownMenu.RadioItem>
+                    ))}
+                  </DropdownMenu.RadioGroup>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          </div>
         </div>
       </div>
     </header>

@@ -372,3 +372,17 @@ body {
   color: var(--color-foreground);
   transition: background-color 0.3s, color 0.3s;
 }
+
+/* Subtle heartbeat animation */
+@keyframes heartbeat {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.animate-heartbeat {
+  animation: heartbeat 3s ease-in-out infinite;
+}
