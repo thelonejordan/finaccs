@@ -1,23 +1,17 @@
 import { Link, useLocation } from "react-router-dom"
 import {
   HeartIcon,
-  LayoutDashboardIcon,
-  ListIcon,
-  CreditCardIcon,
-  SettingsIcon,
-  AlertTriangleIcon,
-  ScrollTextIcon,
   GithubIcon,
   WalletIcon,
 } from "lucide-react"
 
 const NAV_ITEMS = [
-  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboardIcon },
-  { path: "/transactions", label: "Transactions", icon: ListIcon },
-  { path: "/credit-cards", label: "Credit Cards", icon: CreditCardIcon },
-  { path: "/settings", label: "Settings", icon: SettingsIcon },
-  { path: "/inconsistencies", label: "Inconsistencies", icon: AlertTriangleIcon },
-  { path: "/logs", label: "Activity Log", icon: ScrollTextIcon },
+  { path: "/dashboard", label: "Dashboard" },
+  { path: "/transactions", label: "Transactions" },
+  { path: "/credit-cards", label: "Credit Cards" },
+  { path: "/settings", label: "Settings" },
+  { path: "/inconsistencies", label: "Inconsistencies" },
+  { path: "/logs", label: "Activity Log" },
 ]
 
 export function Footer() {
@@ -28,9 +22,9 @@ export function Footer() {
     <footer className="mt-16 border-t border-border bg-card">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Main Footer Content */}
-        <div className="py-10 grid grid-cols-1 md:grid-cols-[1.5fr_1fr_1fr] gap-12 md:gap-8">
+        <div className="py-10 grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_1fr] gap-12 md:gap-8">
           {/* Brand Section */}
-          <div className="space-y-4 md:pr-12">
+          <div className="space-y-4 md:pl-4">
             <div className="flex items-center gap-2 h-5">
               <div className="p-1.5 rounded-lg bg-primary/10">
                 <WalletIcon className="h-4 w-4 text-primary" />
@@ -52,26 +46,28 @@ export function Footer() {
             </a>
           </div>
 
+          {/* Spacer */}
+          <div className="hidden md:block" />
+
           {/* Navigation Section */}
-          <div className="space-y-4">
+          <div className="space-y-4 md:pl-4">
             <h3 className="text-sm font-semibold uppercase tracking-wider text-foreground h-5 flex items-center">
               Navigation
             </h3>
             <nav className="flex flex-col gap-2">
-              {NAV_ITEMS.map(({ path, label, icon: Icon }) => {
+              {NAV_ITEMS.map(({ path, label }) => {
                 const isActive = location.pathname === path
                 return (
                   <Link
                     key={path}
                     to={path}
-                    className={`flex items-center gap-2 text-sm transition-colors ${
+                    className={`text-sm transition-colors ${
                       isActive
                         ? "text-primary font-medium"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    <Icon className="h-4 w-4" />
-                    <span>{label}</span>
+                    {label}
                   </Link>
                 )
               })}
@@ -79,7 +75,7 @@ export function Footer() {
           </div>
 
           {/* Quick Actions Section */}
-          <div className="space-y-4">
+          <div className="space-y-4 md:pl-4">
             <h3 className="text-sm font-semibold uppercase tracking-wider text-foreground h-5 flex items-center">
               Quick Actions
             </h3>

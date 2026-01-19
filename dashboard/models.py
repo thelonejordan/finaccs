@@ -147,3 +147,28 @@ class AccountLog(models.Model):
 
     def __str__(self):
         return f"{self.created_at} - {self.action} - Account {self.bank_account_id}"
+
+
+class CreditCardPaymentMatch(models.Model):
+    """Links bank CC payment to corresponding credit card payment transaction."""
+
+    bank_transaction = models.OneToOneField(
+        'Transaction',
+        on_delete=models.CASCADE,
+        related_name='cc_payment_match'
+    )
+    credit_card_transaction = models.OneToOneField(
+        'credit_cards.CreditCardTransaction',
+        on_delete=models.CASCADE,
+        related_name='bank_payment_match'
+    )
+    offset = models.DecimalField(max_digits=12, decimal_places=2, default=0)  # Rewards cashout difference
+    confidence_score = models.FloatField(default=0.0)
+    match_reasons = models.JSONField(default=list)  # ["exact_amount", "same_day"]
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Match: Bank {self.bank_transaction_id} <-> CC {self.credit_card_transaction_id}"

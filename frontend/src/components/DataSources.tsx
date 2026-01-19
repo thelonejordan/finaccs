@@ -12,12 +12,12 @@ import {
   CalendarIcon,
   HashIcon,
   RefreshCwIcon,
-  EyeIcon,
-  EyeOffIcon,
+  PowerIcon,
   PlayIcon,
   AlertCircleIcon,
   CheckCircleIcon,
   Loader2Icon,
+  Trash2Icon,
 } from "lucide-react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import * as Tooltip from "@radix-ui/react-tooltip"
@@ -258,7 +258,7 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
               <div className="flex items-center gap-2 shrink-0">
                 {csv.disabled ? (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/20 text-red-600 dark:text-red-400">
-                    <EyeOffIcon className="h-3 w-3" />
+                    <PowerIcon className="h-3 w-3" />
                     Disabled
                   </span>
                 ) : !linkedAccount && (
@@ -274,13 +274,9 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
                       <button
                         onClick={() => handleToggleDisabled(csv)}
                         disabled={togglingId === csv.id}
-                        className={`p-1.5 rounded-lg transition-colors ${csv.disabled ? 'hover:bg-green-500/20 text-muted-foreground hover:text-green-600' : 'hover:bg-red-500/20 text-muted-foreground hover:text-red-600'} disabled:opacity-50`}
+                        className={`p-1.5 rounded-lg transition-colors ${csv.disabled ? 'hover:bg-green-500/20 text-muted-foreground hover:text-green-600' : 'hover:bg-amber-500/20 text-muted-foreground hover:text-amber-600'} disabled:opacity-50`}
                       >
-                        {csv.disabled ? (
-                          <EyeIcon className="h-4 w-4" />
-                        ) : (
-                          <EyeOffIcon className="h-4 w-4" />
-                        )}
+                        <PowerIcon className="h-4 w-4" />
                       </button>
                     </Tooltip.Trigger>
                     <Tooltip.Portal>
@@ -289,6 +285,28 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
                         sideOffset={4}
                       >
                         {csv.disabled ? 'Enable this source' : 'Disable this source'}
+                        <Tooltip.Arrow className="fill-card" />
+                      </Tooltip.Content>
+                    </Tooltip.Portal>
+                  </Tooltip.Root>
+                </Tooltip.Provider>
+                {/* Delete source button */}
+                <Tooltip.Provider>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <button
+                        onClick={() => {/* TODO: implement delete */}}
+                        className="p-1.5 rounded-lg hover:bg-red-500/20 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                      >
+                        <Trash2Icon className="h-4 w-4" />
+                      </button>
+                    </Tooltip.Trigger>
+                    <Tooltip.Portal>
+                      <Tooltip.Content
+                        className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
+                        sideOffset={4}
+                      >
+                        Delete source file
                         <Tooltip.Arrow className="fill-card" />
                       </Tooltip.Content>
                     </Tooltip.Portal>

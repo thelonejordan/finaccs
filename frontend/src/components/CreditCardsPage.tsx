@@ -18,10 +18,15 @@ import {
   ActivityIcon,
   CalendarIcon,
   GlobeIcon,
+  Link2Icon,
+  Link2OffIcon,
+  XIcon,
+  BuildingIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
 import * as Tooltip from "@radix-ui/react-tooltip"
+import * as Dialog from "@radix-ui/react-dialog"
 import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import {
@@ -30,6 +35,7 @@ import {
   fetchCreditCardDateRange,
   fetchCreditCardCategories,
   updateCreditCardTransactionCategory,
+  deleteCCPaymentMatch,
   type CreditCard,
   type CreditCardTransaction,
   type CreditCardSourceFile,
@@ -183,6 +189,157 @@ function CategorySelect({
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  )
+}
+
+function BankPaymentLinkDialog({
+  transaction,
+  onUnlink,
+}: {
+  transaction: CreditCardTransaction
+  onUnlink: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [unlinking, setUnlinking] = useState(false)
+
+  const isLinked = !!transaction.bank_payment_match
+
+  const handleUnlink = async () => {
+    setUnlinking(true)
+    try {
+      await onUnlink()
+      setOpen(false)
+    } finally {
+      setUnlinking(false)
+    }
+  }
+
+  return (
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Tooltip.Provider>
+        <Tooltip.Root>
+          <Tooltip.Trigger asChild>
+            <Dialog.Trigger asChild>
+              <button
+                className={`p-1 rounded transition-colors ${
+                  isLinked
+                    ? "text-green-600 dark:text-green-400 hover:bg-green-500/10"
+                    : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {isLinked ? (
+                  <Link2Icon className="h-4 w-4" />
+                ) : (
+                  <Link2OffIcon className="h-4 w-4" />
+                )}
+              </button>
+            </Dialog.Trigger>
+          </Tooltip.Trigger>
+          <Tooltip.Portal>
+            <Tooltip.Content
+              className="bg-card text-card-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm"
+              sideOffset={4}
+            >
+              {isLinked
+                ? `Linked to ${transaction.bank_payment_match?.bank_transaction.bank_account?.nickname || "Bank"} on ${formatDate(transaction.bank_payment_match?.bank_transaction.date || "")}`
+                : "No bank payment linked"}
+              <Tooltip.Arrow className="fill-card" />
+            </Tooltip.Content>
+          </Tooltip.Portal>
+        </Tooltip.Root>
+      </Tooltip.Provider>
+
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 animate-in fade-in-0" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card rounded-xl border border-border shadow-xl w-full max-w-xl max-h-[85vh] overflow-hidden animate-in fade-in-0 zoom-in-95 z-50">
+          <div className="p-6 border-b border-border">
+            <Dialog.Title className="text-lg font-semibold">
+              {isLinked ? "Linked Bank Payment" : "Bank Payment Link"}
+            </Dialog.Title>
+            <Dialog.Description className="text-sm text-muted-foreground mt-1">
+              {isLinked
+                ? "This credit card payment is linked to a bank transaction."
+                : "This payment is not linked to any bank transaction."}
+            </Dialog.Description>
+          </div>
+
+          <div className="p-6">
+            {/* Current CC transaction info */}
+            <div className="mb-4 p-3 rounded-lg bg-muted/50 border border-border">
+              <p className="text-sm text-muted-foreground mb-1">Credit Card Payment</p>
+              <div className="flex items-center gap-2 mb-1">
+                <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">{transaction.credit_card?.nickname || "Unknown Card"}</span>
+              </div>
+              <p className="font-medium">{formatDate(transaction.date)}</p>
+              <p className="text-sm text-muted-foreground line-clamp-1">{transaction.description}</p>
+              <p className="text-sm flex items-center gap-1 flex-wrap">
+                <span className="text-green-600 dark:text-green-400 inline-flex items-center gap-0.5">
+                  <FormattedCurrency amount={Math.abs(transaction.amount)} />
+                  <ArrowUpIcon className="h-3 w-3" />
+                </span>
+              </p>
+            </div>
+
+            {isLinked ? (
+              /* Show linked bank transaction */
+              <div className="space-y-4">
+                <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                  <p className="text-sm text-muted-foreground mb-1">Linked Bank Transaction</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <BuildingIcon className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium">
+                      {transaction.bank_payment_match?.bank_transaction.bank_account?.nickname || "Unknown Account"}
+                    </span>
+                  </div>
+                  <p className="font-medium">{formatDate(transaction.bank_payment_match?.bank_transaction.date || "")}</p>
+                  <p className="text-sm text-muted-foreground line-clamp-3 mb-1">
+                    {transaction.bank_payment_match?.bank_transaction.narration}
+                  </p>
+                  <p className="text-sm flex items-center gap-1">
+                    <span className="text-red-600 dark:text-red-400 inline-flex items-center gap-0.5">
+                      <FormattedCurrency amount={transaction.bank_payment_match?.bank_transaction.amount || 0} />
+                      <ArrowDownIcon className="h-3 w-3" />
+                    </span>
+                  </p>
+                  {transaction.bank_payment_match && transaction.bank_payment_match.offset !== 0 && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Offset: {transaction.bank_payment_match.offset > 0 ? "+" : ""}
+                      {formatCurrency(transaction.bank_payment_match.offset)}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={handleUnlink}
+                  disabled={unlinking}
+                  className="w-full py-2 px-4 rounded-lg border border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors disabled:opacity-50"
+                >
+                  {unlinking ? "Unlinking..." : "Unlink Bank Payment"}
+                </button>
+              </div>
+            ) : (
+              /* No link */
+              <div className="text-center py-8 text-muted-foreground">
+                <Link2OffIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No bank payment linked</p>
+                <p className="text-sm mt-1">
+                  Go to the Story page to match this payment
+                </p>
+              </div>
+            )}
+          </div>
+
+          <Dialog.Close asChild>
+            <button
+              className="absolute top-4 right-4 p-2 rounded-lg hover:bg-muted transition-colors"
+              aria-label="Close"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+          </Dialog.Close>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }
 
@@ -463,6 +620,15 @@ export function CreditCardsPage() {
       console.error("Failed to update category:", error)
     } finally {
       setUpdatingId(null)
+    }
+  }
+
+  const handleUnlinkBankPayment = async (matchId: number) => {
+    try {
+      await deleteCCPaymentMatch(matchId)
+      setRefreshKey((k) => k + 1)
+    } catch (error) {
+      console.error("Failed to unlink bank payment:", error)
     }
   }
 
@@ -979,9 +1145,10 @@ export function CreditCardsPage() {
                     <thead className="border-b border-border/40 sticky top-0 bg-card z-10 shadow-sm">
                       <tr>
                         <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[110px]">Date</th>
-                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[300px]">Description</th>
+                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[280px]">Description</th>
                         <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[100px]">Card</th>
                         <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[130px]">Category</th>
+                        <th className="h-12 px-3 text-center align-middle font-medium text-muted-foreground w-[50px]">Link</th>
                         <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground w-[100px]">
                           <Tooltip.Provider>
                             <Tooltip.Root>
@@ -1009,7 +1176,7 @@ export function CreditCardsPage() {
                     <tbody>
                       {page > 1 && (
                         <tr ref={prevPageRowRef} className="border-b border-border/40 hover:bg-muted/30 transition-colors">
-                          <td colSpan={6} className="px-4 py-3 align-middle text-center">
+                          <td colSpan={7} className="px-4 py-3 align-middle text-center">
                             <button
                               onClick={() => setPage(page - 1)}
                               className="text-sm text-muted-foreground/80 hover:text-foreground transition-colors inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted/50 hover:bg-muted"
@@ -1062,8 +1229,23 @@ export function CreditCardsPage() {
                               disabled={updatingId === t.id}
                             />
                           </td>
+                          <td className="px-3 py-3 align-middle text-center">
+                            {t.bank_payment_match ? (
+                              <BankPaymentLinkDialog
+                                transaction={t}
+                                onUnlink={() => handleUnlinkBankPayment(t.bank_payment_match!.id)}
+                              />
+                            ) : (
+                              <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 align-middle text-right text-sm text-muted-foreground">
-                            {t.intl_amount > 0 ? formatCurrency(t.intl_amount) : "-"}
+                            {t.intl_amount > 0 ? (
+                              <div className="flex flex-col items-end">
+                                <span>{t.intl_amount.toFixed(2)} {t.intl_currency || 'USD'}</span>
+                                {t.exchange_rate && <span className="text-muted-foreground/50 text-xs">@ {t.exchange_rate.toFixed(2)}</span>}
+                              </div>
+                            ) : "-"}
                           </td>
                           <td className="px-4 py-3 align-middle text-right">
                             {t.amount < 0 ? (
@@ -1082,7 +1264,7 @@ export function CreditCardsPage() {
                       ))}
                       {page < totalPages && (
                         <tr className="hover:bg-muted/30 transition-colors">
-                          <td colSpan={6} className="px-4 py-3 align-middle text-center">
+                          <td colSpan={7} className="px-4 py-3 align-middle text-center">
                             <button
                               onClick={() => setPage(page + 1)}
                               className="text-sm text-muted-foreground/80 hover:text-foreground transition-colors inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted/50 hover:bg-muted"

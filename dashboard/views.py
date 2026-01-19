@@ -28,7 +28,8 @@ except ImportError:
     OpenApiExample = _MockCallable
     OpenApiTypes = type('OpenApiTypes', (), {'OBJECT': object, 'INT': int, 'STR': str, 'BOOL': bool})()
 
-from .models import Transaction, TransactionLog, AccountLog, FileLoadLog
+from .models import Transaction, TransactionLog, AccountLog, FileLoadLog, CreditCardPaymentMatch
+from credit_cards.views import get_active_cc_transactions
 
 # Categories to exclude from income/expense calculations (internal transfers)
 EXCLUDED_CATEGORIES = ['Self Transfer']
@@ -298,7 +299,10 @@ def api_transactions(request):
         'bank_account',
         'source_file',
         'linked_transaction',
-        'linked_transaction__bank_account'
+        'linked_transaction__bank_account',
+        'cc_payment_match',
+        'cc_payment_match__credit_card_transaction',
+        'cc_payment_match__credit_card_transaction__credit_card',
     ).prefetch_related('linked_from')
 
     # Filter by bank account
@@ -368,6 +372,31 @@ def api_transactions(request):
                 'amount': float(linked.debit_amount or linked.credit_amount),
             }
 
+        # Get CC payment match if exists
+        cc_match_data = None
+        try:
+            cc_match = t.cc_payment_match
+            if cc_match:
+                cc_txn = cc_match.credit_card_transaction
+                cc_match_data = {
+                    'id': cc_match.id,
+                    'credit_card_transaction': {
+                        'id': cc_txn.id,
+                        'date': cc_txn.date.isoformat(),
+                        'description': cc_txn.description,
+                        'amount': float(cc_txn.amount),
+                        'credit_card': {
+                            'id': cc_txn.credit_card.id,
+                            'nickname': cc_txn.credit_card.nickname,
+                        } if cc_txn.credit_card else None,
+                    },
+                    'offset': float(cc_match.offset),
+                    'confidence_score': cc_match.confidence_score,
+                    'match_reasons': cc_match.match_reasons,
+                }
+        except CreditCardPaymentMatch.DoesNotExist:
+            pass
+
         data.append({
             'id': t.id,
             'date': t.date.isoformat(),
@@ -386,6 +415,7 @@ def api_transactions(request):
                 'filename': t.source_file.filename,
             } if t.source_file else None,
             'linked_transaction': linked_data,
+            'cc_payment_match': cc_match_data,
         })
 
     return JsonResponse({
@@ -1002,3 +1032,359 @@ def api_inconsistencies(request):
     cache.set(cache_key, result, None)
 
     return JsonResponse(result)
+
+
+# ==================== Credit Card Payment Matching API ====================
+
+
+def calculate_match_score(bank_txn, cc_txn):
+    """
+    Calculate matching score between bank CC payment and credit card payment.
+
+    Returns (score, reasons, offset) tuple.
+
+    Criteria:
+    1. Amount proximity - Bank debit vs absolute CC payment amount
+       - Exact match: +0.5 score
+       - Within 5% (offset/rewards): +0.3 score
+    2. Date proximity - Within 7-day window
+       - Same day: +0.5 score
+       - 1-3 days: +0.3 score
+       - 4-7 days: +0.1 score
+    """
+    from decimal import Decimal
+
+    score = 0.0
+    reasons = []
+
+    bank_amount = bank_txn.debit_amount
+    cc_amount = abs(cc_txn.amount)  # CC payment is negative
+    offset = bank_amount - cc_amount
+
+    # Amount matching
+    if offset == 0:
+        score += 0.5
+        reasons.append('exact_amount')
+    elif cc_amount > 0 and abs(offset) / cc_amount <= Decimal('0.05'):
+        score += 0.3
+        reasons.append('amount_within_5%')
+
+    # Date matching
+    days_diff = abs((bank_txn.date - cc_txn.date).days)
+    if days_diff == 0:
+        score += 0.5
+        reasons.append('same_day')
+    elif days_diff <= 3:
+        score += 0.3
+        reasons.append('within_3_days')
+    elif days_diff <= 7:
+        score += 0.1
+        reasons.append('within_7_days')
+
+    return score, reasons, float(offset)
+
+
+@extend_schema(
+    summary="Get CC payment suggestions",
+    description="Get unmatched bank CC payments with match suggestions from credit card transactions.",
+    parameters=[
+        OpenApiParameter(name='bank_account', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by bank account ID'),
+        OpenApiParameter(name='year', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by year'),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['CC Payment Matching'],
+)
+@api_view(['GET'])
+def api_cc_payment_suggestions(request):
+    """Get unmatched bank CC payments with match suggestions."""
+    from datetime import timedelta
+    from credit_cards.models import CreditCardTransaction
+
+    # Get IDs of active CC transactions for filtering
+    active_cc_txn_ids = get_active_cc_transactions().values_list('id', flat=True)
+
+    # Get bank transactions tagged as "Credit Card Payment" that are debits and not matched to active CC txns
+    # If matched to an inactive CC source, bank txn appears here so user can re-match
+    bank_txns = get_active_transactions().filter(
+        category='Credit Card Payment',
+        debit_amount__gt=0,
+    ).exclude(
+        # Only exclude if matched to an ACTIVE CC transaction
+        cc_payment_match__credit_card_transaction_id__in=active_cc_txn_ids
+    ).select_related('bank_account')
+
+    # Apply filters
+    bank_account_id = request.GET.get('bank_account')
+    if bank_account_id:
+        bank_txns = bank_txns.filter(bank_account_id=bank_account_id)
+
+    year = request.GET.get('year')
+    if year:
+        bank_txns = bank_txns.filter(date__year=int(year))
+
+    # Order by date desc
+    bank_txns = bank_txns.order_by('-date')
+
+    # Get unmatched CC payments (amount < 0 = payment) from active sources only
+    unmatched_cc_payments = get_active_cc_transactions().filter(
+        amount__lt=0
+    ).exclude(
+        bank_payment_match__isnull=False  # Exclude already matched
+    ).select_related('credit_card', 'source_file')
+
+    data = []
+    for bank_txn in bank_txns:
+        # Find potential matches within 7 days before and after
+        date_start = bank_txn.date - timedelta(days=7)
+        date_end = bank_txn.date + timedelta(days=7)
+
+        potential_matches = unmatched_cc_payments.filter(
+            date__gte=date_start,
+            date__lte=date_end,
+        )
+
+        suggestions = []
+        for cc_txn in potential_matches:
+            score, reasons, offset = calculate_match_score(bank_txn, cc_txn)
+            if score > 0:  # Only include if there's some match
+                suggestions.append({
+                    'credit_card_transaction': {
+                        'id': cc_txn.id,
+                        'date': cc_txn.date.isoformat(),
+                        'description': cc_txn.description,
+                        'amount': float(cc_txn.amount),
+                        'credit_card': {
+                            'id': cc_txn.credit_card.id,
+                            'nickname': cc_txn.credit_card.nickname,
+                        } if cc_txn.credit_card else None,
+                    },
+                    'offset': offset,
+                    'confidence_score': score,
+                    'match_reasons': reasons,
+                })
+
+        # Sort suggestions by score descending
+        suggestions.sort(key=lambda x: x['confidence_score'], reverse=True)
+
+        data.append({
+            'bank_transaction': {
+                'id': bank_txn.id,
+                'date': bank_txn.date.isoformat(),
+                'narration': bank_txn.narration,
+                'amount': float(bank_txn.debit_amount),
+                'bank_account': {
+                    'id': bank_txn.bank_account.id,
+                    'nickname': bank_txn.bank_account.nickname,
+                } if bank_txn.bank_account else None,
+            },
+            'suggestions': suggestions,
+        })
+
+    # Sort: entries with suggestions first (by highest confidence score), then entries without
+    data.sort(key=lambda x: (
+        0 if x['suggestions'] else 1,  # Has suggestions = 0 (first), no suggestions = 1 (last)
+        -(x['suggestions'][0]['confidence_score'] if x['suggestions'] else 0),  # Higher score first
+    ))
+
+    return JsonResponse({
+        'data': data,
+        'total': len(data),
+    })
+
+
+@extend_schema(
+    methods=['GET'],
+    summary="Get confirmed CC payment matches",
+    description="Get confirmed credit card payment matches, filterable by year.",
+    parameters=[
+        OpenApiParameter(name='year', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by year'),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['CC Payment Matching'],
+)
+@extend_schema(
+    methods=['POST'],
+    summary="Confirm a CC payment match",
+    description="Create a new credit card payment match.",
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+    tags=['CC Payment Matching'],
+    examples=[
+        OpenApiExample(
+            'Confirm match',
+            value={
+                'bank_transaction_id': 123,
+                'credit_card_transaction_id': 456,
+                'offset': 0.0,
+                'confidence_score': 1.0,
+                'match_reasons': ['exact_amount', 'same_day']
+            },
+            request_only=True,
+        )
+    ],
+)
+@api_view(['GET', 'POST'])
+def api_cc_payment_matches(request):
+    """Get or create credit card payment matches."""
+    if request.method == 'GET':
+        # Get IDs of active CC transactions
+        active_cc_txn_ids = get_active_cc_transactions().values_list('id', flat=True)
+
+        # Get confirmed matches (only where CC transaction is from active source)
+        matches = CreditCardPaymentMatch.objects.filter(
+            credit_card_transaction_id__in=active_cc_txn_ids
+        ).select_related(
+            'bank_transaction',
+            'bank_transaction__bank_account',
+            'credit_card_transaction',
+            'credit_card_transaction__credit_card',
+        )
+
+        year = request.GET.get('year')
+        if year:
+            matches = matches.filter(bank_transaction__date__year=int(year))
+
+        # Order by bank transaction date desc
+        matches = matches.order_by('-bank_transaction__date')
+
+        data = []
+        for match in matches:
+            data.append({
+                'id': match.id,
+                'bank_transaction': {
+                    'id': match.bank_transaction.id,
+                    'date': match.bank_transaction.date.isoformat(),
+                    'narration': match.bank_transaction.narration,
+                    'amount': float(match.bank_transaction.debit_amount),
+                    'bank_account': {
+                        'id': match.bank_transaction.bank_account.id,
+                        'nickname': match.bank_transaction.bank_account.nickname,
+                    } if match.bank_transaction.bank_account else None,
+                },
+                'credit_card_transaction': {
+                    'id': match.credit_card_transaction.id,
+                    'date': match.credit_card_transaction.date.isoformat(),
+                    'description': match.credit_card_transaction.description,
+                    'amount': float(match.credit_card_transaction.amount),
+                    'credit_card': {
+                        'id': match.credit_card_transaction.credit_card.id,
+                        'nickname': match.credit_card_transaction.credit_card.nickname,
+                    } if match.credit_card_transaction.credit_card else None,
+                },
+                'offset': float(match.offset),
+                'confidence_score': match.confidence_score,
+                'match_reasons': match.match_reasons,
+                'created_at': match.created_at.isoformat(),
+            })
+
+        return JsonResponse({
+            'data': data,
+            'total': len(data),
+        })
+
+    # POST - Create a match
+    from credit_cards.models import CreditCardTransaction
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    bank_txn_id = body.get('bank_transaction_id')
+    cc_txn_id = body.get('credit_card_transaction_id')
+
+    if not bank_txn_id or not cc_txn_id:
+        return JsonResponse({'error': 'bank_transaction_id and credit_card_transaction_id are required'}, status=400)
+
+    try:
+        bank_txn = Transaction.objects.get(id=bank_txn_id)
+    except Transaction.DoesNotExist:
+        return JsonResponse({'error': 'Bank transaction not found'}, status=404)
+
+    try:
+        cc_txn = CreditCardTransaction.objects.get(id=cc_txn_id)
+    except CreditCardTransaction.DoesNotExist:
+        return JsonResponse({'error': 'Credit card transaction not found'}, status=404)
+
+    # Check if already matched
+    if hasattr(bank_txn, 'cc_payment_match'):
+        # Check if the existing match is to an inactive CC source
+        active_cc_txn_ids = set(get_active_cc_transactions().values_list('id', flat=True))
+        if bank_txn.cc_payment_match.credit_card_transaction_id in active_cc_txn_ids:
+            return JsonResponse({'error': 'Bank transaction is already matched'}, status=400)
+        # Delete the orphaned match so we can re-match
+        bank_txn.cc_payment_match.delete()
+    if hasattr(cc_txn, 'bank_payment_match'):
+        return JsonResponse({'error': 'Credit card transaction is already matched'}, status=400)
+
+    # Create the match
+    match = CreditCardPaymentMatch.objects.create(
+        bank_transaction=bank_txn,
+        credit_card_transaction=cc_txn,
+        offset=body.get('offset', 0),
+        confidence_score=body.get('confidence_score', 0),
+        match_reasons=body.get('match_reasons', []),
+    )
+
+    # Tag the credit card transaction as a matched payment
+    if cc_txn.category != 'Credit Card Payment':
+        cc_txn.category = 'Credit Card Payment'
+        cc_txn.save(update_fields=['category'])
+
+    return JsonResponse({
+        'id': match.id,
+        'bank_transaction_id': match.bank_transaction_id,
+        'credit_card_transaction_id': match.credit_card_transaction_id,
+        'offset': float(match.offset),
+        'confidence_score': match.confidence_score,
+        'match_reasons': match.match_reasons,
+        'created_at': match.created_at.isoformat(),
+    })
+
+
+@extend_schema(
+    summary="Delete a CC payment match",
+    description="Remove a confirmed credit card payment match.",
+    responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['CC Payment Matching'],
+)
+@api_view(['DELETE'])
+def api_cc_payment_match_delete(request, match_id):
+    """Delete a credit card payment match."""
+    try:
+        match = CreditCardPaymentMatch.objects.get(id=match_id)
+    except CreditCardPaymentMatch.DoesNotExist:
+        return JsonResponse({'error': 'Match not found'}, status=404)
+
+    match.delete()
+    return JsonResponse({'success': True})
+
+
+@extend_schema(
+    summary="Get CC payment match years",
+    description="Get available years with match counts for filtering.",
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['CC Payment Matching'],
+)
+@api_view(['GET'])
+def api_cc_payment_match_years(request):
+    """Get available years with match counts."""
+    from django.db.models import Count
+    from django.db.models.functions import ExtractYear
+
+    # Get IDs of active CC transactions (consistent with matches endpoint)
+    active_cc_txn_ids = get_active_cc_transactions().values_list('id', flat=True)
+
+    # Count matches by year (only where CC transaction is from active source)
+    year_counts = (
+        CreditCardPaymentMatch.objects
+        .filter(credit_card_transaction_id__in=active_cc_txn_ids)
+        .annotate(year=ExtractYear('bank_transaction__date'))
+        .values('year')
+        .annotate(count=Count('id'))
+        .order_by('-year')
+    )
+
+    years = {str(item['year']): item['count'] for item in year_counts}
+
+    return JsonResponse({'years': years})

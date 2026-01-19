@@ -47,6 +47,23 @@ export interface LinkedTransaction {
   amount: number
 }
 
+export interface CCPaymentMatchInfo {
+  id: number
+  credit_card_transaction: {
+    id: number
+    date: string
+    description: string
+    amount: number
+    credit_card: {
+      id: number
+      nickname: string
+    } | null
+  }
+  offset: number
+  confidence_score: number
+  match_reasons: string[]
+}
+
 export interface Transaction {
   id: number
   date: string
@@ -65,6 +82,7 @@ export interface Transaction {
     filename: string
   } | null
   linked_transaction: LinkedTransaction | null
+  cc_payment_match: CCPaymentMatchInfo | null
 }
 
 export interface TopExpense {
@@ -473,7 +491,24 @@ export interface CreditCardSourceFile {
   first_transaction_date?: string | null
   last_transaction_date?: string | null
   transaction_count?: number
-  extracted_csv_name?: string | null
+  extraction_name?: string | null
+}
+
+export interface BankPaymentMatchInfo {
+  id: number
+  bank_transaction: {
+    id: number
+    date: string
+    narration: string
+    amount: number
+    bank_account: {
+      id: number
+      nickname: string
+    } | null
+  }
+  offset: number
+  confidence_score: number
+  match_reasons: string[]
 }
 
 export interface CreditCardTransaction {
@@ -482,6 +517,8 @@ export interface CreditCardTransaction {
   description: string
   amount: number
   intl_amount: number
+  intl_currency: string
+  exchange_rate: number | null
   category: string
   credit_card: {
     id: number
@@ -491,6 +528,7 @@ export interface CreditCardTransaction {
     id: number
     filename: string
   } | null
+  bank_payment_match: BankPaymentMatchInfo | null
 }
 
 export interface CreditCardTransactionStats {
@@ -667,6 +705,571 @@ export async function restoreCreditCardInconsistency(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type, transaction_ids: transactionIds }),
+  })
+  return res.json()
+}
+
+// ==================== CC Payment Matching API ====================
+
+export interface CCPaymentBankTransaction {
+  id: number
+  date: string
+  narration: string
+  amount: number
+  bank_account: {
+    id: number
+    nickname: string
+  } | null
+}
+
+export interface CCPaymentCCTransaction {
+  id: number
+  date: string
+  description: string
+  amount: number
+  credit_card: {
+    id: number
+    nickname: string
+  } | null
+}
+
+export interface CCPaymentSuggestion {
+  credit_card_transaction: CCPaymentCCTransaction
+  offset: number
+  confidence_score: number
+  match_reasons: string[]
+}
+
+export interface CCPaymentSuggestionItem {
+  bank_transaction: CCPaymentBankTransaction
+  suggestions: CCPaymentSuggestion[]
+}
+
+export interface CCPaymentMatch {
+  id: number
+  bank_transaction: CCPaymentBankTransaction
+  credit_card_transaction: CCPaymentCCTransaction
+  offset: number
+  confidence_score: number
+  match_reasons: string[]
+  created_at: string
+}
+
+export async function fetchCCPaymentSuggestions(params?: {
+  bank_account?: number
+  year?: number
+}): Promise<{ data: CCPaymentSuggestionItem[]; total: number }> {
+  const searchParams = new URLSearchParams()
+  if (params?.bank_account) searchParams.set("bank_account", params.bank_account.toString())
+  if (params?.year) searchParams.set("year", params.year.toString())
+
+  const queryString = searchParams.toString()
+  const url = queryString
+    ? `${API_BASE}/api/cc-payment-suggestions/?${queryString}`
+    : `${API_BASE}/api/cc-payment-suggestions/`
+  const res = await fetch(url)
+  return res.json()
+}
+
+export async function fetchCCPaymentMatches(params?: {
+  year?: number
+}): Promise<{ data: CCPaymentMatch[]; total: number }> {
+  const searchParams = new URLSearchParams()
+  if (params?.year) searchParams.set("year", params.year.toString())
+
+  const queryString = searchParams.toString()
+  const url = queryString
+    ? `${API_BASE}/api/cc-payment-matches/?${queryString}`
+    : `${API_BASE}/api/cc-payment-matches/`
+  const res = await fetch(url)
+  return res.json()
+}
+
+export async function createCCPaymentMatch(data: {
+  bank_transaction_id: number
+  credit_card_transaction_id: number
+  offset: number
+  confidence_score: number
+  match_reasons: string[]
+}): Promise<{
+  id: number
+  bank_transaction_id: number
+  credit_card_transaction_id: number
+  offset: number
+  confidence_score: number
+  match_reasons: string[]
+  created_at: string
+}> {
+  const res = await fetch(`${API_BASE}/api/cc-payment-matches/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+  return res.json()
+}
+
+export async function deleteCCPaymentMatch(matchId: number): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/api/cc-payment-matches/${matchId}/`, {
+    method: "DELETE",
+  })
+  return res.json()
+}
+
+export async function fetchCCPaymentMatchYears(): Promise<{ years: Record<string, number> }> {
+  const res = await fetch(`${API_BASE}/api/cc-payment-matches/years/`)
+  return res.json()
+}
+
+// ==================== PDF Extractions API ====================
+
+export interface PDFSourceFile {
+  id: number
+  filename: string
+  credit_card: {
+    id: number
+    nickname: string
+  } | null
+  disabled: boolean
+  has_data: boolean
+  file_size: number
+  has_password: boolean
+  pdf_password: string
+  extractions_count: number
+  last_extracted: string | null
+  last_extraction_id: number | null
+}
+
+export interface ExtractionArtifact {
+  artifact_id: string
+  artifact_type: string  // Now flexible: 'transactions', 'transactions_ingestable', 'emi', 'metadata', etc.
+  content_type: 'csv' | 'json'
+  row_count: number
+  is_transformable: boolean
+  is_transformed: boolean
+  transformer_name: string | null
+  source_artifact_id: string | null
+}
+
+export interface CreditCardPDFExtraction {
+  id: number
+  name: string
+  source_file: { id: number; filename: string }
+  credit_card: { id: number; nickname: string } | null
+  artifacts: ExtractionArtifact[]
+  statement_date: string | null
+  statement_period_begin: string | null
+  statement_period_end: string | null
+  payment_due_date: string | null
+  card_number_mask: string
+  invoice_number: string
+  total_amount_due: number | null
+  minimum_amount_due: number | null
+  status: 'extracted' | 'transformed' | 'loading' | 'loaded' | 'error' | 'superseded'
+  extracted_at: string
+  loaded_at: string | null
+  error_message: string
+  extractor_version: string
+  hidden: boolean
+  // Transformation status summary
+  transformable_count: number
+  transformed_count: number
+  all_transformed: boolean
+}
+
+export interface TransactionPreviewRow {
+  date: string
+  ser_no: string
+  description: string
+  amount: string
+  intl_amount: string
+}
+
+export interface IngestableTransactionRow {
+  date: string
+  value_date: string
+  narration: string
+  debit_amount: string
+  credit_amount: string
+  reference_number: string
+  closing_balance: string
+  intl_amount: string
+  intl_currency: string
+  exchange_rate: string
+}
+
+export interface EMIPreviewRow {
+  loan_type: string
+  creation_date: string
+  finish_date: string
+  num_installments: string
+  emi_amount: string
+  pending_installments: string
+  outstanding_amount: string
+  monthly_installment: string
+}
+
+export interface StatementMetadata {
+  metadata: {
+    card_no?: string
+    invoice_no?: string
+    cin_no?: string
+  }
+  timeline: {
+    statement_date?: string
+    statement_period_begin?: string
+    statement_period_end?: string
+    payment_due_date?: string
+  }
+  statement_summary: {
+    previous_balance?: number
+    purchases?: number
+    cash_advances?: number
+    payments_credits?: number
+    total_amount_due?: number
+    minimum_amount_due?: number
+  }
+  credit_summary: {
+    credit_limit?: number
+    available_credit?: number
+    cash_limit?: number
+    available_cash?: number
+  }
+}
+
+export async function fetchPDFSourceFiles(): Promise<{ data: PDFSourceFile[] }> {
+  const res = await fetch(`${API_BASE}/api/cc-source-files/`)
+  return res.json()
+}
+
+export async function fetchPDFExtractions(includeHidden = false): Promise<{ data: CreditCardPDFExtraction[] }> {
+  const params = includeHidden ? '?include_hidden=true' : ''
+  const res = await fetch(`${API_BASE}/api/cc-pdf-extractions/${params}`)
+  return res.json()
+}
+
+export async function fetchPDFExtractionDetail(extractionId: number): Promise<CreditCardPDFExtraction> {
+  const res = await fetch(`${API_BASE}/api/cc-pdf-extractions/${extractionId}/`)
+  return res.json()
+}
+
+export async function fetchPDFExtractionPreview(
+  extractionId: number,
+  type: 'transactions' | 'emi' | 'metadata',
+  limit?: number
+): Promise<{ data: TransactionPreviewRow[] | EMIPreviewRow[] | StatementMetadata; total?: number }> {
+  const params = new URLSearchParams({ type })
+  if (limit) params.set('limit', limit.toString())
+  const res = await fetch(`${API_BASE}/api/cc-pdf-extractions/${extractionId}/preview/?${params}`)
+  return res.json()
+}
+
+/** @deprecated Use getArtifactUrl instead */
+export function getPDFExtractionArtifactUrl(
+  extractionId: number,
+  type: 'transactions' | 'emi' | 'metadata'
+): string {
+  return `${API_BASE}/api/cc-pdf-extractions/${extractionId}/artifact/?type=${type}`
+}
+
+// New artifact endpoints by artifact_id
+export function getArtifactUrl(artifactId: string): string {
+  return `${API_BASE}/api/artifacts/${artifactId}/`
+}
+
+export function getArtifactPreviewUrl(artifactId: string, limit?: number): string {
+  const params = limit ? `?limit=${limit}` : ''
+  return `${API_BASE}/api/artifacts/${artifactId}/preview/${params}`
+}
+
+export async function fetchArtifactPreview(
+  artifactId: string,
+  limit?: number
+): Promise<{ data: TransactionPreviewRow[] | IngestableTransactionRow[] | EMIPreviewRow[] | StatementMetadata; total?: number }> {
+  const params = new URLSearchParams()
+  if (limit) params.set('limit', limit.toString())
+  const queryString = params.toString()
+  const url = queryString
+    ? `${API_BASE}/api/artifacts/${artifactId}/preview/?${queryString}`
+    : `${API_BASE}/api/artifacts/${artifactId}/preview/`
+  const res = await fetch(url)
+  return res.json()
+}
+
+export async function triggerPDFExtraction(
+  sourceFileId: number,
+  password?: string
+): Promise<{
+  success: boolean
+  extraction?: {
+    id: number
+    name: string
+    transactions_row_count: number
+    emi_row_count: number
+    statement_date: string | null
+  }
+  password_saved?: boolean
+  error?: string
+}> {
+  const res = await fetch(`${API_BASE}/api/cc-source-files/${sourceFileId}/extract/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  })
+  return res.json()
+}
+
+export interface LoadExtractionResult {
+  id: number
+  success: boolean
+  message: string
+  transaction_count?: number
+}
+
+export async function loadPDFExtractions(
+  extractionIds: number[]
+): Promise<{ results: LoadExtractionResult[] }> {
+  const res = await fetch(`${API_BASE}/api/cc-pdf-extractions/load/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extraction_ids: extractionIds }),
+  })
+  return res.json()
+}
+
+export interface UnloadExtractionResult {
+  id: number
+  success: boolean
+  message: string
+  deleted_count?: number
+}
+
+export async function unloadPDFExtractions(
+  extractionIds: number[]
+): Promise<{ results: UnloadExtractionResult[] }> {
+  const res = await fetch(`${API_BASE}/api/cc-pdf-extractions/unload/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extraction_ids: extractionIds }),
+  })
+  return res.json()
+}
+
+// Artifact-level load/unload (for independent loading of multi-card artifacts)
+export interface LoadArtifactResult {
+  artifact_id: string
+  success: boolean
+  message: string
+  transaction_count?: number
+}
+
+export async function loadArtifacts(
+  artifactIds: string[]
+): Promise<{ results: LoadArtifactResult[] }> {
+  const res = await fetch(`${API_BASE}/api/artifacts/load/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ artifact_ids: artifactIds }),
+  })
+  return res.json()
+}
+
+export interface UnloadArtifactResult {
+  artifact_id: string
+  success: boolean
+  message: string
+  deleted_count?: number
+}
+
+export async function unloadArtifacts(
+  artifactIds: string[]
+): Promise<{ results: UnloadArtifactResult[] }> {
+  const res = await fetch(`${API_BASE}/api/artifacts/unload/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ artifact_ids: artifactIds }),
+  })
+  return res.json()
+}
+
+export async function deleteArtifact(
+  artifactId: string
+): Promise<{ success: boolean; artifact_id: string; transactions_deleted: number; error?: string }> {
+  const res = await fetch(`${API_BASE}/api/artifacts/delete/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ artifact_id: artifactId }),
+  })
+  return res.json()
+}
+
+export interface TransformExtractionResult {
+  id: number
+  success: boolean
+  message: string
+  row_count?: number
+  artifact_type?: string
+}
+
+export async function transformPDFExtractions(
+  extractionIds: number[],
+  force = false
+): Promise<{ results: TransformExtractionResult[] }> {
+  const res = await fetch(`${API_BASE}/api/cc-pdf-extractions/transform/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extraction_ids: extractionIds, force }),
+  })
+  return res.json()
+}
+
+export async function toggleExtractionHidden(
+  extractionId: number,
+  hidden: boolean
+): Promise<{ success: boolean; id: number; hidden: boolean; error?: string }> {
+  const res = await fetch(`${API_BASE}/api/cc-pdf-extractions/toggle-hidden/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extraction_id: extractionId, hidden }),
+  })
+  return res.json()
+}
+
+export async function updateArtifactCreditCard(
+  artifactId: string,
+  creditCardId: number | null
+): Promise<{ success: boolean; artifact_id: string; credit_card: { id: number; nickname: string } | null; error?: string }> {
+  const res = await fetch(`${API_BASE}/api/cc-pdf-extractions/update-card/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ artifact_id: artifactId, credit_card_id: creditCardId }),
+  })
+  return res.json()
+}
+
+// Legacy: update extraction's credit card (for single-card extractions)
+export async function updateExtractionCreditCard(
+  extractionId: number,
+  creditCardId: number | null
+): Promise<{ success: boolean; id: number; credit_card: { id: number; nickname: string } | null; error?: string }> {
+  const res = await fetch(`${API_BASE}/api/cc-pdf-extractions/update-card/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extraction_id: extractionId, credit_card_id: creditCardId }),
+  })
+  return res.json()
+}
+
+export async function updatePDFSourceFilePassword(
+  sourceFileId: number,
+  password: string
+): Promise<{ success: boolean; id: number; has_password: boolean; error?: string }> {
+  const res = await fetch(`${API_BASE}/api/cc-source-files/${sourceFileId}/password/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  })
+  return res.json()
+}
+
+// PDF Extraction Data Sources
+export interface PDFExtractionDataSource {
+  id: number
+  artifact_id: string
+  name: string
+  source_file: string
+  credit_card: { id: number; nickname: string } | null
+  status: 'transformed' | 'loading' | 'loaded' | 'error'  // Only transformed+ shown in data sources
+  row_count: number
+  artifact_type: string  // e.g., 'transactions_ingestable'
+  statement_date: string | null
+  statement_period_begin: string | null
+  statement_period_end: string | null
+  extracted_at: string
+  loaded_at: string | null
+  loaded: boolean  // Whether this artifact has been loaded (has transactions)
+  loaded_transaction_count: number  // Number of transactions loaded from this artifact
+}
+
+export async function fetchPDFExtractionDataSources(): Promise<{ data: PDFExtractionDataSource[] }> {
+  const res = await fetch(`${API_BASE}/api/cc-pdf-data-sources/`)
+  return res.json()
+}
+
+export async function deletePDFExtraction(extractionId: number): Promise<{
+  success: boolean
+  id: number
+  transactions_affected: number
+  error?: string
+}> {
+  const res = await fetch(`${API_BASE}/api/cc-pdf-extractions/delete/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extraction_id: extractionId }),
+  })
+  return res.json()
+}
+
+export async function deleteAllPDFExtractions(): Promise<{
+  success: boolean
+  deleted_count: number
+  transactions_affected: number
+  error?: string
+}> {
+  const res = await fetch(`${API_BASE}/api/cc-pdf-extractions/delete-all/`, {
+    method: 'POST',
+  })
+  return res.json()
+}
+
+export async function deletePDFSourceFile(sourceFileId: number): Promise<{
+  success: boolean
+  id: number
+  extractions_deleted: number
+  transactions_affected: number
+  error?: string
+}> {
+  const res = await fetch(`${API_BASE}/api/cc-source-files/${sourceFileId}/`, {
+    method: 'DELETE',
+  })
+  return res.json()
+}
+
+// CSV Source Files
+export interface CSVSourceFile {
+  id: number
+  filename: string
+  credit_card: { id: number; nickname: string } | null
+  disabled: boolean
+  has_data: boolean
+  file_size: number
+  extractions_count: number
+  last_extracted: string | null
+  last_extraction_id: number | null
+  last_extraction_status: string | null
+}
+
+export async function fetchCSVSourceFiles(): Promise<{ data: CSVSourceFile[] }> {
+  const res = await fetch(`${API_BASE}/api/cc-csv-source-files/`)
+  return res.json()
+}
+
+export async function triggerCSVExtraction(
+  sourceFileId: number
+): Promise<{
+  success: boolean
+  extraction?: {
+    id: number
+    name: string
+    row_count: number
+    status: string
+    statement_period_begin: string | null
+    statement_period_end: string | null
+  }
+  error?: string
+}> {
+  const res = await fetch(`${API_BASE}/api/cc-csv-source-files/${sourceFileId}/extract/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
   })
   return res.json()
 }

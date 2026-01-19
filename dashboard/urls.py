@@ -16,4 +16,9 @@ urlpatterns = [
     path('api/logs/', views.api_transaction_logs, name='api_transaction_logs'),
     path('api/inconsistencies/', views.api_inconsistencies, name='api_inconsistencies'),
     path('api/date-range/', views.api_date_range, name='api_date_range'),
+    # CC Payment Matching
+    path('api/cc-payment-suggestions/', views.api_cc_payment_suggestions, name='api_cc_payment_suggestions'),
+    path('api/cc-payment-matches/', views.api_cc_payment_matches, name='api_cc_payment_matches'),
+    path('api/cc-payment-matches/<int:match_id>/', views.api_cc_payment_match_delete, name='api_cc_payment_match_delete'),
+    path('api/cc-payment-matches/years/', views.api_cc_payment_match_years, name='api_cc_payment_match_years'),
 ]

@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { useInconsistencyCache } from "@/lib/inconsistency-cache"
+import { useStoryCache } from "@/lib/story-cache"
 import {
   SunIcon,
   MoonIcon,
@@ -13,6 +14,8 @@ import {
   AlertTriangleIcon,
   ScrollTextIcon,
   FocusIcon,
+  BookOpenIcon,
+  FileArchiveIcon,
 } from "lucide-react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import * as Tooltip from "@radix-ui/react-tooltip"
@@ -22,6 +25,8 @@ const NAV_ITEMS = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboardIcon },
   { path: "/transactions", label: "Transactions", icon: ListIcon },
   { path: "/credit-cards", label: "Credit Cards", icon: CreditCardIcon },
+  { path: "/extractions", label: "Extractions", icon: FileArchiveIcon },
+  { path: "/story", label: "Story", icon: BookOpenIcon },
   { path: "/settings", label: "Settings", icon: SettingsIcon },
   { path: "/inconsistencies", label: "Inconsistencies", icon: AlertTriangleIcon },
   { path: "/logs", label: "Activity Log", icon: ScrollTextIcon },
@@ -31,8 +36,10 @@ export function Header() {
   const location = useLocation()
   const { mode, setMode } = useTheme()
   const { cache } = useInconsistencyCache()
+  const { cache: storyCache } = useStoryCache()
   // Use count if available, fall back to previousCount during loading, then 0
   const inconsistencyCount = cache.count ?? cache.previousCount ?? 0
+  const storyCount = storyCache.count ?? storyCache.previousCount ?? 0
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
     const saved = localStorage.getItem('autoScrollToTable')
     return saved !== null ? saved === 'true' : true
@@ -69,6 +76,11 @@ export function Header() {
                   {path === "/inconsistencies" && inconsistencyCount > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full h-4 min-w-4 flex items-center justify-center px-1">
                       {inconsistencyCount > 99 ? "99+" : inconsistencyCount}
+                    </span>
+                  )}
+                  {path === "/story" && storyCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full h-4 min-w-4 flex items-center justify-center px-1">
+                      {storyCount > 99 ? "99+" : storyCount}
                     </span>
                   )}
                 </Link>

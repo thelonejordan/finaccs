@@ -20,6 +20,7 @@ import {
   Link2OffIcon,
   XIcon,
   CalendarIcon,
+  CreditCardIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
@@ -36,6 +37,7 @@ import {
   fetchPotentialLinks,
   linkTransaction,
   unlinkTransaction,
+  deleteCCPaymentMatch,
   type Transaction,
   type CategoryData,
   type BankAccount,
@@ -403,6 +405,154 @@ function LinkDialog({
   )
 }
 
+function CCPaymentLinkDialog({
+  transaction,
+  onUnlink,
+}: {
+  transaction: Transaction
+  onUnlink: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [unlinking, setUnlinking] = useState(false)
+
+  const isLinked = !!transaction.cc_payment_match
+
+  const handleUnlink = async () => {
+    setUnlinking(true)
+    try {
+      await onUnlink()
+      setOpen(false)
+    } finally {
+      setUnlinking(false)
+    }
+  }
+
+  return (
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Tooltip.Provider>
+        <Tooltip.Root>
+          <Tooltip.Trigger asChild>
+            <Dialog.Trigger asChild>
+              <button
+                className={`p-1 rounded transition-colors ${
+                  isLinked
+                    ? "text-green-600 dark:text-green-400 hover:bg-green-500/10"
+                    : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {isLinked ? (
+                  <Link2Icon className="h-4 w-4" />
+                ) : (
+                  <Link2OffIcon className="h-4 w-4" />
+                )}
+              </button>
+            </Dialog.Trigger>
+          </Tooltip.Trigger>
+          <Tooltip.Portal>
+            <Tooltip.Content
+              className="bg-card text-card-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm"
+              sideOffset={4}
+            >
+              {isLinked
+                ? `Linked to ${transaction.cc_payment_match?.credit_card_transaction.credit_card?.nickname || "CC"} on ${formatDate(transaction.cc_payment_match?.credit_card_transaction.date || "")}`
+                : "No CC payment linked"}
+              <Tooltip.Arrow className="fill-card" />
+            </Tooltip.Content>
+          </Tooltip.Portal>
+        </Tooltip.Root>
+      </Tooltip.Provider>
+
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 animate-in fade-in-0" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card rounded-xl border border-border shadow-xl w-full max-w-xl max-h-[85vh] overflow-hidden animate-in fade-in-0 zoom-in-95 z-50">
+          <div className="p-6 border-b border-border">
+            <Dialog.Title className="text-lg font-semibold">
+              {isLinked ? "Linked Credit Card Payment" : "CC Payment Link"}
+            </Dialog.Title>
+            <Dialog.Description className="text-sm text-muted-foreground mt-1">
+              {isLinked
+                ? "This bank payment is linked to a credit card payment."
+                : "This transaction is not linked to any credit card payment."}
+            </Dialog.Description>
+          </div>
+
+          <div className="p-6">
+            {/* Current transaction info */}
+            <div className="mb-4 p-3 rounded-lg bg-muted/50 border border-border">
+              <p className="text-sm text-muted-foreground mb-1">Bank Transaction</p>
+              <p className="font-medium">{formatDate(transaction.date)}</p>
+              <p className="text-sm text-muted-foreground line-clamp-1">{transaction.narration}</p>
+              <p className="text-sm flex items-center gap-1 flex-wrap">
+                {transaction.bank_account?.nickname} •{" "}
+                <span className="text-red-600 dark:text-red-400 inline-flex items-center gap-0.5">
+                  <FormattedCurrency amount={transaction.debit} />
+                  <ArrowDownIcon className="h-3 w-3" />
+                </span>
+              </p>
+            </div>
+
+            {isLinked ? (
+              /* Show linked CC transaction */
+              <div className="space-y-4">
+                <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                  <p className="text-sm text-muted-foreground mb-1">Linked Credit Card Payment</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium">
+                      {transaction.cc_payment_match?.credit_card_transaction.credit_card?.nickname || "Unknown Card"}
+                    </span>
+                  </div>
+                  <p className="font-medium">{formatDate(transaction.cc_payment_match?.credit_card_transaction.date || "")}</p>
+                  <p className="text-sm text-muted-foreground line-clamp-3 mb-1">
+                    {transaction.cc_payment_match?.credit_card_transaction.description}
+                  </p>
+                  <p className="text-sm flex items-center gap-1">
+                    <span className="text-green-600 dark:text-green-400 inline-flex items-center gap-0.5">
+                      <FormattedCurrency amount={Math.abs(transaction.cc_payment_match?.credit_card_transaction.amount || 0)} />
+                      <ArrowUpIcon className="h-3 w-3" />
+                    </span>
+                  </p>
+                  {transaction.cc_payment_match && transaction.cc_payment_match.offset !== 0 && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Offset: {transaction.cc_payment_match.offset > 0 ? "+" : ""}
+                      {formatCurrency(transaction.cc_payment_match.offset)}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={handleUnlink}
+                  disabled={unlinking}
+                  className="w-full py-2 px-4 rounded-lg border border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors disabled:opacity-50"
+                >
+                  {unlinking ? "Unlinking..." : "Unlink CC Payment"}
+                </button>
+              </div>
+            ) : (
+              /* No link */
+              <div className="text-center py-8 text-muted-foreground">
+                <Link2OffIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No credit card payment linked</p>
+                <p className="text-sm mt-1">
+                  Go to the Story page to match this payment
+                </p>
+              </div>
+            )}
+          </div>
+
+          <Dialog.Close asChild>
+            <button
+              className="absolute top-4 right-4 p-2 rounded-lg hover:bg-muted transition-colors"
+              aria-label="Close"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+          </Dialog.Close>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
+
 function Pagination({
   page,
   totalPages,
@@ -742,6 +892,15 @@ export function TransactionsModernPage() {
     }
   }
 
+  const handleUnlinkCCPayment = async (matchId: number) => {
+    try {
+      await deleteCCPaymentMatch(matchId)
+      setRefreshKey((k) => k + 1)
+    } catch (error) {
+      console.error("Failed to unlink CC payment:", error)
+    }
+  }
+
   useEffect(() => {
     async function loadCategories() {
       try {
@@ -769,7 +928,10 @@ export function TransactionsModernPage() {
 
   useEffect(() => {
     async function loadTransactions() {
-      if (!selectedYear || !selectedMonth) return
+      if (!selectedYear || !selectedMonth) {
+        setLoading(false)
+        return
+      }
 
       // Only show loading spinner if not a page change (to prevent layout shift)
       const isPageChange = isPageChangeRef.current
@@ -1220,14 +1382,14 @@ export function TransactionsModernPage() {
             </h3>
           </header>
           <div className="p-6 pt-0">
-            {loading ? (
+            {loading && selectedYear && selectedMonth ? (
               <div className="flex items-center justify-center py-12">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               </div>
             ) : !selectedYear || !selectedMonth ? (
               <div className="text-center py-12 text-muted-foreground">
-                <CalendarIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Select a year and month to view transactions</p>
+                <ActivityIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>{availableYears.length === 0 ? "No transactions found" : "Select a year and month to view transactions"}</p>
               </div>
             ) : transactions.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
@@ -1350,6 +1512,11 @@ export function TransactionsModernPage() {
                                 transaction={t}
                                 onLink={(linkToId) => handleLink(t.id, linkToId)}
                                 onUnlink={() => handleUnlink(t.id)}
+                              />
+                            ) : t.category === "Credit Card Payment" ? (
+                              <CCPaymentLinkDialog
+                                transaction={t}
+                                onUnlink={() => t.cc_payment_match && handleUnlinkCCPayment(t.cc_payment_match.id)}
                               />
                             ) : (
                               <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>

@@ -22,9 +22,16 @@ import {
   TrendingDownIcon,
   CheckCircleIcon,
   RefreshCwIcon,
+  LoaderIcon,
+  Trash2Icon,
+  SlidersHorizontalIcon,
+  PowerIcon,
+  ChevronRightIcon,
+  UploadIcon,
 } from "lucide-react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import * as Tooltip from "@radix-ui/react-tooltip"
+import * as Dialog from "@radix-ui/react-dialog"
 import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import { AccountsSection } from "@/components/AccountsSection"
@@ -35,11 +42,19 @@ import {
   updateCreditCard,
   toggleCreditCardSourceFileDisabled,
   fetchBankAccounts,
+  fetchPDFExtractionDataSources,
+  loadArtifacts,
+  unloadArtifacts,
+  deleteArtifact,
+  fetchArtifactPreview,
+  updateArtifactCreditCard,
   type CreditCard,
   type CreditCardInput,
   type CreditCardSourceFile,
   type BankAccount,
   type ExtractedCSV,
+  type PDFExtractionDataSource,
+  type IngestableTransactionRow,
 } from "@/lib/api"
 
 function formatDate(dateStr: string): string {
@@ -416,22 +431,37 @@ function CreditCardsSection({
 // Credit Card Data Sources Component
 function CreditCardDataSources({
   sourceFiles,
+  pdfExtractions,
   cards,
+  selectedArtifactId,
+  onSelectArtifact,
   onCreateCard,
   onCardUpdated,
   onSourceFileUpdated,
+  onLoadArtifact,
+  onUnloadArtifact,
+  onDeleteArtifact,
   onRefresh,
 }: {
   sourceFiles: CreditCardSourceFile[]
+  pdfExtractions: PDFExtractionDataSource[]
   cards: CreditCard[]
+  selectedArtifactId: string | null
+  onSelectArtifact: (artifactId: string) => void
   onCreateCard: (filename: string) => void
   onCardUpdated: () => void
   onSourceFileUpdated: (sourceFile: CreditCardSourceFile) => void
+  onLoadArtifact: (artifactIds: string[]) => Promise<void>
+  onUnloadArtifact: (artifactIds: string[]) => Promise<void>
+  onDeleteArtifact: (artifactId: string) => Promise<void>
   onRefresh?: () => void
 }) {
   const [isLinking, setIsLinking] = useState(false)
   const [togglingId, setTogglingId] = useState<number | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [loadingArtifactIds, setLoadingArtifactIds] = useState<Set<string>>(new Set())
+  const [deleteArtifactId, setDeleteArtifactId] = useState<string | null>(null)
+  const [deletingArtifactId, setDeletingArtifactId] = useState<string | null>(null)
 
   const handleRefresh = async () => {
     if (!onRefresh) return
@@ -455,6 +485,19 @@ function CreditCardDataSources({
     }
   }
 
+  // Handler for updating artifact credit card
+  const handleUpdateArtifactCard = async (artifactId: string, cardId: number | null) => {
+    setIsLinking(true)
+    try {
+      await updateArtifactCreditCard(artifactId, cardId)
+      onCardUpdated()
+    } catch (error) {
+      console.error("Failed to update artifact card:", error)
+    } finally {
+      setIsLinking(false)
+    }
+  }
+
   // Create a map of source_file -> card
   const fileToCard = new Map<string, CreditCard>()
   sourceFiles.forEach((sf) => {
@@ -464,6 +507,19 @@ function CreditCardDataSources({
         fileToCard.set(sf.filename, card)
       }
     }
+  })
+
+  // Sort PDF extractions: "Ready to Load" (transformed) first, then by date
+  const sortedPdfExtractions = [...pdfExtractions].sort((a, b) => {
+    const aReady = a.status === 'transformed'
+    const bReady = b.status === 'transformed'
+    if (aReady && !bReady) return -1
+    if (!aReady && bReady) return 1
+    // Secondary sort by statement date (most recent first)
+    if (a.statement_date && b.statement_date) {
+      return new Date(b.statement_date).getTime() - new Date(a.statement_date).getTime()
+    }
+    return 0
   })
 
   const handleLinkToCard = async (filename: string, cardId: number) => {
@@ -534,6 +590,73 @@ function CreditCardDataSources({
     }
   }
 
+  const handleLoadArtifact = async (artifactId: string) => {
+    setLoadingArtifactIds((prev) => new Set(prev).add(artifactId))
+    try {
+      await onLoadArtifact([artifactId])
+    } finally {
+      setLoadingArtifactIds((prev) => {
+        const next = new Set(prev)
+        next.delete(artifactId)
+        return next
+      })
+    }
+  }
+
+  const handleUnloadArtifact = async (artifactId: string) => {
+    setLoadingArtifactIds((prev) => new Set(prev).add(artifactId))
+    try {
+      await onUnloadArtifact([artifactId])
+    } finally {
+      setLoadingArtifactIds((prev) => {
+        const next = new Set(prev)
+        next.delete(artifactId)
+        return next
+      })
+    }
+  }
+
+  const confirmDeleteArtifact = async () => {
+    if (!deleteArtifactId) return
+
+    setDeletingArtifactId(deleteArtifactId)
+    try {
+      await onDeleteArtifact(deleteArtifactId)
+    } finally {
+      setDeletingArtifactId(null)
+      setDeleteArtifactId(null)
+    }
+  }
+
+  const getExtractionStatusBadge = (ext: PDFExtractionDataSource) => {
+    // Use artifact-level loaded flag - this is the source of truth for whether
+    // this specific artifact has transactions loaded
+    if (ext.loaded) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-700 dark:text-green-400">
+          <CheckCircleIcon className="h-3 w-3" />
+          Loaded
+        </span>
+      )
+    }
+    // Not loaded - show "Ready to Load" regardless of extraction status
+    // (extraction status is shared across all artifacts from same extraction)
+    if (ext.status === 'error') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/20 text-red-600 dark:text-red-400">
+          <XIcon className="h-3 w-3" />
+          Error
+        </span>
+      )
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-600 dark:text-purple-400">
+        <CheckCircleIcon className="h-3 w-3" />
+        Ready to Load
+      </span>
+    )
+  }
+
   return (
     <section className="rounded-xl border border-border bg-card shadow-sm">
       <header className="p-6 pb-3">
@@ -558,107 +681,74 @@ function CreditCardDataSources({
       </header>
       <div className="relative">
         <div className="p-6 pt-0 max-h-[512px] overflow-y-auto">
-          {sourceFiles.length === 0 ? (
+          {pdfExtractions.length === 0 ? (
             <div className="text-center py-8 rounded-xl bg-gradient-to-br from-muted/50 to-transparent border border-border">
               <div className="p-3 rounded-full bg-muted w-fit mx-auto mb-3">
                 <FileTextIcon className="h-6 w-6 text-muted-foreground" />
               </div>
-              <p className="font-medium">No source files found</p>
+              <p className="font-medium">No extractions found</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Add credit card CSV files to <code className="bg-muted px-1.5 py-0.5 rounded text-xs">credit_cards/data/</code>
+                Extract PDF statements from the Extractions page
               </p>
             </div>
           ) : (
             <div className="space-y-3">
-              {sourceFiles.map((file) => {
-                const linkedCard = fileToCard.get(file.filename)
+              {/* PDF Extractions */}
+              {sortedPdfExtractions.map((ext) => {
+                const isLoading = loadingArtifactIds.has(ext.artifact_id)
+                const isSelected = selectedArtifactId === ext.artifact_id
                 return (
                   <div
-                    key={file.filename}
-                    className={`p-4 rounded-lg border transition-all hover:shadow-md ${file.disabled ? 'border-border/50 bg-muted/30 opacity-60' : 'border-border'}`}
+                    key={`artifact-${ext.artifact_id}`}
+                    className={`rounded-lg border transition-all hover:shadow-md ${isSelected ? 'border-primary bg-primary/5' : 'border-border'}`}
                   >
+                    <div
+                      className="p-4 cursor-pointer"
+                      onClick={() => ext.artifact_id && onSelectArtifact(ext.artifact_id)}
+                    >
                     <div className="flex items-start gap-3">
-                      <div className={`p-2.5 rounded-xl ${file.disabled ? 'bg-muted/50' : 'bg-muted'}`}>
-                        <FileTextIcon className={`h-5 w-5 ${file.disabled ? 'text-muted-foreground/50' : 'text-muted-foreground'}`} />
+                      <div className="p-2.5 rounded-xl bg-muted">
+                        <FileTextIcon className="h-5 w-5 text-muted-foreground" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0">
-                            <p className={`font-mono text-sm truncate font-medium ${file.disabled ? 'line-through text-muted-foreground' : ''}`}>{file.extracted_csv_name || file.filename}</p>
-                            {file.extracted_csv_name && (
-                              <p className="text-xs text-muted-foreground truncate">{file.filename}</p>
-                            )}
+                            <p className="font-mono text-sm truncate font-medium" title={ext.name}>{ext.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">{ext.source_file}</p>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            {file.disabled ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/20 text-red-600 dark:text-red-400">
-                                <EyeOffIcon className="h-3 w-3" />
-                                Disabled
-                              </span>
-                            ) : !linkedCard && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-600 dark:text-amber-400">
-                                <Link2OffIcon className="h-3 w-3" />
-                                Not linked
-                              </span>
-                            )}
-                            {file.extracted_csv_name && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-700 dark:text-green-400">
-                                <CheckCircleIcon className="h-3 w-3" />
-                                Loaded
-                              </span>
-                            )}
-                            <Tooltip.Provider>
-                              <Tooltip.Root>
-                                <Tooltip.Trigger asChild>
-                                  <button
-                                    onClick={() => handleToggleDisabled(file)}
-                                    disabled={togglingId === file.id}
-                                    className={`p-1.5 rounded-lg transition-colors ${file.disabled ? 'hover:bg-green-500/20 text-muted-foreground hover:text-green-600' : 'hover:bg-red-500/20 text-muted-foreground hover:text-red-600'} disabled:opacity-50`}
-                                  >
-                                    {file.disabled ? (
-                                      <EyeIcon className="h-4 w-4" />
-                                    ) : (
-                                      <EyeOffIcon className="h-4 w-4" />
-                                    )}
-                                  </button>
-                                </Tooltip.Trigger>
-                                <Tooltip.Portal>
-                                  <Tooltip.Content
-                                    className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
-                                    sideOffset={4}
-                                  >
-                                    {file.disabled ? 'Enable this source' : 'Disable this source'}
-                                    <Tooltip.Arrow className="fill-card" />
-                                  </Tooltip.Content>
-                                </Tooltip.Portal>
-                              </Tooltip.Root>
-                            </Tooltip.Provider>
+                            {getExtractionStatusBadge(ext)}
                           </div>
                         </div>
 
-                        {/* Date range and transaction count */}
-                        {file.first_transaction_date && file.last_transaction_date && (
-                          <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+                        {/* Date range and row count */}
+                        <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                          {ext.statement_period_begin && ext.statement_period_end && (
                             <span className="flex items-center gap-1">
                               <CalendarIcon className="h-3 w-3" />
-                              {formatDate(file.first_transaction_date)} — {formatDate(file.last_transaction_date)}
+                              {formatDate(ext.statement_period_begin)} — {formatDate(ext.statement_period_end)}
                             </span>
-                            {file.transaction_count != null && file.transaction_count > 0 && (
-                              <span className="flex items-center gap-1">
-                                <HashIcon className="h-3 w-3" />
-                                {file.transaction_count} transactions
-                              </span>
-                            )}
-                          </div>
-                        )}
+                          )}
+                          {!ext.statement_period_begin && ext.statement_date && (
+                            <span className="flex items-center gap-1">
+                              <CalendarIcon className="h-3 w-3" />
+                              Statement: {formatDate(ext.statement_date)}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1">
+                            <HashIcon className="h-3 w-3" />
+                            {ext.row_count} transactions
+                          </span>
+                        </div>
 
-                        {linkedCard ? (
-                          <div className="mt-2 flex items-center gap-2 flex-wrap text-sm">
+                        {/* Credit card and actions */}
+                        <div className="mt-2 flex items-center gap-2 flex-wrap">
+                          {ext.credit_card ? (
                             <DropdownMenu.Root>
                               <DropdownMenu.Trigger asChild>
                                 <button className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 hover:bg-blue-500/25 text-blue-600 dark:text-blue-400 transition-colors cursor-pointer">
                                   <CreditCardIcon className="h-3.5 w-3.5" />
-                                  <span className="font-medium">{linkedCard.nickname}</span>
+                                  <span className="font-medium text-sm">{ext.credit_card.nickname}</span>
                                   <ChevronDownIcon className="h-3 w-3 opacity-60" />
                                 </button>
                               </DropdownMenu.Trigger>
@@ -668,16 +758,16 @@ function CreditCardDataSources({
                                   sideOffset={4}
                                   align="start"
                                 >
-                                  {cards.filter((c) => c.id !== linkedCard.id).length > 0 && (
+                                  {cards.filter((c) => c.id !== ext.credit_card?.id).length > 0 && (
                                     <>
                                       <DropdownMenu.Label className="text-xs font-medium text-muted-foreground px-2 py-1">
                                         Change to different card
                                       </DropdownMenu.Label>
-                                      {cards.filter((c) => c.id !== linkedCard.id).map((c) => (
+                                      {cards.filter((c) => c.id !== ext.credit_card?.id).map((c) => (
                                         <DropdownMenu.Item
                                           key={c.id}
                                           disabled={isLinking}
-                                          onSelect={() => handleChangeLinkToCard(file.filename, linkedCard.id, c.id)}
+                                          onSelect={() => handleUpdateArtifactCard(ext.artifact_id, c.id)}
                                           className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none disabled:opacity-50"
                                         >
                                           <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
@@ -694,7 +784,7 @@ function CreditCardDataSources({
                                   )}
                                   <DropdownMenu.Item
                                     disabled={isLinking}
-                                    onSelect={() => handleUnlinkFromCard(file.filename, linkedCard.id)}
+                                    onSelect={() => handleUpdateArtifactCard(ext.artifact_id, null)}
                                     className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-red-500/10 text-red-600 dark:text-red-400 transition-colors cursor-pointer outline-none disabled:opacity-50"
                                   >
                                     <Link2OffIcon className="h-4 w-4" />
@@ -703,14 +793,7 @@ function CreditCardDataSources({
                                 </DropdownMenu.Content>
                               </DropdownMenu.Portal>
                             </DropdownMenu.Root>
-                            {linkedCard.issuer && (
-                              <span className="text-muted-foreground">
-                                {linkedCard.issuer}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="mt-2">
+                          ) : (
                             <DropdownMenu.Root>
                               <DropdownMenu.Trigger asChild>
                                 <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium">
@@ -725,7 +808,7 @@ function CreditCardDataSources({
                                   sideOffset={4}
                                   align="start"
                                 >
-                                  {cards.length > 0 && (
+                                  {cards.length > 0 ? (
                                     <>
                                       <DropdownMenu.Label className="text-xs font-medium text-muted-foreground px-2 py-1">
                                         Link to existing card
@@ -734,7 +817,7 @@ function CreditCardDataSources({
                                         <DropdownMenu.Item
                                           key={c.id}
                                           disabled={isLinking}
-                                          onSelect={() => handleLinkToCard(file.filename, c.id)}
+                                          onSelect={() => handleUpdateArtifactCard(ext.artifact_id, c.id)}
                                           className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none disabled:opacity-50"
                                         >
                                           <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
@@ -746,30 +829,374 @@ function CreditCardDataSources({
                                           </div>
                                         </DropdownMenu.Item>
                                       ))}
-                                      <DropdownMenu.Separator className="h-px bg-border my-1" />
                                     </>
+                                  ) : (
+                                    <div className="px-2 py-3 text-sm text-muted-foreground text-center">
+                                      No cards available. Create a card first.
+                                    </div>
                                   )}
-                                  <DropdownMenu.Item
-                                    onSelect={() => onCreateCard(file.filename)}
-                                    className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none font-medium"
-                                  >
-                                    <PlusIcon className="h-4 w-4" />
-                                    Create new card
-                                  </DropdownMenu.Item>
                                 </DropdownMenu.Content>
                               </DropdownMenu.Portal>
                             </DropdownMenu.Root>
+                          )}
+
+                          <div className="ml-auto flex items-center gap-1">
+                            {!ext.loaded && (
+                              <Tooltip.Provider>
+                                <Tooltip.Root>
+                                  <Tooltip.Trigger asChild>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleLoadArtifact(ext.artifact_id) }}
+                                      disabled={isLoading}
+                                      className="p-1.5 rounded-lg hover:bg-green-500/20 text-muted-foreground hover:text-green-600 dark:hover:text-green-400 transition-colors disabled:opacity-50"
+                                    >
+                                      {isLoading ? (
+                                        <LoaderIcon className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <UploadIcon className="h-4 w-4" />
+                                      )}
+                                    </button>
+                                  </Tooltip.Trigger>
+                                  <Tooltip.Portal>
+                                    <Tooltip.Content
+                                      className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
+                                      sideOffset={4}
+                                    >
+                                      Load transactions to database
+                                      <Tooltip.Arrow className="fill-card" />
+                                    </Tooltip.Content>
+                                  </Tooltip.Portal>
+                                </Tooltip.Root>
+                              </Tooltip.Provider>
+                            )}
+                            {ext.loaded && (
+                              <Tooltip.Provider>
+                                <Tooltip.Root>
+                                  <Tooltip.Trigger asChild>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleUnloadArtifact(ext.artifact_id) }}
+                                      disabled={isLoading}
+                                      className="p-1.5 rounded-lg hover:bg-amber-500/20 text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 transition-colors disabled:opacity-50"
+                                    >
+                                      {isLoading ? (
+                                        <LoaderIcon className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <XIcon className="h-4 w-4" />
+                                      )}
+                                    </button>
+                                  </Tooltip.Trigger>
+                                  <Tooltip.Portal>
+                                    <Tooltip.Content
+                                      className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
+                                      sideOffset={4}
+                                    >
+                                      Unload transactions from database
+                                      <Tooltip.Arrow className="fill-card" />
+                                    </Tooltip.Content>
+                                  </Tooltip.Portal>
+                                </Tooltip.Root>
+                              </Tooltip.Provider>
+                            )}
+                            {/* Delete artifact button */}
+                            <Tooltip.Provider>
+                              <Tooltip.Root>
+                                <Tooltip.Trigger asChild>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setDeleteArtifactId(ext.artifact_id) }}
+                                    disabled={isLoading || deletingArtifactId === ext.artifact_id}
+                                    className="p-1.5 rounded-lg hover:bg-red-500/20 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-50"
+                                  >
+                                    {deletingArtifactId === ext.artifact_id ? (
+                                      <LoaderIcon className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Trash2Icon className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                </Tooltip.Trigger>
+                                <Tooltip.Portal>
+                                  <Tooltip.Content
+                                    className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
+                                    sideOffset={4}
+                                  >
+                                    Delete data source
+                                    <Tooltip.Arrow className="fill-card" />
+                                  </Tooltip.Content>
+                                </Tooltip.Portal>
+                              </Tooltip.Root>
+                            </Tooltip.Provider>
+                            {/* Selection indicator */}
+                            {ext.artifact_id && (
+                              <ChevronRightIcon className={`h-4 w-4 text-muted-foreground transition-transform ${isSelected ? 'rotate-90' : ''}`} />
+                            )}
                           </div>
-                        )}
+                        </div>
                       </div>
+                    </div>
                     </div>
                   </div>
                 )
               })}
+
             </div>
           )}
         </div>
         <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-card to-transparent pointer-events-none rounded-b-xl" />
+      </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog.Root open={deleteArtifactId !== null} onOpenChange={(open) => !open && setDeleteArtifactId(null)}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 animate-in fade-in-0" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card border border-border rounded-xl shadow-lg w-full max-w-md p-6 animate-in fade-in-0 zoom-in-95">
+            <Dialog.Title className="text-lg font-semibold flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-red-500/20">
+                <Trash2Icon className="h-5 w-5 text-red-600 dark:text-red-400" />
+              </div>
+              Delete Data Source
+            </Dialog.Title>
+            <Dialog.Description className="mt-3 text-muted-foreground">
+              {deleteArtifactId && (
+                <>
+                  Are you sure you want to delete{' '}
+                  <span className="font-mono text-foreground">
+                    {pdfExtractions.find(e => e.artifact_id === deleteArtifactId)?.name || deleteArtifactId}
+                  </span>?
+                  <ul className="mt-3 space-y-1.5 text-sm">
+                    <li className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                      This data source will be permanently deleted
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                      Loaded transactions will be deleted
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground" />
+                      Other data sources from the same PDF are not affected
+                    </li>
+                  </ul>
+                </>
+              )}
+            </Dialog.Description>
+            <div className="mt-6 flex justify-end gap-3">
+              <Dialog.Close asChild>
+                <button className="px-4 py-2 text-sm rounded-lg border border-border hover:bg-muted transition-colors">
+                  Cancel
+                </button>
+              </Dialog.Close>
+              <button
+                onClick={confirmDeleteArtifact}
+                disabled={deletingArtifactId !== null}
+                className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+              >
+                {deletingArtifactId !== null ? (
+                  <>
+                    <LoaderIcon className="h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2Icon className="h-4 w-4" />
+                    Delete
+                  </>
+                )}
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </section>
+  )
+}
+
+// Data Source Preview Section Component
+function DataSourcePreviewSection({
+  extraction,
+  previewData,
+  previewLoading,
+  previewTotal,
+  previewColumns,
+  previewVisibleColumns,
+  previewColumnSelectorOpen,
+  onToggleColumnSelector,
+  onToggleColumn,
+}: {
+  extraction: PDFExtractionDataSource | null
+  previewData: IngestableTransactionRow[]
+  previewLoading: boolean
+  previewTotal: number
+  previewColumns: Array<{ key: string; header: string; align: 'left' | 'right' }>
+  previewVisibleColumns: Set<string>
+  previewColumnSelectorOpen: boolean
+  onToggleColumnSelector: () => void
+  onToggleColumn: (key: string) => void
+}) {
+  const renderPreviewCell = (row: IngestableTransactionRow, key: string) => {
+    switch (key) {
+      case 'date':
+      case 'value_date':
+        return <span className="font-mono">{row[key as keyof IngestableTransactionRow]}</span>
+      case 'narration':
+        return <span className="max-w-[200px] truncate block" title={row.narration}>{row.narration}</span>
+      case 'debit_amount':
+        return parseFloat(row.debit_amount) > 0
+          ? <span className="text-red-600 dark:text-red-400">{formatCurrency(parseFloat(row.debit_amount))}</span>
+          : ''
+      case 'credit_amount':
+        return parseFloat(row.credit_amount) > 0
+          ? <span className="text-green-600 dark:text-green-400">{formatCurrency(parseFloat(row.credit_amount))}</span>
+          : ''
+      case 'closing_balance':
+        return parseFloat(row.closing_balance) !== 0
+          ? <span className="text-muted-foreground">{formatCurrency(parseFloat(row.closing_balance))}</span>
+          : '-'
+      case 'reference_number':
+        return <span className="text-muted-foreground">{row.reference_number || '-'}</span>
+      case 'intl_amount':
+        return parseFloat(row.intl_amount) !== 0
+          ? <span className="text-muted-foreground">{row.intl_amount}</span>
+          : '-'
+      case 'intl_currency':
+        return <span className="text-muted-foreground">{row.intl_currency || '-'}</span>
+      case 'exchange_rate':
+        return parseFloat(row.exchange_rate) !== 0
+          ? <span className="text-muted-foreground">{row.exchange_rate}</span>
+          : '-'
+      default:
+        return row[key as keyof IngestableTransactionRow] || '-'
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-border bg-card shadow-sm lg:col-span-2">
+      <header className="p-6 pb-3">
+        <h3 className="font-semibold flex items-center gap-2 text-lg">
+          <div className="p-1.5 rounded-lg bg-muted">
+            <EyeIcon className="h-5 w-5 text-muted-foreground" />
+          </div>
+          Data Source Preview
+          {extraction && (
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              — {extraction.name}
+            </span>
+          )}
+        </h3>
+      </header>
+      <div className="p-6 pt-0">
+        {!extraction ? (
+          <div className="text-center py-8 rounded-xl bg-gradient-to-br from-muted/50 to-transparent border border-border">
+            <div className="p-3 rounded-full bg-muted w-fit mx-auto mb-3">
+              <EyeOffIcon className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <p className="font-medium">No data source selected</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Click on a data source above to preview its contents
+            </p>
+          </div>
+        ) : previewLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <LoaderIcon className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <CalendarIcon className="h-3.5 w-3.5" />
+                  {extraction.statement_period_begin && extraction.statement_period_end
+                    ? `${formatDate(extraction.statement_period_begin)} — ${formatDate(extraction.statement_period_end)}`
+                    : extraction.statement_date
+                    ? `Statement: ${formatDate(extraction.statement_date)}`
+                    : 'No date range'}
+                </span>
+                <span className="flex items-center gap-1">
+                  <HashIcon className="h-3.5 w-3.5" />
+                  {extraction.row_count} transactions
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground">
+                  Showing {previewData.length} of {previewTotal} rows
+                </span>
+                {/* Column Selector */}
+                <div className="relative">
+                  <button
+                    onClick={onToggleColumnSelector}
+                    className="px-2 py-1 text-xs rounded border border-border hover:bg-muted transition-colors flex items-center gap-1"
+                  >
+                    <SlidersHorizontalIcon className="h-3 w-3" />
+                    Columns ({previewVisibleColumns.size}/{previewColumns.length})
+                  </button>
+                  {previewColumnSelectorOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={onToggleColumnSelector} />
+                      <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg p-2 min-w-[160px] max-h-[300px] overflow-auto">
+                        {previewColumns.map((col) => (
+                          <label
+                            key={col.key}
+                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-muted rounded cursor-pointer text-sm"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={previewVisibleColumns.has(col.key)}
+                              onChange={() => onToggleColumn(col.key)}
+                              className="rounded border-border"
+                            />
+                            <span className="truncate">{col.header}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+            {previewData.length > 0 ? (
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      {previewColumns
+                        .filter((col) => previewVisibleColumns.has(col.key))
+                        .map((col) => (
+                          <th
+                            key={col.key}
+                            className={`px-3 py-2 font-medium text-muted-foreground whitespace-nowrap ${
+                              col.align === 'right' ? 'text-right' : 'text-left'
+                            }`}
+                          >
+                            {col.header}
+                          </th>
+                        ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {previewData.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-muted/30">
+                        {previewColumns
+                          .filter((col) => previewVisibleColumns.has(col.key))
+                          .map((col) => (
+                            <td
+                              key={col.key}
+                              className={`px-3 py-2 whitespace-nowrap font-mono ${
+                                col.align === 'right' ? 'text-right' : 'text-left'
+                              }`}
+                            >
+                              {renderPreviewCell(row, col.key)}
+                            </td>
+                          ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                No data available
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </section>
   )
@@ -790,8 +1217,74 @@ export function SettingsPage() {
   const [creditCards, setCreditCards] = useState<CreditCard[]>([])
   const [creditCardSourceFiles, setCreditCardSourceFiles] = useState<CreditCardSourceFile[]>([])
   const [creditAddSourceFile, setCreditAddSourceFile] = useState<string | null>(null)
+  const [pdfExtractionDataSources, setPdfExtractionDataSources] = useState<PDFExtractionDataSource[]>([])
+
+  // Data source preview state (lifted from CreditCardDataSources)
+  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
+  const [previewData, setPreviewData] = useState<IngestableTransactionRow[]>([])
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewTotal, setPreviewTotal] = useState(0)
+  const [previewColumnSelectorOpen, setPreviewColumnSelectorOpen] = useState(false)
+  const [previewVisibleColumns, setPreviewVisibleColumns] = useState<Set<string>>(
+    new Set(['date', 'narration', 'debit_amount', 'credit_amount', 'reference_number', 'intl_amount'])
+  )
 
   const [loading, setLoading] = useState(true)
+
+  // Preview columns configuration
+  const previewColumns = [
+    { key: 'date', header: 'Date', align: 'left' as const },
+    { key: 'value_date', header: 'Value Date', align: 'left' as const },
+    { key: 'narration', header: 'Narration', align: 'left' as const },
+    { key: 'debit_amount', header: 'Debit', align: 'right' as const },
+    { key: 'credit_amount', header: 'Credit', align: 'right' as const },
+    { key: 'reference_number', header: 'Ref#', align: 'left' as const },
+    { key: 'closing_balance', header: 'Balance', align: 'right' as const },
+    { key: 'intl_amount', header: 'Intl Amt', align: 'right' as const },
+    { key: 'intl_currency', header: 'Currency', align: 'left' as const },
+    { key: 'exchange_rate', header: 'Rate', align: 'right' as const },
+  ]
+
+  const togglePreviewColumn = (key: string) => {
+    setPreviewVisibleColumns(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        if (next.size > 1) next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+
+  // Handle artifact selection and load preview data
+  const handleSelectArtifact = async (artifactId: string) => {
+    if (selectedArtifactId === artifactId) {
+      // Deselect
+      setSelectedArtifactId(null)
+      setPreviewData([])
+      setPreviewTotal(0)
+      return
+    }
+
+    setSelectedArtifactId(artifactId)
+    setPreviewLoading(true)
+    setPreviewData([])
+    setPreviewTotal(0)
+
+    try {
+      const result = await fetchArtifactPreview(artifactId, 20)
+      setPreviewData(result.data as IngestableTransactionRow[])
+      setPreviewTotal(result.total || 0)
+    } catch (error) {
+      console.error("Failed to load preview:", error)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  // Get selected extraction object
+  const selectedExtraction = pdfExtractionDataSources.find(e => e.artifact_id === selectedArtifactId) || null
 
   useEffect(() => {
     document.title = "Settings | FinAccs"
@@ -799,20 +1292,31 @@ export function SettingsPage() {
 
   useEffect(() => {
     async function loadData() {
+      // Load each data source independently so one failure doesn't break everything
       try {
-        const [bankData, creditData] = await Promise.all([
-          fetchBankAccounts(),
-          fetchCreditCards(),
-        ])
+        const bankData = await fetchBankAccounts()
         setBankAccounts(bankData.accounts)
         setExtractedCSVs(bankData.extracted_csvs)
+      } catch (error) {
+        console.error("Failed to load bank accounts:", error)
+      }
+
+      try {
+        const creditData = await fetchCreditCards()
         setCreditCards(creditData.cards)
         setCreditCardSourceFiles(creditData.source_files)
       } catch (error) {
-        console.error("Failed to load data:", error)
-      } finally {
-        setLoading(false)
+        console.error("Failed to load credit cards:", error)
       }
+
+      try {
+        const pdfExtractionsData = await fetchPDFExtractionDataSources()
+        setPdfExtractionDataSources(pdfExtractionsData.data)
+      } catch (error) {
+        console.error("Failed to load PDF extractions:", error)
+      }
+
+      setLoading(false)
     }
     loadData()
   }, [])
@@ -824,9 +1328,40 @@ export function SettingsPage() {
   }
 
   const refreshCreditData = async () => {
-    const data = await fetchCreditCards()
-    setCreditCards(data.cards)
-    setCreditCardSourceFiles(data.source_files)
+    // Load each data source independently to avoid one failure blocking all
+    try {
+      const creditData = await fetchCreditCards()
+      setCreditCards(creditData.cards)
+      setCreditCardSourceFiles(creditData.source_files)
+    } catch (error) {
+      console.error("Failed to refresh credit cards:", error)
+    }
+
+    try {
+      const pdfExtractionsData = await fetchPDFExtractionDataSources()
+      setPdfExtractionDataSources(pdfExtractionsData.data)
+    } catch (error) {
+      console.error("Failed to refresh PDF extractions:", error)
+    }
+  }
+
+  const handleLoadArtifacts = async (artifactIds: string[]) => {
+    await loadArtifacts(artifactIds)
+    await refreshCreditData()
+  }
+
+  const handleUnloadArtifacts = async (artifactIds: string[]) => {
+    await unloadArtifacts(artifactIds)
+    await refreshCreditData()
+  }
+
+  const handleDeleteArtifact = async (artifactId: string) => {
+    const result = await deleteArtifact(artifactId)
+    if (result.success) {
+      await refreshCreditData()
+    } else {
+      alert(result.error || "Failed to delete data source")
+    }
   }
 
   const handleBankAccountSave = (account: BankAccount) => {
@@ -851,6 +1386,15 @@ export function SettingsPage() {
     refreshCreditData()
   }
 
+  // Clear data source selection when clicking outside the cards
+  const handleCreditTabClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      setSelectedExtractionId(null)
+      setPreviewData([])
+      setPreviewTotal(0)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-muted/40">
@@ -865,10 +1409,10 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/40">
+    <div className="min-h-screen bg-muted/40" onClick={handleCreditTabClick}>
       <Header />
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="max-w-7xl mx-auto px-4 py-8" onClick={handleCreditTabClick}>
         <header className="mb-8">
           <h1 className="text-2xl font-bold flex items-center gap-3">
             <div className="p-2 rounded-lg bg-primary/10">
@@ -940,26 +1484,45 @@ export function SettingsPage() {
         )}
 
         {activeTab === "credit" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <CreditCardsSection
-              cards={creditCards}
-              onSave={handleCreditCardSave}
-              initialAddSourceFile={creditAddSourceFile}
-              onAddingStateChange={(isAdding) => {
-                if (!isAdding) setCreditAddSourceFile(null)
-              }}
-            />
-            <CreditCardDataSources
-              sourceFiles={creditCardSourceFiles}
-              cards={creditCards}
-              onCreateCard={(filename) => setCreditAddSourceFile(filename)}
-              onCardUpdated={refreshCreditData}
-              onSourceFileUpdated={(sourceFile) => {
-                setCreditCardSourceFiles((prev) =>
-                  prev.map((sf) => (sf.id === sourceFile.id ? sourceFile : sf))
-                )
-              }}
-              onRefresh={refreshCreditData}
+          <div className="space-y-6" onClick={handleCreditTabClick}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" onClick={handleCreditTabClick}>
+              <CreditCardsSection
+                cards={creditCards}
+                onSave={handleCreditCardSave}
+                initialAddSourceFile={creditAddSourceFile}
+                onAddingStateChange={(isAdding) => {
+                  if (!isAdding) setCreditAddSourceFile(null)
+                }}
+              />
+              <CreditCardDataSources
+                sourceFiles={creditCardSourceFiles}
+                pdfExtractions={pdfExtractionDataSources}
+                cards={creditCards}
+                selectedArtifactId={selectedArtifactId}
+                onSelectArtifact={handleSelectArtifact}
+                onCreateCard={(filename) => setCreditAddSourceFile(filename)}
+                onCardUpdated={refreshCreditData}
+                onSourceFileUpdated={(sourceFile) => {
+                  setCreditCardSourceFiles((prev) =>
+                    prev.map((sf) => (sf.id === sourceFile.id ? sourceFile : sf))
+                  )
+                }}
+                onLoadArtifact={handleLoadArtifacts}
+                onUnloadArtifact={handleUnloadArtifacts}
+                onDeleteArtifact={handleDeleteArtifact}
+                onRefresh={refreshCreditData}
+              />
+            </div>
+            <DataSourcePreviewSection
+              extraction={selectedExtraction}
+              previewData={previewData}
+              previewLoading={previewLoading}
+              previewTotal={previewTotal}
+              previewColumns={previewColumns}
+              previewVisibleColumns={previewVisibleColumns}
+              previewColumnSelectorOpen={previewColumnSelectorOpen}
+              onToggleColumnSelector={() => setPreviewColumnSelectorOpen(!previewColumnSelectorOpen)}
+              onToggleColumn={togglePreviewColumn}
             />
           </div>
         )}
