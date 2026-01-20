@@ -679,8 +679,8 @@ function ExtractionsListSection({
                       )}
                       <span className="flex items-center gap-1">
                         <HashIcon className="h-3 w-3" />
-                        {ext.artifacts?.find(a => a.artifact_type === 'transactions')?.row_count ?? 0} txns
-                        {(ext.artifacts?.find(a => a.artifact_type === 'emi')?.row_count ?? 0) > 0 && `, ${ext.artifacts?.find(a => a.artifact_type === 'emi')?.row_count} EMIs`}
+                        {ext.artifacts?.filter(a => a.is_transformed && a.artifact_type.includes('transactions')).reduce((sum, a) => sum + (a.row_count || 0), 0) ?? 0} txns
+                        {(ext.artifacts?.filter(a => a.is_transformed && a.artifact_type.includes('emi')).reduce((sum, a) => sum + (a.row_count || 0), 0) ?? 0) > 0 && `, ${ext.artifacts?.filter(a => a.is_transformed && a.artifact_type.includes('emi')).reduce((sum, a) => sum + (a.row_count || 0), 0)} EMIs`}
                       </span>
                     </div>
                   </div>

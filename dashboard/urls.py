@@ -15,9 +15,13 @@ urlpatterns = [
     path('api/top-expenses/', views.api_top_expenses, name='api_top_expenses'),
     path('api/logs/', views.api_transaction_logs, name='api_transaction_logs'),
     path('api/inconsistencies/', views.api_inconsistencies, name='api_inconsistencies'),
+    path('api/bank-inconsistencies/', views.bank_inconsistencies, name='bank_inconsistencies'),
+    path('api/bank-inconsistencies/dismiss/', views.dismiss_bank_inconsistency, name='dismiss_bank_inconsistency'),
+    path('api/bank-inconsistencies/restore/', views.restore_bank_inconsistency, name='restore_bank_inconsistency'),
     path('api/date-range/', views.api_date_range, name='api_date_range'),
     # CC Payment Matching
     path('api/cc-payment-suggestions/', views.api_cc_payment_suggestions, name='api_cc_payment_suggestions'),
+    path('api/cc-payment-suggestions/reverse/', views.api_cc_payment_suggestions_reverse, name='api_cc_payment_suggestions_reverse'),
     path('api/cc-payment-matches/', views.api_cc_payment_matches, name='api_cc_payment_matches'),
     path('api/cc-payment-matches/<int:match_id>/', views.api_cc_payment_match_delete, name='api_cc_payment_match_delete'),
     path('api/cc-payment-matches/years/', views.api_cc_payment_match_years, name='api_cc_payment_match_years'),

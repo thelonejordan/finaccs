@@ -2,7 +2,6 @@ import json
 import os
 from django.core.cache import cache
 from django.http import JsonResponse
-from django.conf import settings
 from django.db.models import Min, Max, Sum, Q
 from rest_framework.decorators import api_view
 
@@ -31,10 +30,6 @@ except ImportError:
 from .models import CreditCard, CreditCardSourceFile, CreditCardTransaction, CreditCardPDFExtraction, ExtractionArtifact
 
 
-# Supported file extensions for credit cards
-CREDIT_CARD_EXTENSIONS = ['.csv']
-
-
 def get_active_cc_transactions():
     """Get transactions from loaded extractions only.
 
@@ -51,25 +46,14 @@ def get_active_cc_transactions():
     )
 
 
-def sync_credit_card_source_files():
-    """Sync CreditCardSourceFile model with actual CSV files in data directory."""
-    data_dir = os.path.join(settings.BASE_DIR, 'credit_cards', 'data')
-    if not os.path.exists(data_dir):
-        return
-
-    for f in os.listdir(data_dir):
-        ext = os.path.splitext(f)[1].lower()
-        # Only consider CSV files with 'Credit' in the name
-        if ext in CREDIT_CARD_EXTENSIONS and 'credit' in f.lower():
-            CreditCardSourceFile.objects.get_or_create(filename=f)
-
-
 def get_credit_card_source_files_with_stats():
-    """Get list of credit card statement files with transaction date ranges."""
-    sync_credit_card_source_files()
+    """Get list of credit card statement files with transaction date ranges.
 
+    Only returns files that have file_data blob stored in DB.
+    """
     files = []
-    for sf in CreditCardSourceFile.objects.select_related('credit_card').all():
+    # Only return files with file_data blob stored in DB
+    for sf in CreditCardSourceFile.objects.select_related('credit_card').exclude(file_data=b'').exclude(file_data__isnull=True):
         file_info = {
             'id': sf.id,
             'filename': sf.filename,
@@ -436,11 +420,11 @@ def credit_card_transactions(request):
 
     data = []
     for t in transactions_page:
-        # Get bank payment match if exists
+        # Get bank payment match if exists and is active
         bank_match_data = None
         try:
             bank_match = t.bank_payment_match
-            if bank_match:
+            if bank_match and bank_match.is_active:
                 bank_txn = bank_match.bank_transaction
                 bank_match_data = {
                     'id': bank_match.id,
@@ -1043,93 +1027,6 @@ def pdf_extraction_detail(request, extraction_id):
         return JsonResponse({'error': 'Extraction not found'}, status=404)
 
     return JsonResponse(serialize_extraction(ext))
-
-
-@extend_schema(
-    summary="Download PDF extraction artifact (legacy)",
-    description="Download raw artifact by extraction ID and type. Prefer using /api/artifacts/<artifact_id>/ instead.",
-    parameters=[
-        OpenApiParameter(name='type', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Artifact type: transactions, emi, or metadata'),
-    ],
-    responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
-    tags=['Credit Card PDF Extractions'],
-)
-@api_view(['GET'])
-def pdf_extraction_artifact(request, extraction_id):
-    """Download raw artifact from extraction (legacy endpoint)."""
-    from django.http import HttpResponse
-    from .pdf_extractor import decompress_data
-
-    try:
-        ext = CreditCardPDFExtraction.objects.prefetch_related('artifacts').get(id=extraction_id)
-    except CreditCardPDFExtraction.DoesNotExist:
-        return JsonResponse({'error': 'Extraction not found'}, status=404)
-
-    artifact_type = request.GET.get('type', 'transactions')
-    artifact = ext.get_artifact(artifact_type)
-
-    if not artifact:
-        return JsonResponse({'error': f'No {artifact_type} data'}, status=404)
-
-    data = decompress_data(artifact.data)
-
-    if artifact_type in ('transactions', 'emi'):
-        response = HttpResponse(data, content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="{ext.name}_{artifact_type}.csv"'
-    else:
-        response = HttpResponse(data, content_type='application/json')
-        response['Content-Disposition'] = f'attachment; filename="{ext.name}_{artifact_type}.json"'
-
-    return response
-
-
-@extend_schema(
-    summary="Get PDF extraction artifact preview (legacy)",
-    description="Get artifact data as JSON for preview. Prefer using /api/artifacts/<artifact_id>/preview/ instead.",
-    parameters=[
-        OpenApiParameter(name='type', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Artifact type: transactions, emi, or metadata'),
-        OpenApiParameter(name='limit', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Max rows to return (default: 10)'),
-    ],
-    responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
-    tags=['Credit Card PDF Extractions'],
-)
-@api_view(['GET'])
-def pdf_extraction_artifact_preview(request, extraction_id):
-    """Get artifact preview as JSON (legacy endpoint)."""
-    import csv
-    import io
-    from .pdf_extractor import decompress_data
-
-    try:
-        ext = CreditCardPDFExtraction.objects.prefetch_related('artifacts').get(id=extraction_id)
-    except CreditCardPDFExtraction.DoesNotExist:
-        return JsonResponse({'error': 'Extraction not found'}, status=404)
-
-    artifact_type = request.GET.get('type', 'transactions')
-    limit = int(request.GET.get('limit', 10))
-
-    artifact = ext.get_artifact(artifact_type)
-
-    if artifact_type in ('transactions', 'emi'):
-        if not artifact:
-            return JsonResponse({'data': [], 'total': 0})
-        data = decompress_data(artifact.data)
-        reader = csv.DictReader(io.StringIO(data))
-        rows = []
-        for i, row in enumerate(reader):
-            if artifact_type == 'transactions' and i >= limit:
-                break
-            rows.append(row)
-        return JsonResponse({'data': rows, 'total': artifact.row_count})
-
-    elif artifact_type == 'metadata':
-        if not artifact:
-            return JsonResponse({'data': None})
-        data = decompress_data(artifact.data)
-        return JsonResponse({'data': json.loads(data)})
-
-    else:
-        return JsonResponse({'error': f'Invalid artifact type: {artifact_type}'}, status=400)
 
 
 # ==================== Artifact Endpoints ====================
@@ -1945,39 +1842,6 @@ def pdf_extraction_transform(request):
     return JsonResponse({'results': results})
 
 
-def sync_pdf_source_files():
-    """Sync CreditCardSourceFile model with PDF files in credit_cards/data directory."""
-    import gzip
-    import hashlib
-
-    data_dir = os.path.join(settings.BASE_DIR, 'credit_cards', 'data')
-    if not os.path.exists(data_dir):
-        return
-
-    for f in os.listdir(data_dir):
-        if not f.lower().endswith('.pdf'):
-            continue
-
-        file_path = os.path.join(data_dir, f)
-        if not os.path.isfile(file_path):
-            continue
-
-        # Get or create the source file record
-        sf, created = CreditCardSourceFile.objects.get_or_create(filename=f)
-
-        # Load file content if not already loaded or if file changed
-        file_size = os.path.getsize(file_path)
-        if not sf.file_data or sf.file_size != file_size:
-            with open(file_path, 'rb') as fp:
-                raw_data = fp.read()
-
-            sf.file_data = gzip.compress(raw_data)
-            sf.file_size = file_size
-            sf.file_hash = hashlib.sha256(raw_data).hexdigest()
-            sf.mime_type = 'application/pdf'
-            sf.save()
-
-
 @extend_schema(
     summary="List PDF source files",
     description="List PDF source files with extraction stats.",
@@ -1986,13 +1850,17 @@ def sync_pdf_source_files():
 )
 @api_view(['GET'])
 def pdf_source_files_list(request):
-    """List PDF source files with extraction stats."""
-    # Sync PDF files from filesystem
-    sync_pdf_source_files()
+    """List PDF source files with extraction stats.
 
-    # Get PDF source files
+    Only returns files that have file_data blob stored in DB.
+    """
+    # Get PDF source files with file_data blob stored in DB
     pdf_files = CreditCardSourceFile.objects.filter(
         filename__iendswith='.pdf'
+    ).exclude(
+        file_data=b''
+    ).exclude(
+        file_data__isnull=True
     ).select_related('credit_card').prefetch_related('pdf_extractions')
 
     data = []
@@ -2273,39 +2141,6 @@ def pdf_extraction_data_sources(request):
 
 # === CSV Source Files and Extraction ===
 
-def sync_csv_source_files():
-    """Sync CreditCardSourceFile model with CSV files in credit_cards/data directory."""
-    import gzip
-    import hashlib
-
-    data_dir = os.path.join(settings.BASE_DIR, 'credit_cards', 'data')
-    if not os.path.exists(data_dir):
-        return
-
-    for f in os.listdir(data_dir):
-        if not f.lower().endswith('.csv'):
-            continue
-
-        file_path = os.path.join(data_dir, f)
-        if not os.path.isfile(file_path):
-            continue
-
-        # Get or create the source file record
-        sf, created = CreditCardSourceFile.objects.get_or_create(filename=f)
-
-        # Load file content if not already loaded or if file changed
-        file_size = os.path.getsize(file_path)
-        if not sf.file_data or sf.file_size != file_size:
-            with open(file_path, 'rb') as fp:
-                raw_data = fp.read()
-
-            sf.file_data = gzip.compress(raw_data)
-            sf.file_size = file_size
-            sf.file_hash = hashlib.sha256(raw_data).hexdigest()
-            sf.mime_type = 'text/csv'
-            sf.save()
-
-
 @extend_schema(
     summary="List CSV source files",
     description="List CSV source files with extraction stats.",
@@ -2314,13 +2149,17 @@ def sync_csv_source_files():
 )
 @api_view(['GET'])
 def csv_source_files_list(request):
-    """List CSV source files with extraction stats."""
-    # Sync CSV files from filesystem
-    sync_csv_source_files()
+    """List CSV source files with extraction stats.
 
-    # Get CSV source files
+    Only returns files that have file_data blob stored in DB.
+    """
+    # Get CSV source files with file_data blob stored in DB
     csv_files = CreditCardSourceFile.objects.filter(
         filename__iendswith='.csv'
+    ).exclude(
+        file_data=b''
+    ).exclude(
+        file_data__isnull=True
     ).select_related('credit_card').prefetch_related('pdf_extractions')
 
     data = []

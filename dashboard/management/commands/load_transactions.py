@@ -1,9 +1,8 @@
 """
 Load transactions from ExtractedCSV blobs into the database.
 
-This is the second phase of the two-phase workflow:
-1. Extract: Original file blob → Standardized CSV blob (extract_transactions command)
-2. Load: CSV blob → Transaction records (this command)
+This command loads extracted CSV data into Transaction records.
+Files should be uploaded via the UI and extracted before running this command.
 """
 import csv
 import gzip
@@ -130,7 +129,7 @@ class Command(BaseCommand):
 
                 if not extracted_csv:
                     self.stderr.write(self.style.ERROR(
-                        f'No extracted CSV found for {filename}. Run extract_transactions first.'
+                        f'No extracted CSV found for {filename}. Extract the file first via the UI.'
                     ))
                     return
 
@@ -207,7 +206,6 @@ class Command(BaseCommand):
 
         # Parse CSV and create transactions
         transactions_created = 0
-        duplicates_skipped = 0
         category_counts = {}
 
         reader = csv.DictReader(io.StringIO(csv_string))
@@ -221,24 +219,10 @@ class Command(BaseCommand):
                 reference_number = row.get('reference_number', '')
                 closing_balance = parse_decimal(row['closing_balance'])
 
-                # Check for duplicate transaction (same key fields for the same account)
-                # Skip if an identical transaction already exists
-                existing = Transaction.objects.filter(
-                    bank_account=bank_account,
-                    date=date,
-                    narration=narration,
-                    debit_amount=debit_amount,
-                    credit_amount=credit_amount,
-                    closing_balance=closing_balance,
-                ).first()
-
-                if existing:
-                    duplicates_skipped += 1
-                    continue
-
                 # Categorize transaction
                 category = categorize_transaction(narration)
 
+                # Always create new transaction (duplicates handled by inconsistencies page)
                 Transaction.objects.create(
                     date=date,
                     value_date=value_date,
@@ -253,16 +237,13 @@ class Command(BaseCommand):
                     extracted_csv=extracted_csv,
                     row_number=row_number,
                 )
+                transactions_created += 1
 
                 category_counts[category] = category_counts.get(category, 0) + 1
-                transactions_created += 1
 
             except Exception as e:
                 self.stderr.write(f'  Error parsing row: {e}')
                 continue
-
-        if duplicates_skipped:
-            self.stdout.write(f'  Skipped {duplicates_skipped} duplicate transactions')
 
         # Update ExtractedCSV status
         extracted_csv.status = 'loaded'

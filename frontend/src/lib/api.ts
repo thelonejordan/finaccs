@@ -141,14 +141,23 @@ export interface SourceFile {
   transaction_count?: number
 }
 
+export interface BankExtractionArtifact {
+  artifact_id: string
+  artifact_type: string
+  content_type: string
+  row_count: number
+  data_hash: string
+}
+
 export interface ExtractedCSV {
   id: number
   name: string
   source_filename: string
   source_file_id: number
-  status: 'extracted' | 'loading' | 'loaded' | 'error'
+  status: 'extracted' | 'transformed' | 'loading' | 'loaded' | 'error'
   bank_account_id: number | null
   disabled: boolean
+  hidden: boolean
   row_count: number
   extracted_at: string
   loaded_at: string | null
@@ -156,6 +165,7 @@ export interface ExtractedCSV {
   last_transaction_date: string | null
   transaction_count: number
   error_message: string
+  artifacts: BankExtractionArtifact[]
 }
 
 export async function toggleSourceFileDisabled(
@@ -425,6 +435,101 @@ export async function fetchInconsistencies(params?: {
   if (params?.offset) searchParams.set("offset", params.offset.toString())
 
   const res = await fetch(`${API_BASE}/api/inconsistencies/?${searchParams}`)
+  return res.json()
+}
+
+// ==================== Bank Inconsistencies API ====================
+
+export interface BankInconsistencyTransaction {
+  id: number
+  source_file: string | null
+  extracted_csv: string | null
+  bank_account?: {
+    id: number
+    nickname: string
+  }
+}
+
+export interface BankInconsistency {
+  type: 'duplicate' | 'cross_account' | 'balance_gap'
+  transaction_ids: number[]
+  dismissed: boolean
+  date: string
+  narration: string
+  debit: number
+  credit: number
+  balance?: number
+  count?: number
+  bank_account?: {
+    id: number
+    nickname: string
+  }
+  transactions?: BankInconsistencyTransaction[]
+  accounts?: Array<{
+    id: number
+    nickname: string
+  }>
+  // Balance gap specific
+  transaction_id?: number
+  actual_balance?: number
+  expected_balance?: number
+  gap?: number
+  reference?: string
+  source_file?: {
+    id: number
+    filename: string
+  } | null
+  previous_transaction?: PreviousTransaction
+}
+
+export async function fetchBankInconsistencies(params?: {
+  bank_account?: number
+  type?: 'duplicate' | 'cross_account' | 'balance_gap'
+  show_dismissed?: boolean
+  limit?: number
+  offset?: number
+}): Promise<{
+  data: BankInconsistency[]
+  total: number
+  counts: {
+    duplicate: number
+    cross_account: number
+    balance_gap: number
+  }
+}> {
+  const searchParams = new URLSearchParams()
+  if (params?.bank_account) searchParams.set("bank_account", params.bank_account.toString())
+  if (params?.type) searchParams.set("type", params.type)
+  if (params?.show_dismissed) searchParams.set("show_dismissed", "true")
+  if (params?.limit) searchParams.set("limit", params.limit.toString())
+  if (params?.offset) searchParams.set("offset", params.offset.toString())
+
+  const res = await fetch(`${API_BASE}/api/bank-inconsistencies/?${searchParams}`)
+  return res.json()
+}
+
+export async function dismissBankInconsistency(
+  type: 'duplicate' | 'cross_account' | 'balance_gap',
+  transactionIds: number[],
+  reason?: string
+): Promise<{ success: boolean; created: boolean; id: number }> {
+  const res = await fetch(`${API_BASE}/api/bank-inconsistencies/dismiss/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type, transaction_ids: transactionIds, reason }),
+  })
+  return res.json()
+}
+
+export async function restoreBankInconsistency(
+  type: 'duplicate' | 'cross_account' | 'balance_gap',
+  transactionIds: number[]
+): Promise<{ success: boolean; deleted: boolean }> {
+  const res = await fetch(`${API_BASE}/api/bank-inconsistencies/restore/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type, transaction_ids: transactionIds }),
+  })
   return res.json()
 }
 
@@ -716,6 +821,7 @@ export interface CCPaymentBankTransaction {
   date: string
   narration: string
   amount: number
+  is_debit: boolean
   bank_account: {
     id: number
     nickname: string
@@ -745,6 +851,19 @@ export interface CCPaymentSuggestionItem {
   suggestions: CCPaymentSuggestion[]
 }
 
+// Reverse suggestion: CC transaction with bank suggestions
+export interface CCPaymentBankSuggestion {
+  bank_transaction: CCPaymentBankTransaction
+  offset: number
+  confidence_score: number
+  match_reasons: string[]
+}
+
+export interface CCPaymentSuggestionReverseItem {
+  credit_card_transaction: CCPaymentCCTransaction
+  suggestions: CCPaymentBankSuggestion[]
+}
+
 export interface CCPaymentMatch {
   id: number
   bank_transaction: CCPaymentBankTransaction
@@ -758,15 +877,35 @@ export interface CCPaymentMatch {
 export async function fetchCCPaymentSuggestions(params?: {
   bank_account?: number
   year?: number
+  offset_threshold?: number
 }): Promise<{ data: CCPaymentSuggestionItem[]; total: number }> {
   const searchParams = new URLSearchParams()
   if (params?.bank_account) searchParams.set("bank_account", params.bank_account.toString())
   if (params?.year) searchParams.set("year", params.year.toString())
+  if (params?.offset_threshold !== undefined) searchParams.set("offset_threshold", params.offset_threshold.toString())
 
   const queryString = searchParams.toString()
   const url = queryString
     ? `${API_BASE}/api/cc-payment-suggestions/?${queryString}`
     : `${API_BASE}/api/cc-payment-suggestions/`
+  const res = await fetch(url)
+  return res.json()
+}
+
+export async function fetchCCPaymentSuggestionsReverse(params?: {
+  credit_card?: number
+  year?: number
+  offset_threshold?: number
+}): Promise<{ data: CCPaymentSuggestionReverseItem[]; total: number }> {
+  const searchParams = new URLSearchParams()
+  if (params?.credit_card) searchParams.set("credit_card", params.credit_card.toString())
+  if (params?.year) searchParams.set("year", params.year.toString())
+  if (params?.offset_threshold !== undefined) searchParams.set("offset_threshold", params.offset_threshold.toString())
+
+  const queryString = searchParams.toString()
+  const url = queryString
+    ? `${API_BASE}/api/cc-payment-suggestions/reverse/?${queryString}`
+    : `${API_BASE}/api/cc-payment-suggestions/reverse/`
   const res = await fetch(url)
   return res.json()
 }
@@ -1270,6 +1409,103 @@ export async function triggerCSVExtraction(
   const res = await fetch(`${API_BASE}/api/cc-csv-source-files/${sourceFileId}/extract/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+  })
+  return res.json()
+}
+
+// ==================== Bank Extractions API ====================
+
+export interface BankSourceFile {
+  id: number
+  filename: string
+  pipeline: {
+    id: number
+    name: string
+    extractor: string
+  } | null
+  bank_account: {
+    id: number
+    nickname: string
+  } | null
+  extractions_count: number
+  last_extracted: string | null
+  has_password: boolean
+  pipeline_password: string
+  file_size: number
+  has_data: boolean
+  extractor: string | null
+  disabled: boolean
+}
+
+export async function fetchBankSourceFiles(): Promise<{ data: BankSourceFile[] }> {
+  const res = await fetch(`${API_BASE}/api/bank-source-files/`)
+  return res.json()
+}
+
+export async function triggerBankExtraction(
+  sourceFileId: number,
+  password?: string
+): Promise<{
+  success: boolean
+  extraction?: {
+    id: number
+    name: string
+    row_count: number
+    status: string
+    extracted_at: string
+  }
+  error?: string
+  needs_password?: boolean
+}> {
+  const res = await fetch(`${API_BASE}/api/bank-source-files/${sourceFileId}/extract/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  })
+  return res.json()
+}
+
+export function getBankExtractedCSVUrl(csvId: number): string {
+  return `${API_BASE}/api/bank-extracted-csvs/${csvId}/content/`
+}
+
+export async function fetchBankExtractedCSVPreview(
+  csvId: number,
+  limit?: number
+): Promise<{
+  data: Record<string, string>[]
+  total: number
+  columns: string[]
+}> {
+  const params = new URLSearchParams()
+  if (limit) params.set('limit', limit.toString())
+  const queryString = params.toString()
+  const url = queryString
+    ? `${API_BASE}/api/bank-extracted-csvs/${csvId}/preview/?${queryString}`
+    : `${API_BASE}/api/bank-extracted-csvs/${csvId}/preview/`
+  const res = await fetch(url)
+  return res.json()
+}
+
+export async function toggleBankExtractionHidden(
+  extractionId: number,
+  hidden: boolean
+): Promise<{ success: boolean; id: number; hidden: boolean; error?: string }> {
+  const res = await fetch(`${API_BASE}/api/bank-extractions/toggle-hidden/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extraction_id: extractionId, hidden }),
+  })
+  return res.json()
+}
+
+export async function deleteBankExtraction(
+  extractionId: number
+): Promise<{ success: boolean; id: number; transactions_affected: number; error?: string }> {
+  const res = await fetch(`${API_BASE}/api/bank-extractions/delete/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extraction_id: extractionId }),
   })
   return res.json()
 }

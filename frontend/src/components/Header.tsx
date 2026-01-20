@@ -16,6 +16,7 @@ import {
   FocusIcon,
   BookOpenIcon,
   FileArchiveIcon,
+  LandmarkIcon,
 } from "lucide-react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import * as Tooltip from "@radix-ui/react-tooltip"
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { path: "/transactions", label: "Transactions", icon: ListIcon },
   { path: "/credit-cards", label: "Credit Cards", icon: CreditCardIcon },
   { path: "/extractions", label: "Extractions", icon: FileArchiveIcon },
+  { path: "/bank-extractions", label: "Bank Extractions", icon: LandmarkIcon },
   { path: "/story", label: "Story", icon: BookOpenIcon },
   { path: "/settings", label: "Settings", icon: SettingsIcon },
   { path: "/inconsistencies", label: "Inconsistencies", icon: AlertTriangleIcon },

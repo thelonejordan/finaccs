@@ -37,17 +37,19 @@ EXCLUDED_CATEGORIES = ['Self Transfer']
 
 def get_active_transactions():
     """
-    Get transactions that are active (not from superseded ExtractedCSVs or disabled source files).
+    Get transactions that are active (from enabled, non-hidden ExtractedCSVs).
 
-    Excludes:
-    - Transactions from disabled source files
+    Requires extracted_csv to be set and excludes:
+    - Transactions without an extracted_csv link
+    - Transactions from disabled ExtractedCSVs
+    - Transactions from hidden ExtractedCSVs
     - Transactions from superseded ExtractedCSVs (archived data)
     """
-    from django.db.models import Q
     return Transaction.objects.filter(
-        Q(source_file__isnull=True) | Q(source_file__disabled=False)
-    ).filter(
-        Q(extracted_csv__isnull=True) | Q(extracted_csv__status__in=['extracted', 'loaded'])
+        extracted_csv__isnull=False,
+        extracted_csv__status__in=['extracted', 'transformed', 'loaded'],
+        extracted_csv__disabled=False,
+        extracted_csv__hidden=False,
     )
 
 
@@ -1034,6 +1036,290 @@ def api_inconsistencies(request):
     return JsonResponse(result)
 
 
+# ==================== Bank Inconsistencies API ====================
+
+
+@extend_schema(
+    summary="Get bank inconsistencies",
+    description="Detect duplicates, cross-account matches, and balance gaps in bank transactions.",
+    parameters=[
+        OpenApiParameter(name='bank_account', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by bank account ID'),
+        OpenApiParameter(name='type', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Filter by type: duplicate, cross_account, balance_gap'),
+        OpenApiParameter(name='show_dismissed', type=OpenApiTypes.BOOL, location=OpenApiParameter.QUERY, description='Include dismissed inconsistencies'),
+        OpenApiParameter(name='limit', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Number of results (default: 100)'),
+        OpenApiParameter(name='offset', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Pagination offset (default: 0)'),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Dashboard'],
+)
+@api_view(['GET'])
+def bank_inconsistencies(request):
+    """Detect duplicates, cross-account matches, and balance gaps in bank transactions."""
+    from bank_accs.models import BankAccount
+    from .models import DismissedBankInconsistency
+
+    bank_account_id = request.GET.get('bank_account')
+    type_filter = request.GET.get('type')
+    show_dismissed = request.GET.get('show_dismissed', 'false').lower() == 'true'
+    limit = int(request.GET.get('limit', 100))
+    offset = int(request.GET.get('offset', 0))
+
+    # Get accounts to check
+    if bank_account_id:
+        accounts = BankAccount.objects.filter(id=bank_account_id)
+    else:
+        accounts = BankAccount.objects.all()
+
+    inconsistencies = []
+
+    # Get all active transactions
+    all_transactions = list(
+        get_active_transactions()
+        .select_related('bank_account', 'source_file', 'extracted_csv')
+        .order_by('date', 'source_file__date_range_start', 'row_number')
+    )
+
+    # Create lookup by account
+    transactions_by_account = {}
+    for txn in all_transactions:
+        if txn.bank_account_id not in transactions_by_account:
+            transactions_by_account[txn.bank_account_id] = []
+        transactions_by_account[txn.bank_account_id].append(txn)
+
+    # 1. Detect same-account duplicates
+    if not type_filter or type_filter == 'duplicate':
+        seen = {}  # key -> list of transactions
+        for txn in all_transactions:
+            key = (
+                txn.bank_account_id,
+                txn.date,
+                txn.narration,
+                float(txn.debit_amount),
+                float(txn.credit_amount),
+                float(txn.closing_balance),
+            )
+            if key not in seen:
+                seen[key] = []
+            seen[key].append(txn)
+
+        for key, txns in seen.items():
+            if len(txns) > 1:
+                txn_ids = [t.id for t in txns]
+                is_dismissed = DismissedBankInconsistency.is_dismissed('duplicate', txn_ids)
+
+                if show_dismissed or not is_dismissed:
+                    inconsistencies.append({
+                        'type': 'duplicate',
+                        'transaction_ids': txn_ids,
+                        'dismissed': is_dismissed,
+                        'date': txns[0].date.isoformat(),
+                        'narration': txns[0].narration,
+                        'debit': float(txns[0].debit_amount),
+                        'credit': float(txns[0].credit_amount),
+                        'balance': float(txns[0].closing_balance),
+                        'count': len(txns),
+                        'bank_account': {
+                            'id': txns[0].bank_account.id,
+                            'nickname': txns[0].bank_account.nickname,
+                        },
+                        'transactions': [{
+                            'id': t.id,
+                            'source_file': t.source_file.filename if t.source_file else None,
+                            'extracted_csv': t.extracted_csv.name if t.extracted_csv else None,
+                        } for t in txns],
+                    })
+
+    # 2. Detect cross-account matches (same date, narration, amounts on different accounts)
+    if not type_filter or type_filter == 'cross_account':
+        cross_seen = {}  # key (without account) -> list of transactions
+        for txn in all_transactions:
+            key = (
+                txn.date,
+                txn.narration,
+                float(txn.debit_amount),
+                float(txn.credit_amount),
+                float(txn.closing_balance),
+            )
+            if key not in cross_seen:
+                cross_seen[key] = []
+            cross_seen[key].append(txn)
+
+        for key, txns in cross_seen.items():
+            # Only if transactions span multiple accounts
+            account_ids = set(t.bank_account_id for t in txns)
+            if len(account_ids) > 1:
+                txn_ids = [t.id for t in txns]
+                is_dismissed = DismissedBankInconsistency.is_dismissed('cross_account', txn_ids)
+
+                if show_dismissed or not is_dismissed:
+                    inconsistencies.append({
+                        'type': 'cross_account',
+                        'transaction_ids': txn_ids,
+                        'dismissed': is_dismissed,
+                        'date': txns[0].date.isoformat(),
+                        'narration': txns[0].narration,
+                        'debit': float(txns[0].debit_amount),
+                        'credit': float(txns[0].credit_amount),
+                        'balance': float(txns[0].closing_balance),
+                        'count': len(txns),
+                        'accounts': [{
+                            'id': t.bank_account.id,
+                            'nickname': t.bank_account.nickname,
+                        } for t in txns],
+                        'transactions': [{
+                            'id': t.id,
+                            'bank_account': {
+                                'id': t.bank_account.id,
+                                'nickname': t.bank_account.nickname,
+                            },
+                            'source_file': t.source_file.filename if t.source_file else None,
+                            'extracted_csv': t.extracted_csv.name if t.extracted_csv else None,
+                        } for t in txns],
+                    })
+
+    # 3. Detect balance gaps (from existing api_inconsistencies logic)
+    if not type_filter or type_filter == 'balance_gap':
+        for account in accounts:
+            txns = transactions_by_account.get(account.id, [])
+
+            for i, txn in enumerate(txns):
+                if i == 0:
+                    continue
+
+                prev_txn = txns[i - 1]
+                expected_balance = (
+                    prev_txn.closing_balance
+                    + txn.credit_amount
+                    - txn.debit_amount
+                )
+
+                if txn.closing_balance != expected_balance:
+                    gap = txn.closing_balance - expected_balance
+                    txn_ids = [prev_txn.id, txn.id]
+                    is_dismissed = DismissedBankInconsistency.is_dismissed('balance_gap', txn_ids)
+
+                    if show_dismissed or not is_dismissed:
+                        inconsistencies.append({
+                            'type': 'balance_gap',
+                            'transaction_ids': txn_ids,
+                            'dismissed': is_dismissed,
+                            'transaction_id': txn.id,
+                            'date': txn.date.isoformat(),
+                            'narration': txn.narration,
+                            'debit': float(txn.debit_amount),
+                            'credit': float(txn.credit_amount),
+                            'actual_balance': float(txn.closing_balance),
+                            'expected_balance': float(expected_balance),
+                            'gap': float(gap),
+                            'reference': txn.reference_number,
+                            'bank_account': {
+                                'id': account.id,
+                                'nickname': account.nickname,
+                            },
+                            'source_file': {
+                                'id': txn.source_file.id,
+                                'filename': txn.source_file.filename,
+                            } if txn.source_file else None,
+                            'previous_transaction': {
+                                'id': prev_txn.id,
+                                'date': prev_txn.date.isoformat(),
+                                'closing_balance': float(prev_txn.closing_balance),
+                            }
+                        })
+
+    # Sort by date descending
+    inconsistencies.sort(key=lambda x: (x['date'], x.get('transaction_id', x['transaction_ids'][0])), reverse=True)
+
+    # Count by type
+    counts = {
+        'duplicate': sum(1 for i in inconsistencies if i['type'] == 'duplicate' and not i['dismissed']),
+        'cross_account': sum(1 for i in inconsistencies if i['type'] == 'cross_account' and not i['dismissed']),
+        'balance_gap': sum(1 for i in inconsistencies if i['type'] == 'balance_gap' and not i['dismissed']),
+    }
+
+    total = len(inconsistencies)
+    page = inconsistencies[offset:offset + limit]
+
+    return JsonResponse({
+        'data': page,
+        'total': total,
+        'counts': counts,
+        'limit': limit,
+        'offset': offset,
+    })
+
+
+@extend_schema(
+    summary="Dismiss bank inconsistency",
+    description="Mark a bank inconsistency as dismissed.",
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Dashboard'],
+)
+@api_view(['POST'])
+def dismiss_bank_inconsistency(request):
+    """Dismiss a bank inconsistency."""
+    from .models import DismissedBankInconsistency
+
+    data = json.loads(request.body)
+    inconsistency_type = data.get('type')
+    transaction_ids = data.get('transaction_ids', [])
+    reason = data.get('reason', '')
+
+    if not inconsistency_type or not transaction_ids:
+        return JsonResponse({'error': 'type and transaction_ids are required'}, status=400)
+
+    key = DismissedBankInconsistency.make_key(transaction_ids)
+
+    obj, created = DismissedBankInconsistency.objects.get_or_create(
+        inconsistency_type=inconsistency_type,
+        transaction_ids=key,
+        defaults={'reason': reason}
+    )
+
+    if not created and reason:
+        obj.reason = reason
+        obj.save(update_fields=['reason'])
+
+    return JsonResponse({
+        'success': True,
+        'id': obj.id,
+        'created': created,
+    })
+
+
+@extend_schema(
+    summary="Restore bank inconsistency",
+    description="Restore a dismissed bank inconsistency.",
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Dashboard'],
+)
+@api_view(['POST'])
+def restore_bank_inconsistency(request):
+    """Restore a dismissed bank inconsistency."""
+    from .models import DismissedBankInconsistency
+
+    data = json.loads(request.body)
+    inconsistency_type = data.get('type')
+    transaction_ids = data.get('transaction_ids', [])
+
+    if not inconsistency_type or not transaction_ids:
+        return JsonResponse({'error': 'type and transaction_ids are required'}, status=400)
+
+    key = DismissedBankInconsistency.make_key(transaction_ids)
+
+    deleted, _ = DismissedBankInconsistency.objects.filter(
+        inconsistency_type=inconsistency_type,
+        transaction_ids=key,
+    ).delete()
+
+    return JsonResponse({
+        'success': True,
+        'deleted': deleted > 0,
+    })
+
+
 # ==================== Credit Card Payment Matching API ====================
 
 
@@ -1100,17 +1386,12 @@ def api_cc_payment_suggestions(request):
     from datetime import timedelta
     from credit_cards.models import CreditCardTransaction
 
-    # Get IDs of active CC transactions for filtering
-    active_cc_txn_ids = get_active_cc_transactions().values_list('id', flat=True)
-
-    # Get bank transactions tagged as "Credit Card Payment" that are debits and not matched to active CC txns
-    # If matched to an inactive CC source, bank txn appears here so user can re-match
+    # Get unlinked bank transactions tagged as "Credit Card Payment"
+    # No amount filter - show all tagged transactions so incorrectly tagged ones can be re-categorized
     bank_txns = get_active_transactions().filter(
         category='Credit Card Payment',
-        debit_amount__gt=0,
     ).exclude(
-        # Only exclude if matched to an ACTIVE CC transaction
-        cc_payment_match__credit_card_transaction_id__in=active_cc_txn_ids
+        cc_payment_match__is_active=True
     ).select_related('bank_account')
 
     # Apply filters
@@ -1126,11 +1407,16 @@ def api_cc_payment_suggestions(request):
     bank_txns = bank_txns.order_by('-date')
 
     # Get unmatched CC payments (amount < 0 = payment) from active sources only
+    # Exclude CC transactions that have an active match (is_active=True)
+    # CC transactions with inactive matches (bank extraction disabled/hidden) will appear here
     unmatched_cc_payments = get_active_cc_transactions().filter(
         amount__lt=0
     ).exclude(
-        bank_payment_match__isnull=False  # Exclude already matched
+        bank_payment_match__is_active=True
     ).select_related('credit_card', 'source_file')
+
+    # Get offset threshold from query params (default 20%)
+    offset_threshold = int(request.GET.get('offset_threshold', 20)) / 100.0
 
     data = []
     for bank_txn in bank_txns:
@@ -1144,9 +1430,11 @@ def api_cc_payment_suggestions(request):
         )
 
         suggestions = []
+        target_amount = float(bank_txn.debit_amount)
         for cc_txn in potential_matches:
             score, reasons, offset = calculate_match_score(bank_txn, cc_txn)
-            if score > 0:  # Only include if there's some match
+            # Only include if there's some match AND offset is within threshold (100% = no filter)
+            if score > 0 and (offset_threshold >= 1.0 or abs(offset) <= target_amount * offset_threshold):
                 suggestions.append({
                     'credit_card_transaction': {
                         'id': cc_txn.id,
@@ -1163,15 +1451,16 @@ def api_cc_payment_suggestions(request):
                     'match_reasons': reasons,
                 })
 
-        # Sort suggestions by score descending
-        suggestions.sort(key=lambda x: x['confidence_score'], reverse=True)
+        # Sort suggestions by score descending, then by absolute offset ascending, then prefer negative offsets
+        suggestions.sort(key=lambda x: (-x['confidence_score'], abs(x['offset']), x['offset']))
 
         data.append({
             'bank_transaction': {
                 'id': bank_txn.id,
                 'date': bank_txn.date.isoformat(),
                 'narration': bank_txn.narration,
-                'amount': float(bank_txn.debit_amount),
+                'amount': float(bank_txn.debit_amount or bank_txn.credit_amount),
+                'is_debit': bank_txn.debit_amount > 0,
                 'bank_account': {
                     'id': bank_txn.bank_account.id,
                     'nickname': bank_txn.bank_account.nickname,
@@ -1184,6 +1473,119 @@ def api_cc_payment_suggestions(request):
     data.sort(key=lambda x: (
         0 if x['suggestions'] else 1,  # Has suggestions = 0 (first), no suggestions = 1 (last)
         -(x['suggestions'][0]['confidence_score'] if x['suggestions'] else 0),  # Higher score first
+    ))
+
+    return JsonResponse({
+        'data': data,
+        'total': len(data),
+    })
+
+
+@extend_schema(
+    summary="Get CC payment suggestions (CC-first)",
+    description="Get unmatched CC payments with match suggestions from bank transactions.",
+    parameters=[
+        OpenApiParameter(name='credit_card', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by credit card ID'),
+        OpenApiParameter(name='year', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by year'),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['CC Payment Matching'],
+)
+@api_view(['GET'])
+def api_cc_payment_suggestions_reverse(request):
+    """Get unmatched CC payments with match suggestions from bank transactions."""
+    from datetime import timedelta
+    from credit_cards.models import CreditCardTransaction
+
+    # Get IDs of active bank transactions for filtering
+    active_bank_txn_ids = get_active_transactions().values_list('id', flat=True)
+
+    # Get unlinked CC transactions tagged as "Credit Card Payment"
+    # No amount filter - show all tagged transactions so incorrectly tagged ones can be re-categorized
+    cc_payments = get_active_cc_transactions().filter(
+        category='Credit Card Payment',
+    ).exclude(
+        bank_payment_match__is_active=True
+    ).select_related('credit_card', 'source_file')
+
+    # Apply filters
+    credit_card_id = request.GET.get('credit_card')
+    if credit_card_id:
+        cc_payments = cc_payments.filter(credit_card_id=credit_card_id)
+
+    year = request.GET.get('year')
+    if year:
+        cc_payments = cc_payments.filter(date__year=int(year))
+
+    # Order by date desc
+    cc_payments = cc_payments.order_by('-date')
+
+    # Get unmatched bank transactions (any category, debit > 0)
+    # Similar to bank-first mode which doesn't filter CC suggestions by category
+    unmatched_bank_payments = get_active_transactions().filter(
+        debit_amount__gt=0,
+    ).exclude(
+        cc_payment_match__credit_card_transaction_id__in=get_active_cc_transactions().values_list('id', flat=True)
+    ).select_related('bank_account')
+
+    # Get offset threshold from query params (default 20%)
+    offset_threshold = int(request.GET.get('offset_threshold', 20)) / 100.0
+
+    data = []
+    for cc_txn in cc_payments:
+        # Find potential matches within 7 days before and after
+        date_start = cc_txn.date - timedelta(days=7)
+        date_end = cc_txn.date + timedelta(days=7)
+
+        potential_matches = unmatched_bank_payments.filter(
+            date__gte=date_start,
+            date__lte=date_end,
+        )
+
+        suggestions = []
+        target_amount = abs(float(cc_txn.amount))
+        for bank_txn in potential_matches:
+            score, reasons, offset = calculate_match_score(bank_txn, cc_txn)
+            # Only include if there's some match AND offset is within threshold (100% = no filter)
+            if score > 0 and (offset_threshold >= 1.0 or abs(offset) <= target_amount * offset_threshold):
+                suggestions.append({
+                    'bank_transaction': {
+                        'id': bank_txn.id,
+                        'date': bank_txn.date.isoformat(),
+                        'narration': bank_txn.narration,
+                        'amount': float(bank_txn.debit_amount or bank_txn.credit_amount),
+                        'is_debit': bank_txn.debit_amount > 0,
+                        'bank_account': {
+                            'id': bank_txn.bank_account.id,
+                            'nickname': bank_txn.bank_account.nickname,
+                        } if bank_txn.bank_account else None,
+                    },
+                    'offset': offset,
+                    'confidence_score': score,
+                    'match_reasons': reasons,
+                })
+
+        # Sort suggestions by score descending, then by absolute offset ascending, then prefer negative offsets
+        suggestions.sort(key=lambda x: (-x['confidence_score'], abs(x['offset']), x['offset']))
+
+        data.append({
+            'credit_card_transaction': {
+                'id': cc_txn.id,
+                'date': cc_txn.date.isoformat(),
+                'description': cc_txn.description,
+                'amount': float(cc_txn.amount),
+                'credit_card': {
+                    'id': cc_txn.credit_card.id,
+                    'nickname': cc_txn.credit_card.nickname,
+                } if cc_txn.credit_card else None,
+            },
+            'suggestions': suggestions,
+        })
+
+    # Sort: entries with suggestions first (by highest confidence score), then entries without
+    data.sort(key=lambda x: (
+        0 if x['suggestions'] else 1,
+        -(x['suggestions'][0]['confidence_score'] if x['suggestions'] else 0),
     ))
 
     return JsonResponse({
@@ -1227,11 +1629,14 @@ def api_cc_payment_suggestions(request):
 def api_cc_payment_matches(request):
     """Get or create credit card payment matches."""
     if request.method == 'GET':
-        # Get IDs of active CC transactions
+        # Get IDs of active transactions (bank and CC)
+        active_bank_txn_ids = get_active_transactions().values_list('id', flat=True)
         active_cc_txn_ids = get_active_cc_transactions().values_list('id', flat=True)
 
-        # Get confirmed matches (only where CC transaction is from active source)
+        # Get confirmed matches (only active matches where both bank and CC transactions are from active sources)
         matches = CreditCardPaymentMatch.objects.filter(
+            is_active=True,
+            bank_transaction_id__in=active_bank_txn_ids,
             credit_card_transaction_id__in=active_cc_txn_ids
         ).select_related(
             'bank_transaction',
@@ -1255,7 +1660,8 @@ def api_cc_payment_matches(request):
                     'id': match.bank_transaction.id,
                     'date': match.bank_transaction.date.isoformat(),
                     'narration': match.bank_transaction.narration,
-                    'amount': float(match.bank_transaction.debit_amount),
+                    'amount': float(match.bank_transaction.debit_amount or match.bank_transaction.credit_amount),
+                    'is_debit': match.bank_transaction.debit_amount > 0,
                     'bank_account': {
                         'id': match.bank_transaction.bank_account.id,
                         'nickname': match.bank_transaction.bank_account.nickname,
@@ -1315,7 +1721,11 @@ def api_cc_payment_matches(request):
         # Delete the orphaned match so we can re-match
         bank_txn.cc_payment_match.delete()
     if hasattr(cc_txn, 'bank_payment_match'):
-        return JsonResponse({'error': 'Credit card transaction is already matched'}, status=400)
+        # Check if the existing match is active
+        if cc_txn.bank_payment_match.is_active:
+            return JsonResponse({'error': 'Credit card transaction is already matched'}, status=400)
+        # Delete the inactive match so we can re-match
+        cc_txn.bank_payment_match.delete()
 
     # Create the match
     match = CreditCardPaymentMatch.objects.create(
@@ -1326,10 +1736,13 @@ def api_cc_payment_matches(request):
         match_reasons=body.get('match_reasons', []),
     )
 
-    # Tag the credit card transaction as a matched payment
+    # Tag both transactions as matched payments
     if cc_txn.category != 'Credit Card Payment':
         cc_txn.category = 'Credit Card Payment'
         cc_txn.save(update_fields=['category'])
+    if bank_txn.category != 'Credit Card Payment':
+        bank_txn.category = 'Credit Card Payment'
+        bank_txn.save(update_fields=['category'])
 
     return JsonResponse({
         'id': match.id,
@@ -1372,13 +1785,18 @@ def api_cc_payment_match_years(request):
     from django.db.models import Count
     from django.db.models.functions import ExtractYear
 
-    # Get IDs of active CC transactions (consistent with matches endpoint)
+    # Get IDs of active transactions (consistent with matches endpoint)
+    active_bank_txn_ids = get_active_transactions().values_list('id', flat=True)
     active_cc_txn_ids = get_active_cc_transactions().values_list('id', flat=True)
 
-    # Count matches by year (only where CC transaction is from active source)
+    # Count matches by year (only active matches where both bank and CC transactions are from active sources)
     year_counts = (
         CreditCardPaymentMatch.objects
-        .filter(credit_card_transaction_id__in=active_cc_txn_ids)
+        .filter(
+            is_active=True,
+            bank_transaction_id__in=active_bank_txn_ids,
+            credit_card_transaction_id__in=active_cc_txn_ids
+        )
         .annotate(year=ExtractYear('bank_transaction__date'))
         .values('year')
         .annotate(count=Count('id'))

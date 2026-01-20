@@ -114,7 +114,7 @@ class ExtractedCSV(models.Model):
     # Unique identifier with clean format: extraction_DDMMYYYY_xxxxxxxx
     name = models.CharField(max_length=32, unique=True, blank=True)
 
-    # Blob storage (gzip compressed)
+    # Blob storage (gzip compressed) - kept for backward compatibility
     csv_data = models.BinaryField()
     csv_hash = models.CharField(max_length=64)  # SHA-256
     row_count = models.IntegerField(default=0)
@@ -126,6 +126,7 @@ class ExtractedCSV(models.Model):
     # Status
     STATUS_CHOICES = [
         ('extracted', 'Extracted'),
+        ('transformed', 'Transformed'),  # Ready for ingestion (has ingestable artifact)
         ('loading', 'Loading'),
         ('loaded', 'Loaded to DB'),
         ('error', 'Load Error'),
@@ -135,6 +136,7 @@ class ExtractedCSV(models.Model):
     loaded_at = models.DateTimeField(null=True, blank=True)
     error_message = models.TextField(blank=True)
     disabled = models.BooleanField(default=False)
+    hidden = models.BooleanField(default=False)  # Hide from UI (but not deleted)
 
     class Meta:
         ordering = ['-extracted_at']
@@ -159,3 +161,65 @@ class ExtractedCSV(models.Model):
 
     def __str__(self):
         return self.name
+
+    def get_artifact(self, artifact_type: str):
+        """Get artifact by type, returns None if not found."""
+        return self.artifacts.filter(artifact_type=artifact_type).first()
+
+    def get_ingestable_artifact(self):
+        """Get the ingestable_transactions artifact if it exists."""
+        return self.get_artifact('ingestable_transactions')
+
+
+class BankExtractionArtifact(models.Model):
+    """Stores individual artifacts from a bank extraction."""
+    extraction = models.ForeignKey(
+        'ExtractedCSV',
+        on_delete=models.CASCADE,
+        related_name='artifacts'
+    )
+
+    # Unique identifier (format: artifact_xxxxxxxx)
+    artifact_id = models.CharField(max_length=20, unique=True, blank=True)
+
+    # Artifact type (flexible naming like credit cards)
+    artifact_type = models.CharField(max_length=50)
+
+    # Content type: 'csv' or 'json'
+    content_type = models.CharField(max_length=20, default='csv')
+
+    # Blob storage (gzip compressed)
+    data = models.BinaryField()
+    data_hash = models.CharField(max_length=64)  # SHA-256
+    row_count = models.IntegerField(default=0)
+
+    # Bank account link
+    bank_account = models.ForeignKey(
+        BankAccount,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='artifacts'
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['artifact_type']
+
+    @classmethod
+    def generate_artifact_id(cls):
+        """Generate unique artifact_id: artifact_xxxxxxxx"""
+        while True:
+            short_id = shortuuid.uuid()[:8]
+            candidate = f"artifact_{short_id}"
+            if not cls.objects.filter(artifact_id=candidate).exists():
+                return candidate
+
+    def save(self, *args, **kwargs):
+        if not self.artifact_id:
+            self.artifact_id = self.generate_artifact_id()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.artifact_id} ({self.artifact_type})"

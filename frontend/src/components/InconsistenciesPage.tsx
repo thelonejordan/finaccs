@@ -19,19 +19,22 @@ import {
   EyeIcon,
   EyeOffIcon,
   RotateCcwIcon,
+  GitBranchIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import {
-  fetchInconsistencies,
+  fetchBankInconsistencies,
+  dismissBankInconsistency,
+  restoreBankInconsistency,
   fetchBankAccounts,
   fetchCreditCards,
   fetchCreditCardInconsistencies,
   dismissCreditCardInconsistency,
   restoreCreditCardInconsistency,
-  type Inconsistency,
+  type BankInconsistency,
   type BankAccount,
   type CreditCard,
   type CreditCardInconsistency,
@@ -73,11 +76,16 @@ type InconsistenciesTab = "bank" | "credit"
 
 // Bank Account Inconsistencies Component
 function BankAccountInconsistencies() {
-  const [inconsistencies, setInconsistencies] = useState<Inconsistency[]>([])
+  const { invalidate: invalidateInconsistencyCache } = useInconsistencyCache()
+  const [inconsistencies, setInconsistencies] = useState<BankInconsistency[]>([])
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [counts, setCounts] = useState<{ duplicate: number; cross_account: number; balance_gap: number }>({ duplicate: 0, cross_account: 0, balance_gap: 0 })
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [selectedBankAccount, setSelectedBankAccount] = useState<number | null>(null)
+  const [selectedType, setSelectedType] = useState<string>("all")
+  const [showDismissed, setShowDismissed] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
   const [page, setPage] = useState(1)
   const pageSize = 50
 
@@ -99,13 +107,16 @@ function BankAccountInconsistencies() {
     async function loadInconsistencies() {
       setLoading(true)
       try {
-        const result = await fetchInconsistencies({
+        const result = await fetchBankInconsistencies({
           bank_account: selectedBankAccount || undefined,
+          type: selectedType === "all" ? undefined : selectedType as 'duplicate' | 'cross_account' | 'balance_gap',
+          show_dismissed: showDismissed,
           limit: pageSize,
           offset: (page - 1) * pageSize,
         })
         setInconsistencies(result.data)
         setTotal(result.total)
+        setCounts(result.counts)
       } catch (err) {
         console.error("Failed to load inconsistencies:", err)
       } finally {
@@ -113,9 +124,31 @@ function BankAccountInconsistencies() {
       }
     }
     loadInconsistencies()
-  }, [selectedBankAccount, page])
+  }, [selectedBankAccount, selectedType, showDismissed, page, refreshKey])
 
   const totalPages = Math.ceil(total / pageSize)
+
+  async function handleDismiss(item: BankInconsistency) {
+    try {
+      await dismissBankInconsistency(item.type, item.transaction_ids)
+      invalidateInconsistencyCache()
+      setRefreshKey((k) => k + 1)
+    } catch (error) {
+      console.error("Failed to dismiss:", error)
+    }
+  }
+
+  async function handleRestore(item: BankInconsistency) {
+    try {
+      await restoreBankInconsistency(item.type, item.transaction_ids)
+      invalidateInconsistencyCache()
+      setRefreshKey((k) => k + 1)
+    } catch (error) {
+      console.error("Failed to restore:", error)
+    }
+  }
+
+  const totalActiveCount = counts.duplicate + counts.cross_account + counts.balance_gap
 
   return (
     <>
@@ -123,8 +156,95 @@ function BankAccountInconsistencies() {
       <section className="rounded-xl border border-border bg-card shadow-sm mb-6">
         <div className="p-6">
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
-            <h2 className="text-lg font-semibold">Balance Inconsistencies</h2>
+            <h2 className="text-lg font-semibold">Bank Inconsistencies</h2>
             <div className="flex-1" />
+            {/* Show Dismissed Toggle */}
+            <button
+              onClick={() => setShowDismissed(!showDismissed)}
+              className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors ${
+                showDismissed
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-input bg-background text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {showDismissed ? <EyeIcon className="h-4 w-4" /> : <EyeOffIcon className="h-4 w-4" />}
+              {showDismissed ? "Showing Dismissed" : "Show Dismissed"}
+            </button>
+            {/* Type Filter */}
+            <Select.Root
+              value={selectedType}
+              onValueChange={(value) => {
+                setSelectedType(value)
+                setPage(1)
+              }}
+            >
+              <Select.Trigger className="inline-flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-w-[200px]">
+                <div className="flex items-center gap-2">
+                  <AlertTriangleIcon className="h-4 w-4 text-muted-foreground" />
+                  <Select.Value placeholder="All Types" />
+                </div>
+                <Select.Icon>
+                  <ChevronDownIcon className="h-4 w-4 text-muted-foreground" />
+                </Select.Icon>
+              </Select.Trigger>
+              <Select.Portal>
+                <Select.Content className="bg-card rounded-lg shadow-lg border border-border z-50 overflow-hidden" position="popper" sideOffset={4}>
+                  <Select.Viewport className="p-1 max-h-60 overflow-y-auto">
+                    <Select.Item
+                      value="all"
+                      className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
+                    >
+                      <Select.ItemText>All Types</Select.ItemText>
+                      <Select.ItemIndicator>
+                        <CheckIcon className="h-4 w-4" />
+                      </Select.ItemIndicator>
+                    </Select.Item>
+                    <Select.Item
+                      value="duplicate"
+                      className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
+                    >
+                      <Select.ItemText>
+                        <span className="flex items-center gap-2">
+                          <CopyIcon className="h-3.5 w-3.5" />
+                          Same-Account Duplicates ({counts.duplicate})
+                        </span>
+                      </Select.ItemText>
+                      <Select.ItemIndicator>
+                        <CheckIcon className="h-4 w-4" />
+                      </Select.ItemIndicator>
+                    </Select.Item>
+                    <Select.Item
+                      value="cross_account"
+                      className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
+                    >
+                      <Select.ItemText>
+                        <span className="flex items-center gap-2">
+                          <LinkIcon className="h-3.5 w-3.5" />
+                          Cross-Account Matches ({counts.cross_account})
+                        </span>
+                      </Select.ItemText>
+                      <Select.ItemIndicator>
+                        <CheckIcon className="h-4 w-4" />
+                      </Select.ItemIndicator>
+                    </Select.Item>
+                    <Select.Item
+                      value="balance_gap"
+                      className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
+                    >
+                      <Select.ItemText>
+                        <span className="flex items-center gap-2">
+                          <GitBranchIcon className="h-3.5 w-3.5" />
+                          Balance Gaps ({counts.balance_gap})
+                        </span>
+                      </Select.ItemText>
+                      <Select.ItemIndicator>
+                        <CheckIcon className="h-4 w-4" />
+                      </Select.ItemIndicator>
+                    </Select.Item>
+                  </Select.Viewport>
+                </Select.Content>
+              </Select.Portal>
+            </Select.Root>
             {/* Bank Account Filter */}
             {bankAccounts.length > 0 && (
               <Select.Root
@@ -181,24 +301,65 @@ function BankAccountInconsistencies() {
         </div>
       </section>
 
-      {/* Summary Card */}
-      <section className="rounded-xl border border-border bg-card shadow-sm p-4 mb-6">
-        <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-lg ${total > 0 ? 'bg-amber-500/10' : 'bg-green-500/10'}`}>
-            {total > 0 ? (
-              <AlertTriangleIcon className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-            ) : (
-              <CheckCircleIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
-            )}
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <section className="rounded-xl border border-border bg-card shadow-sm p-4">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${totalActiveCount > 0 ? 'bg-amber-500/10' : 'bg-green-500/10'}`}>
+              {totalActiveCount > 0 ? (
+                <AlertTriangleIcon className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              ) : (
+                <CheckCircleIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
+              )}
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Total Issues</p>
+              <p className={`text-xl font-bold ${totalActiveCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
+                {totalActiveCount}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Balance Discontinuities Found</p>
-            <p className={`text-xl font-bold ${total > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
-              {total}
-            </p>
+        </section>
+        <section className="rounded-xl border border-border bg-card shadow-sm p-4">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${counts.duplicate > 0 ? 'bg-red-500/10' : 'bg-muted'}`}>
+              <CopyIcon className={`h-5 w-5 ${counts.duplicate > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`} />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Same-Account Duplicates</p>
+              <p className={`text-xl font-bold ${counts.duplicate > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`}>
+                {counts.duplicate}
+              </p>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+        <section className="rounded-xl border border-border bg-card shadow-sm p-4">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${counts.cross_account > 0 ? 'bg-orange-500/10' : 'bg-muted'}`}>
+              <LinkIcon className={`h-5 w-5 ${counts.cross_account > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-muted-foreground'}`} />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Cross-Account Matches</p>
+              <p className={`text-xl font-bold ${counts.cross_account > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-muted-foreground'}`}>
+                {counts.cross_account}
+              </p>
+            </div>
+          </div>
+        </section>
+        <section className="rounded-xl border border-border bg-card shadow-sm p-4">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${counts.balance_gap > 0 ? 'bg-purple-500/10' : 'bg-muted'}`}>
+              <GitBranchIcon className={`h-5 w-5 ${counts.balance_gap > 0 ? 'text-purple-600 dark:text-purple-400' : 'text-muted-foreground'}`} />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Balance Gaps</p>
+              <p className={`text-xl font-bold ${counts.balance_gap > 0 ? 'text-purple-600 dark:text-purple-400' : 'text-muted-foreground'}`}>
+                {counts.balance_gap}
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
 
       {/* Inconsistencies Table */}
       <section className="rounded-xl border border-border bg-card shadow-sm">
@@ -212,7 +373,9 @@ function BankAccountInconsistencies() {
               <CheckCircleIcon className="h-12 w-12 text-green-500 mb-4" />
               <p className="text-lg font-medium">No inconsistencies found</p>
               <p className="text-sm text-muted-foreground mt-1">
-                All transaction balances are continuous
+                {selectedType === "all"
+                  ? "All bank transactions look good"
+                  : `No ${selectedType === "duplicate" ? "same-account duplicates" : selectedType === "cross_account" ? "cross-account matches" : "balance gaps"} found`}
               </p>
             </div>
           ) : (
@@ -221,32 +384,49 @@ function BankAccountInconsistencies() {
                 <table className="w-full caption-bottom text-sm">
                   <thead className="border-b border-border/40">
                     <tr>
+                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Type</th>
                       <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Date</th>
                       <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Account</th>
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Source</th>
                       <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Description</th>
                       <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Amount</th>
-                      <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Expected</th>
-                      <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Actual</th>
-                      <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Gap</th>
+                      <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Details</th>
+                      <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground">Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {inconsistencies.map((item) => (
-                      <tr key={item.transaction_id} className="border-b border-border/30 transition-colors hover:bg-muted/50">
+                    {inconsistencies.map((item, idx) => (
+                      <tr
+                        key={`${item.type}-${item.transaction_ids.join('-')}-${idx}`}
+                        className={`border-b border-border/30 transition-colors hover:bg-muted/50 ${item.dismissed ? 'opacity-50' : ''}`}
+                      >
+                        <td className="p-4 align-middle">
+                          {item.type === "duplicate" ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-500/20 text-red-600 dark:text-red-400">
+                              <CopyIcon className="h-3 w-3" />
+                              Duplicate ({item.count})
+                            </span>
+                          ) : item.type === "cross_account" ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-orange-500/20 text-orange-600 dark:text-orange-400">
+                              <LinkIcon className="h-3 w-3" />
+                              Cross-Account ({item.count})
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-purple-500/20 text-purple-600 dark:text-purple-400">
+                              <GitBranchIcon className="h-3 w-3" />
+                              Balance Gap
+                            </span>
+                          )}
+                        </td>
                         <td className="p-4 align-middle text-sm text-muted-foreground whitespace-nowrap">
                           {formatDate(item.date)}
                         </td>
                         <td className="p-4 align-middle text-sm whitespace-nowrap">
-                          {item.bank_account.nickname}
-                        </td>
-                        <td className="p-4 align-middle">
-                          {item.source_file ? (
+                          {item.type === "cross_account" && item.accounts ? (
                             <Tooltip.Provider>
                               <Tooltip.Root>
                                 <Tooltip.Trigger asChild>
-                                  <span className="text-sm text-muted-foreground whitespace-nowrap truncate max-w-[120px] inline-block cursor-default">
-                                    {item.source_file.filename}
+                                  <span className="cursor-default">
+                                    {item.accounts.length} accounts
                                   </span>
                                 </Tooltip.Trigger>
                                 <Tooltip.Portal>
@@ -254,14 +434,16 @@ function BankAccountInconsistencies() {
                                     className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
                                     sideOffset={4}
                                   >
-                                    {item.source_file.filename}
+                                    {item.accounts.map((acc, i) => (
+                                      <div key={i}>{acc.nickname}</div>
+                                    ))}
                                     <Tooltip.Arrow className="fill-card" />
                                   </Tooltip.Content>
                                 </Tooltip.Portal>
                               </Tooltip.Root>
                             </Tooltip.Provider>
                           ) : (
-                            <span className="text-sm text-muted-foreground/50">—</span>
+                            item.bank_account?.nickname || <span className="text-muted-foreground/50">—</span>
                           )}
                         </td>
                         <td className="p-4 align-middle">
@@ -278,6 +460,10 @@ function BankAccountInconsistencies() {
                                   sideOffset={4}
                                 >
                                   {item.narration}
+                                  <br />
+                                  <span className="text-muted-foreground text-xs">
+                                    Transaction IDs: {item.transaction_ids.join(", ")}
+                                  </span>
                                   <Tooltip.Arrow className="fill-card" />
                                 </Tooltip.Content>
                               </Tooltip.Portal>
@@ -297,17 +483,65 @@ function BankAccountInconsistencies() {
                             </span>
                           )}
                         </td>
-                        <td className="p-4 align-middle text-right text-sm text-muted-foreground whitespace-nowrap">
-                          <FormattedCurrency amount={item.expected_balance} />
-                        </td>
-                        <td className="p-4 align-middle text-right text-sm whitespace-nowrap">
-                          <FormattedCurrency amount={item.actual_balance} />
-                        </td>
                         <td className="p-4 align-middle text-right whitespace-nowrap">
-                          <span className={`font-medium ${item.gap > 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}>
-                            {item.gap > 0 ? "+" : ""}
-                            <FormattedCurrency amount={item.gap} />
-                          </span>
+                          {item.type === "balance_gap" && item.gap !== undefined ? (
+                            <span className={`font-medium ${item.gap > 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}>
+                              Gap: {item.gap > 0 ? "+" : ""}<FormattedCurrency amount={item.gap} />
+                            </span>
+                          ) : item.balance !== undefined ? (
+                            <span className="text-muted-foreground">
+                              Bal: <FormattedCurrency amount={item.balance} />
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/50">—</span>
+                          )}
+                        </td>
+                        <td className="p-4 align-middle text-center">
+                          {item.dismissed ? (
+                            <Tooltip.Provider>
+                              <Tooltip.Root>
+                                <Tooltip.Trigger asChild>
+                                  <button
+                                    onClick={() => handleRestore(item)}
+                                    className="p-1.5 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+                                  >
+                                    <RotateCcwIcon className="h-4 w-4" />
+                                  </button>
+                                </Tooltip.Trigger>
+                                <Tooltip.Portal>
+                                  <Tooltip.Content
+                                    className="bg-card text-card-foreground px-2 py-1 rounded-md shadow-lg border border-border text-xs"
+                                    sideOffset={4}
+                                  >
+                                    Restore
+                                    <Tooltip.Arrow className="fill-card" />
+                                  </Tooltip.Content>
+                                </Tooltip.Portal>
+                              </Tooltip.Root>
+                            </Tooltip.Provider>
+                          ) : (
+                            <Tooltip.Provider>
+                              <Tooltip.Root>
+                                <Tooltip.Trigger asChild>
+                                  <button
+                                    onClick={() => handleDismiss(item)}
+                                    className="p-1.5 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+                                  >
+                                    <XIcon className="h-4 w-4" />
+                                  </button>
+                                </Tooltip.Trigger>
+                                <Tooltip.Portal>
+                                  <Tooltip.Content
+                                    className="bg-card text-card-foreground px-2 py-1 rounded-md shadow-lg border border-border text-xs"
+                                    sideOffset={4}
+                                  >
+                                    Dismiss as false positive
+                                    <Tooltip.Arrow className="fill-card" />
+                                  </Tooltip.Content>
+                                </Tooltip.Portal>
+                              </Tooltip.Root>
+                            </Tooltip.Provider>
+                          )}
                         </td>
                       </tr>
                     ))}

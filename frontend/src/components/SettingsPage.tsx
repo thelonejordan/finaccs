@@ -25,7 +25,6 @@ import {
   LoaderIcon,
   Trash2Icon,
   SlidersHorizontalIcon,
-  PowerIcon,
   ChevronRightIcon,
   UploadIcon,
 } from "lucide-react"
@@ -47,6 +46,7 @@ import {
   unloadArtifacts,
   deleteArtifact,
   fetchArtifactPreview,
+  fetchBankExtractedCSVPreview,
   updateArtifactCreditCard,
   type CreditCard,
   type CreditCardInput,
@@ -435,7 +435,7 @@ function CreditCardDataSources({
   cards,
   selectedArtifactId,
   onSelectArtifact,
-  onCreateCard,
+  onCreateCard: _onCreateCard,
   onCardUpdated,
   onSourceFileUpdated,
   onLoadArtifact,
@@ -456,8 +456,10 @@ function CreditCardDataSources({
   onDeleteArtifact: (artifactId: string) => Promise<void>
   onRefresh?: () => void
 }) {
+  void _onCreateCard // Suppress unused warning - kept for future use
   const [isLinking, setIsLinking] = useState(false)
-  const [togglingId, setTogglingId] = useState<number | null>(null)
+  const [_togglingId, setTogglingId] = useState<number | null>(null)
+  void _togglingId // Suppress unused warning - kept for future use
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [loadingArtifactIds, setLoadingArtifactIds] = useState<Set<string>>(new Set())
   const [deleteArtifactId, setDeleteArtifactId] = useState<string | null>(null)
@@ -473,7 +475,8 @@ function CreditCardDataSources({
     }
   }
 
-  const handleToggleDisabled = async (file: CreditCardSourceFile) => {
+  // Kept for potential future use with source file toggle functionality
+  const _handleToggleDisabled = async (file: CreditCardSourceFile) => {
     setTogglingId(file.id)
     try {
       await toggleCreditCardSourceFileDisabled(file.id, !file.disabled)
@@ -484,6 +487,7 @@ function CreditCardDataSources({
       setTogglingId(null)
     }
   }
+  void _handleToggleDisabled
 
   // Handler for updating artifact credit card
   const handleUpdateArtifactCard = async (artifactId: string, cardId: number | null) => {
@@ -522,7 +526,8 @@ function CreditCardDataSources({
     return 0
   })
 
-  const handleLinkToCard = async (filename: string, cardId: number) => {
+  // Kept for potential future use with legacy source file linking
+  const _handleLinkToCard = async (filename: string, cardId: number) => {
     setIsLinking(true)
     try {
       // Fetch fresh data to avoid stale state
@@ -539,8 +544,9 @@ function CreditCardDataSources({
       setIsLinking(false)
     }
   }
+  void _handleLinkToCard
 
-  const handleUnlinkFromCard = async (filename: string, currentCardId: number) => {
+  const _handleUnlinkFromCard = async (filename: string, currentCardId: number) => {
     setIsLinking(true)
     try {
       // Fetch fresh data to avoid stale state
@@ -557,8 +563,9 @@ function CreditCardDataSources({
       setIsLinking(false)
     }
   }
+  void _handleUnlinkFromCard
 
-  const handleChangeLinkToCard = async (filename: string, currentCardId: number, newCardId: number) => {
+  const _handleChangeLinkToCard = async (filename: string, currentCardId: number, newCardId: number) => {
     setIsLinking(true)
     try {
       // Fetch fresh data to avoid stale state
@@ -589,6 +596,7 @@ function CreditCardDataSources({
       setIsLinking(false)
     }
   }
+  void _handleChangeLinkToCard
 
   const handleLoadArtifact = async (artifactId: string) => {
     setLoadingArtifactIds((prev) => new Set(prev).add(artifactId))
@@ -1202,6 +1210,188 @@ function DataSourcePreviewSection({
   )
 }
 
+// Bank Data Source Preview Section Component
+function BankDataSourcePreviewSection({
+  csv,
+  previewData,
+  previewLoading,
+  previewTotal,
+  previewColumns,
+  previewVisibleColumns,
+  previewColumnSelectorOpen,
+  onToggleColumnSelector,
+  onToggleColumn,
+}: {
+  csv: ExtractedCSV | null
+  previewData: Record<string, string>[]
+  previewLoading: boolean
+  previewTotal: number
+  previewColumns: Array<{ key: string; header: string; align: 'left' | 'right' }>
+  previewVisibleColumns: Set<string>
+  previewColumnSelectorOpen: boolean
+  onToggleColumnSelector: () => void
+  onToggleColumn: (key: string) => void
+}) {
+  const renderPreviewCell = (row: Record<string, string>, key: string) => {
+    const value = row[key] || ''
+    switch (key) {
+      case 'date':
+      case 'value_date':
+        return <span className="font-mono">{value}</span>
+      case 'narration':
+        return <span className="max-w-[200px] truncate block" title={value}>{value}</span>
+      case 'debit_amount':
+        return parseFloat(value) > 0
+          ? <span className="text-red-600 dark:text-red-400">{formatCurrency(parseFloat(value))}</span>
+          : ''
+      case 'credit_amount':
+        return parseFloat(value) > 0
+          ? <span className="text-green-600 dark:text-green-400">{formatCurrency(parseFloat(value))}</span>
+          : ''
+      case 'closing_balance':
+        return value && parseFloat(value) !== 0
+          ? <span className="text-muted-foreground">{formatCurrency(parseFloat(value))}</span>
+          : '-'
+      case 'reference_number':
+        return <span className="text-muted-foreground">{value || '-'}</span>
+      default:
+        return value || '-'
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-border bg-card shadow-sm lg:col-span-2">
+      <header className="p-6 pb-3">
+        <h3 className="font-semibold flex items-center gap-2 text-lg">
+          <div className="p-1.5 rounded-lg bg-muted">
+            <EyeIcon className="h-5 w-5 text-muted-foreground" />
+          </div>
+          Data Source Preview
+          {csv && (
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              — {csv.name}
+            </span>
+          )}
+        </h3>
+      </header>
+      <div className="p-6 pt-0">
+        {!csv ? (
+          <div className="text-center py-8 rounded-xl bg-gradient-to-br from-muted/50 to-transparent border border-border">
+            <div className="p-3 rounded-full bg-muted w-fit mx-auto mb-3">
+              <EyeOffIcon className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <p className="font-medium">No data source selected</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Click on a data source above to preview its contents
+            </p>
+          </div>
+        ) : previewLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <LoaderIcon className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                {csv.first_transaction_date && csv.last_transaction_date && (
+                  <span className="flex items-center gap-1">
+                    <CalendarIcon className="h-3.5 w-3.5" />
+                    {formatDate(csv.first_transaction_date)} — {formatDate(csv.last_transaction_date)}
+                  </span>
+                )}
+                <span className="flex items-center gap-1">
+                  <HashIcon className="h-3.5 w-3.5" />
+                  {csv.transaction_count || csv.row_count} transactions
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground">
+                  Showing {previewData.length} of {previewTotal} rows
+                </span>
+                {/* Column Selector */}
+                <div className="relative">
+                  <button
+                    onClick={onToggleColumnSelector}
+                    className="px-2 py-1 text-xs rounded border border-border hover:bg-muted transition-colors flex items-center gap-1"
+                  >
+                    <SlidersHorizontalIcon className="h-3 w-3" />
+                    Columns ({previewVisibleColumns.size}/{previewColumns.length})
+                  </button>
+                  {previewColumnSelectorOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={onToggleColumnSelector} />
+                      <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg p-2 min-w-[160px] max-h-[300px] overflow-auto">
+                        {previewColumns.map((col) => (
+                          <label
+                            key={col.key}
+                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-muted rounded cursor-pointer text-sm"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={previewVisibleColumns.has(col.key)}
+                              onChange={() => onToggleColumn(col.key)}
+                              className="rounded border-border"
+                            />
+                            <span className="truncate">{col.header}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+            {previewData.length > 0 ? (
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      {previewColumns
+                        .filter((col) => previewVisibleColumns.has(col.key))
+                        .map((col) => (
+                          <th
+                            key={col.key}
+                            className={`px-3 py-2 font-medium text-muted-foreground whitespace-nowrap ${
+                              col.align === 'right' ? 'text-right' : 'text-left'
+                            }`}
+                          >
+                            {col.header}
+                          </th>
+                        ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {previewData.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-muted/30">
+                        {previewColumns
+                          .filter((col) => previewVisibleColumns.has(col.key))
+                          .map((col) => (
+                            <td
+                              key={col.key}
+                              className={`px-3 py-2 whitespace-nowrap font-mono ${
+                                col.align === 'right' ? 'text-right' : 'text-left'
+                              }`}
+                            >
+                              {renderPreviewCell(row, col.key)}
+                            </td>
+                          ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                No data available
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
 type SettingsTab = "bank" | "credit"
 
 // Main Settings Page
@@ -1212,6 +1402,16 @@ export function SettingsPage() {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   const [extractedCSVs, setExtractedCSVs] = useState<ExtractedCSV[]>([])
   const [bankAddSourceFile, setBankAddSourceFile] = useState<string | null>(null)
+
+  // Bank data source preview state
+  const [selectedBankCSVId, setSelectedBankCSVId] = useState<number | null>(null)
+  const [bankPreviewData, setBankPreviewData] = useState<Record<string, string>[]>([])
+  const [bankPreviewLoading, setBankPreviewLoading] = useState(false)
+  const [bankPreviewTotal, setBankPreviewTotal] = useState(0)
+  const [bankPreviewColumnSelectorOpen, setBankPreviewColumnSelectorOpen] = useState(false)
+  const [bankPreviewVisibleColumns, setBankPreviewVisibleColumns] = useState<Set<string>>(
+    new Set(['date', 'narration', 'debit_amount', 'credit_amount', 'closing_balance', 'reference_number'])
+  )
 
   // Credit Cards state
   const [creditCards, setCreditCards] = useState<CreditCard[]>([])
@@ -1256,6 +1456,47 @@ export function SettingsPage() {
       return next
     })
   }
+
+  const toggleBankPreviewColumn = (key: string) => {
+    setBankPreviewVisibleColumns(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        if (next.size > 1) next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+
+  // Handle bank CSV selection and load preview data
+  const handleSelectBankCSV = async (csvId: number | null) => {
+    if (csvId === null || selectedBankCSVId === csvId) {
+      // Deselect
+      setSelectedBankCSVId(null)
+      setBankPreviewData([])
+      setBankPreviewTotal(0)
+      return
+    }
+
+    setSelectedBankCSVId(csvId)
+    setBankPreviewLoading(true)
+    setBankPreviewData([])
+    setBankPreviewTotal(0)
+
+    try {
+      const result = await fetchBankExtractedCSVPreview(csvId, 20)
+      setBankPreviewData(result.data)
+      setBankPreviewTotal(result.total || 0)
+    } catch (error) {
+      console.error("Failed to load bank preview:", error)
+    } finally {
+      setBankPreviewLoading(false)
+    }
+  }
+
+  // Get selected bank CSV object
+  const selectedBankCSV = extractedCSVs.find(c => c.id === selectedBankCSVId) || null
 
   // Handle artifact selection and load preview data
   const handleSelectArtifact = async (artifactId: string) => {
@@ -1389,7 +1630,7 @@ export function SettingsPage() {
   // Clear data source selection when clicking outside the cards
   const handleCreditTabClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
-      setSelectedExtractionId(null)
+      setSelectedArtifactId(null)
       setPreviewData([])
       setPreviewTotal(0)
     }
@@ -1453,32 +1694,48 @@ export function SettingsPage() {
 
         {/* Tab Content */}
         {activeTab === "bank" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <AccountsSection
-              accounts={bankAccounts}
-              extractedCSVs={extractedCSVs}
-              onSave={handleBankAccountSave}
-              initialAddSourceFile={bankAddSourceFile}
-              onAddingStateChange={(isAdding) => {
-                if (!isAdding) setBankAddSourceFile(null)
-              }}
-            />
-            <DataSources
-              extractedCSVs={extractedCSVs}
-              accounts={bankAccounts}
-              onCreateAccount={(filename) => setBankAddSourceFile(filename)}
-              onCSVUpdated={(updatedCSV) => {
-                setExtractedCSVs((prev) => {
-                  const existing = prev.findIndex((csv) => csv.id === updatedCSV.id)
-                  if (existing >= 0) {
-                    const updated = [...prev]
-                    updated[existing] = updatedCSV
-                    return updated
-                  }
-                  return prev
-                })
-              }}
-              onRefresh={refreshBankData}
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <AccountsSection
+                accounts={bankAccounts}
+                extractedCSVs={extractedCSVs}
+                onSave={handleBankAccountSave}
+                initialAddSourceFile={bankAddSourceFile}
+                onAddingStateChange={(isAdding) => {
+                  if (!isAdding) setBankAddSourceFile(null)
+                }}
+              />
+              <DataSources
+                extractedCSVs={extractedCSVs}
+                accounts={bankAccounts}
+                onCreateAccount={(filename) => setBankAddSourceFile(filename)}
+                onCSVUpdated={(updatedCSV) => {
+                  setExtractedCSVs((prev) => {
+                    const existing = prev.findIndex((csv) => csv.id === updatedCSV.id)
+                    if (existing >= 0) {
+                      const updated = [...prev]
+                      updated[existing] = updatedCSV
+                      return updated
+                    }
+                    return prev
+                  })
+                }}
+                onRefresh={refreshBankData}
+                selectedCSVId={selectedBankCSVId}
+                onSelectCSV={handleSelectBankCSV}
+              />
+            </div>
+            {/* Bank Data Source Preview */}
+            <BankDataSourcePreviewSection
+              csv={selectedBankCSV}
+              previewData={bankPreviewData}
+              previewLoading={bankPreviewLoading}
+              previewTotal={bankPreviewTotal}
+              previewColumns={previewColumns}
+              previewVisibleColumns={bankPreviewVisibleColumns}
+              previewColumnSelectorOpen={bankPreviewColumnSelectorOpen}
+              onToggleColumnSelector={() => setBankPreviewColumnSelectorOpen(!bankPreviewColumnSelectorOpen)}
+              onToggleColumn={toggleBankPreviewColumn}
             />
           </div>
         )}

@@ -165,6 +165,7 @@ class CreditCardPaymentMatch(models.Model):
     offset = models.DecimalField(max_digits=12, decimal_places=2, default=0)  # Rewards cashout difference
     confidence_score = models.FloatField(default=0.0)
     match_reasons = models.JSONField(default=list)  # ["exact_amount", "same_day"]
+    is_active = models.BooleanField(default=True)  # Soft delete when bank extraction is disabled
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -172,3 +173,36 @@ class CreditCardPaymentMatch(models.Model):
 
     def __str__(self):
         return f"Match: Bank {self.bank_transaction_id} <-> CC {self.credit_card_transaction_id}"
+
+
+class DismissedBankInconsistency(models.Model):
+    """Track dismissed bank transaction inconsistencies."""
+    INCONSISTENCY_TYPES = [
+        ('duplicate', 'Duplicate Transaction'),
+        ('cross_account', 'Cross-Account Match'),
+        ('balance_gap', 'Balance Discontinuity'),
+    ]
+
+    inconsistency_type = models.CharField(max_length=20, choices=INCONSISTENCY_TYPES)
+    transaction_ids = models.CharField(max_length=255)  # Sorted comma-separated
+    reason = models.TextField(blank=True)
+    dismissed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-dismissed_at']
+        unique_together = [['inconsistency_type', 'transaction_ids']]
+
+    def __str__(self):
+        return f"{self.get_inconsistency_type_display()}: {self.transaction_ids}"
+
+    @classmethod
+    def make_key(cls, transaction_ids):
+        return ','.join(str(tid) for tid in sorted(transaction_ids))
+
+    @classmethod
+    def is_dismissed(cls, inconsistency_type, transaction_ids):
+        key = cls.make_key(transaction_ids)
+        return cls.objects.filter(
+            inconsistency_type=inconsistency_type,
+            transaction_ids=key
+        ).exists()

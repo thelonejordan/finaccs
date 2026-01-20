@@ -1,7 +1,6 @@
 import json
 import os
 from django.http import JsonResponse
-from django.conf import settings
 from django.db.models import Min, Max
 from rest_framework.decorators import api_view
 
@@ -28,90 +27,40 @@ except ImportError:
     OpenApiExample = _MockCallable
     OpenApiTypes = type('OpenApiTypes', (), {'OBJECT': object, 'INT': int, 'STR': str, 'BOOL': bool})()
 
-from .models import BankAccount, SourceFile, ExtractionPipeline, ExtractedCSV
-from dashboard.models import AccountLog, Transaction
-
-# Supported file extensions
-PARSED_EXTENSIONS = ['.txt', '.xlsx', '.xls', '.pdf']  # Supported formats
-PENDING_EXTENSIONS = ['.csv']  # Waiting to be parsed
+from .models import BankAccount, SourceFile, ExtractionPipeline, ExtractedCSV, BankExtractionArtifact
+from dashboard.models import AccountLog, Transaction, CreditCardPaymentMatch
 
 
-def sync_source_files():
-    """Sync SourceFile model with actual files in data directory."""
-    data_dir = os.path.join(settings.BASE_DIR, 'bank_accs', 'data')
-    if not os.path.exists(data_dir):
-        return
+def update_cc_payment_matches_for_extraction(extraction, is_active):
+    """Update CC payment match status for all transactions in an extraction."""
+    CreditCardPaymentMatch.objects.filter(
+        bank_transaction__extracted_csv=extraction
+    ).update(is_active=is_active)
 
-    # Get all files in data directory
-    for f in os.listdir(data_dir):
-        ext = os.path.splitext(f)[1].lower()
-        if ext in PARSED_EXTENSIONS or ext in PENDING_EXTENSIONS:
-            # Create SourceFile if it doesn't exist
-            SourceFile.objects.get_or_create(filename=f)
-
-
-def get_source_files_with_stats():
-    """Get list of bank statement files with transaction date ranges."""
-    from dashboard.models import Transaction
-
-    # Sync files from disk to database
-    sync_source_files()
-
-    files = []
-    for sf in SourceFile.objects.select_related('bank_account').all():
-        ext = os.path.splitext(sf.filename)[1].lower()
-
-        if ext in PARSED_EXTENSIONS:
-            file_info = {
-                'id': sf.id,
-                'filename': sf.filename,
-                'status': 'parsed',
-                'bank_account_id': sf.bank_account.id if sf.bank_account else None,
-                'disabled': sf.disabled,
-            }
-
-            # Get date range from transactions linked to this source file
-            date_range = Transaction.objects.filter(
-                source_file=sf
-            ).aggregate(
-                first_date=Min('date'),
-                last_date=Max('date')
-            )
-            file_info['first_transaction_date'] = date_range['first_date'].isoformat() if date_range['first_date'] else None
-            file_info['last_transaction_date'] = date_range['last_date'].isoformat() if date_range['last_date'] else None
-            file_info['transaction_count'] = Transaction.objects.filter(source_file=sf).count()
-
-            files.append(file_info)
-        elif ext in PENDING_EXTENSIONS:
-            files.append({
-                'id': sf.id,
-                'filename': sf.filename,
-                'status': 'pending',
-                'bank_account_id': sf.bank_account.id if sf.bank_account else None,
-                'disabled': sf.disabled,
-                'first_transaction_date': None,
-                'last_transaction_date': None,
-                'transaction_count': 0
-            })
-
-    # Sort by first_transaction_date descending (newest first, files without transactions go to the end)
-    files.sort(key=lambda f: (f['first_transaction_date'] is not None, f['first_transaction_date'] or ''), reverse=True)
-
-    return files
+# Supported file extensions for extraction
+SUPPORTED_EXTENSIONS = ['.txt', '.xlsx', '.xls', '.pdf']
 
 
 def get_extracted_csvs_with_stats():
     """Get list of extracted CSVs with transaction stats."""
     from dashboard.models import Transaction
 
-    # Sync source files from disk first (to detect new extractions)
-    sync_source_files()
-
     csvs = []
-    # Query ExtractedCSVs with status in extracted, loading, loaded, error
+    # Query ExtractedCSVs with status in extracted, transformed, loading, loaded, error
     for csv in ExtractedCSV.objects.filter(
-        status__in=['extracted', 'loading', 'loaded', 'error']
-    ).select_related('source_file', 'bank_account').order_by('-extracted_at'):
+        status__in=['extracted', 'transformed', 'loading', 'loaded', 'error']
+    ).select_related('source_file', 'bank_account').prefetch_related('artifacts').order_by('-extracted_at'):
+        # Serialize artifacts
+        artifacts = []
+        for artifact in csv.artifacts.all():
+            artifacts.append({
+                'artifact_id': artifact.artifact_id,
+                'artifact_type': artifact.artifact_type,
+                'content_type': artifact.content_type,
+                'row_count': artifact.row_count,
+                'data_hash': artifact.data_hash,
+            })
+
         csv_info = {
             'id': csv.id,
             'name': csv.name,
@@ -120,6 +69,7 @@ def get_extracted_csvs_with_stats():
             'status': csv.status,
             'bank_account_id': csv.bank_account.id if csv.bank_account else None,
             'disabled': csv.disabled,
+            'hidden': csv.hidden,
             'row_count': csv.row_count,
             'extracted_at': csv.extracted_at.isoformat() if csv.extracted_at else None,
             'loaded_at': csv.loaded_at.isoformat() if csv.loaded_at else None,
@@ -127,6 +77,7 @@ def get_extracted_csvs_with_stats():
             'first_transaction_date': None,
             'last_transaction_date': None,
             'transaction_count': 0,
+            'artifacts': artifacts,
         }
 
         # Get transaction stats if loaded
@@ -547,6 +498,10 @@ def extracted_csv_detail(request, csv_id):
     if 'disabled' in data:
         csv.disabled = data['disabled']
         csv.save(update_fields=['disabled'])
+        # Update CC payment matches: soft delete when disabling, restore when enabling
+        update_cc_payment_matches_for_extraction(csv, is_active=not csv.disabled)
+        # Invalidate caches since transactions are now included/excluded
+        invalidate_all_inconsistencies()
 
     return JsonResponse({
         'id': csv.id,
@@ -589,7 +544,8 @@ def load_extracted_csvs(request):
         return JsonResponse({'error': 'No CSV IDs provided'}, status=400)
 
     # Validate and get CSVs
-    csvs = ExtractedCSV.objects.filter(id__in=csv_ids, status__in=['extracted', 'error'])
+    # Include 'loaded' status to allow re-loading (will re-link unlinked transactions)
+    csvs = ExtractedCSV.objects.filter(id__in=csv_ids, status__in=['extracted', 'transformed', 'loading', 'error', 'loaded'])
     if not csvs.exists():
         return JsonResponse({'error': 'No valid CSVs found to load'}, status=400)
 
@@ -631,3 +587,438 @@ def load_extracted_csvs(request):
     invalidate_all_inconsistencies()
 
     return JsonResponse({'results': results})
+
+
+# ==================== Bank Extractions API ====================
+
+@extend_schema(
+    summary="List bank source files",
+    description="Get all bank statement source files with extraction statistics.",
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Bank Extractions'],
+)
+@api_view(['GET'])
+def bank_source_files_list(request):
+    """List source files with extraction stats for the bank extractions page."""
+    from .extractors import detect_extractor
+
+    files = []
+    # Only return SourceFiles that have file_data blob stored in DB
+    for sf in SourceFile.objects.select_related('bank_account', 'pipeline').exclude(file_data=b'').exclude(file_data__isnull=True):
+        ext = os.path.splitext(sf.filename)[1].lower()
+        if ext not in SUPPORTED_EXTENSIONS:
+            continue
+
+        # Get file size from DB (stored during upload)
+        file_size = sf.file_size or 0
+        has_data = bool(sf.file_data)
+
+        # Get extraction count and last extracted date
+        extractions = ExtractedCSV.objects.filter(source_file=sf).order_by('-extracted_at')
+        extractions_count = extractions.count()
+        last_extracted = extractions.first().extracted_at if extractions.exists() else None
+
+        # Determine extractor (from pipeline or auto-detect)
+        extractor = None
+        if sf.pipeline:
+            extractor = sf.pipeline.extractor
+        else:
+            extractor = detect_extractor(sf.filename)
+
+        files.append({
+            'id': sf.id,
+            'filename': sf.filename,
+            'pipeline': {
+                'id': sf.pipeline.id,
+                'name': sf.pipeline.name,
+                'extractor': sf.pipeline.extractor,
+            } if sf.pipeline else None,
+            'bank_account': {
+                'id': sf.bank_account.id,
+                'nickname': sf.bank_account.nickname,
+            } if sf.bank_account else None,
+            'extractions_count': extractions_count,
+            'last_extracted': last_extracted.isoformat() if last_extracted else None,
+            'has_password': bool(sf.pipeline and sf.pipeline.password),
+            'pipeline_password': sf.pipeline.password if sf.pipeline else '',
+            'file_size': file_size,
+            'has_data': has_data,
+            'extractor': extractor,
+            'disabled': sf.disabled,
+        })
+
+    # Sort by extractions_count (unextracted first), then by filename
+    files.sort(key=lambda f: (f['extractions_count'] > 0, f['filename']))
+
+    return JsonResponse({'data': files})
+
+
+@extend_schema(
+    summary="Get extracted CSV content",
+    description="Get the raw CSV content of an extracted CSV. Supports artifact_id query param.",
+    parameters=[
+        OpenApiParameter(name='artifact_id', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Optional artifact ID to fetch specific artifact'),
+    ],
+    responses={200: OpenApiTypes.STR, 404: OpenApiTypes.OBJECT},
+    tags=['Bank Extractions'],
+)
+@api_view(['GET'])
+def extracted_csv_content(request, csv_id):
+    """Get the raw CSV content of an ExtractedCSV or specific artifact."""
+    import gzip
+
+    try:
+        csv_obj = ExtractedCSV.objects.prefetch_related('artifacts').get(id=csv_id)
+    except ExtractedCSV.DoesNotExist:
+        return JsonResponse({'error': 'Extracted CSV not found'}, status=404)
+
+    # Check if specific artifact requested
+    artifact_id = request.GET.get('artifact_id')
+    data_to_decompress = None
+    filename = csv_obj.name
+
+    if artifact_id:
+        # Get specific artifact
+        artifact = csv_obj.artifacts.filter(artifact_id=artifact_id).first()
+        if not artifact:
+            return JsonResponse({'error': 'Artifact not found'}, status=404)
+        data_to_decompress = artifact.data
+        filename = f"{csv_obj.name}_{artifact.artifact_type}"
+    else:
+        # Check for ingestable artifact first, fall back to csv_data
+        artifact = csv_obj.get_ingestable_artifact()
+        if artifact:
+            data_to_decompress = artifact.data
+        else:
+            data_to_decompress = csv_obj.csv_data
+
+    # Decompress CSV data
+    try:
+        csv_content = gzip.decompress(data_to_decompress).decode('utf-8')
+    except Exception as e:
+        return JsonResponse({'error': f'Failed to decompress CSV: {str(e)}'}, status=500)
+
+    from django.http import HttpResponse
+    response = HttpResponse(csv_content, content_type='text/csv')
+    response['Content-Disposition'] = f'inline; filename="{filename}.csv"'
+    return response
+
+
+@extend_schema(
+    summary="Preview extracted CSV",
+    description="Get a preview of the extracted CSV data with optional row limit. Supports artifact_id query param.",
+    parameters=[
+        OpenApiParameter(name='limit', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Max rows to return'),
+        OpenApiParameter(name='artifact_id', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Optional artifact ID to preview specific artifact'),
+    ],
+    responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Bank Extractions'],
+)
+@api_view(['GET'])
+def extracted_csv_preview(request, csv_id):
+    """Get a preview of the extracted CSV data or specific artifact."""
+    import gzip
+    import csv as csv_module
+    import io
+
+    try:
+        csv_obj = ExtractedCSV.objects.prefetch_related('artifacts').get(id=csv_id)
+    except ExtractedCSV.DoesNotExist:
+        return JsonResponse({'error': 'Extracted CSV not found'}, status=404)
+
+    limit = request.GET.get('limit')
+    if limit:
+        try:
+            limit = int(limit)
+        except ValueError:
+            limit = None
+
+    # Check if specific artifact requested
+    artifact_id = request.GET.get('artifact_id')
+    data_to_decompress = None
+    row_count = csv_obj.row_count
+
+    if artifact_id:
+        # Get specific artifact
+        artifact = csv_obj.artifacts.filter(artifact_id=artifact_id).first()
+        if not artifact:
+            return JsonResponse({'error': 'Artifact not found'}, status=404)
+        data_to_decompress = artifact.data
+        row_count = artifact.row_count
+    else:
+        # Check for ingestable artifact first, fall back to csv_data
+        artifact = csv_obj.get_ingestable_artifact()
+        if artifact:
+            data_to_decompress = artifact.data
+            row_count = artifact.row_count
+        else:
+            data_to_decompress = csv_obj.csv_data
+
+    # Decompress CSV data
+    try:
+        csv_content = gzip.decompress(data_to_decompress).decode('utf-8')
+    except Exception as e:
+        return JsonResponse({'error': f'Failed to decompress CSV: {str(e)}'}, status=500)
+
+    # Parse CSV
+    reader = csv_module.DictReader(io.StringIO(csv_content))
+    rows = []
+    for i, row in enumerate(reader):
+        if limit and i >= limit:
+            break
+        rows.append(row)
+
+    return JsonResponse({
+        'data': rows,
+        'total': row_count,
+        'columns': reader.fieldnames or [],
+    })
+
+
+@extend_schema(
+    summary="Extract bank source file",
+    description="Trigger extraction for a bank statement source file.",
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Bank Extractions'],
+    examples=[
+        OpenApiExample(
+            'Extract with password',
+            value={'password': 'mypassword'},
+            request_only=True,
+        )
+    ],
+)
+@api_view(['POST'])
+def bank_source_file_extract(request, source_file_id):
+    """Trigger extraction for a bank statement source file."""
+    import gzip
+    import hashlib
+    import tempfile
+    from .extractors import get_extractor, detect_extractor
+
+    try:
+        sf = SourceFile.objects.select_related('pipeline', 'bank_account').get(id=source_file_id)
+    except SourceFile.DoesNotExist:
+        return JsonResponse({'error': 'Source file not found'}, status=404)
+
+    # Check if file data exists in DB
+    if not sf.file_data:
+        return JsonResponse({'error': f'File not uploaded: {sf.filename}. Please upload the file first.'}, status=400)
+
+    # Parse request body for password
+    password = None
+    try:
+        data = json.loads(request.body) if request.body else {}
+        password = data.get('password')
+    except json.JSONDecodeError:
+        pass
+
+    # Use pipeline password if no password provided
+    if not password and sf.pipeline and sf.pipeline.password:
+        password = sf.pipeline.password
+
+    # Determine extractor
+    extractor_name = sf.pipeline.extractor if sf.pipeline else detect_extractor(sf.filename)
+    if not extractor_name:
+        return JsonResponse({'error': f'No extractor found for file: {sf.filename}'}, status=400)
+
+    extractor_fn = get_extractor(extractor_name)
+    if not extractor_fn:
+        return JsonResponse({'error': f'Unknown extractor: {extractor_name}'}, status=400)
+
+    # Decompress file data from DB and write to temp file for extraction
+    try:
+        file_bytes = gzip.decompress(sf.file_data)
+    except Exception:
+        # If not gzip compressed, use as-is
+        file_bytes = sf.file_data
+
+    # Get file extension for temp file
+    ext = os.path.splitext(sf.filename)[1]
+
+    try:
+        # Create temp file with proper extension (extractors may rely on it)
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(file_bytes)
+            tmp_path = tmp.name
+
+        try:
+            # Run extraction
+            csv_content = extractor_fn(tmp_path, password=password)
+        finally:
+            # Clean up temp file
+            os.unlink(tmp_path)
+
+        if not csv_content or not csv_content.strip():
+            return JsonResponse({'error': 'Extraction produced no data'}, status=400)
+
+        # Count rows (excluding header)
+        lines = csv_content.strip().split('\n')
+        row_count = len(lines) - 1 if len(lines) > 1 else 0
+
+        # Compute hash of CSV content
+        csv_hash = hashlib.sha256(csv_content.encode('utf-8')).hexdigest()
+
+        # Compress CSV data
+        csv_data = gzip.compress(csv_content.encode('utf-8'))
+
+        # Create ExtractedCSV record with 'transformed' status
+        # (legacy extractors produce ingestable CSV directly)
+        extracted_csv = ExtractedCSV.objects.create(
+            source_file=sf,
+            pipeline=sf.pipeline,
+            bank_account=sf.bank_account,
+            csv_data=csv_data,  # Keep for backward compatibility
+            csv_hash=csv_hash,
+            row_count=row_count,
+            status='transformed',  # Mark as transformed since legacy extractors produce ingestable CSV
+        )
+
+        # Create artifact for the ingestable CSV
+        BankExtractionArtifact.objects.create(
+            extraction=extracted_csv,
+            artifact_type='ingestable_transactions',
+            content_type='csv',
+            data=csv_data,
+            data_hash=csv_hash,
+            row_count=row_count,
+            bank_account=sf.bank_account,
+        )
+
+        return JsonResponse({
+            'success': True,
+            'extraction': {
+                'id': extracted_csv.id,
+                'name': extracted_csv.name,
+                'row_count': row_count,
+                'status': extracted_csv.status,
+                'extracted_at': extracted_csv.extracted_at.isoformat(),
+            }
+        })
+
+    except Exception as e:
+        error_msg = str(e)
+        # Check for password-related errors
+        if 'password' in error_msg.lower() or 'decrypt' in error_msg.lower() or 'encrypted' in error_msg.lower():
+            return JsonResponse({
+                'success': False,
+                'error': 'Password required or incorrect password',
+                'needs_password': True,
+            }, status=400)
+        return JsonResponse({'success': False, 'error': error_msg}, status=400)
+
+
+@extend_schema(
+    summary="List bank extraction artifacts",
+    description="Get all artifacts for a specific bank extraction.",
+    responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Bank Extractions'],
+)
+@api_view(['GET'])
+def bank_extraction_artifacts(request, extraction_id):
+    """List artifacts for a bank extraction."""
+    try:
+        extraction = ExtractedCSV.objects.prefetch_related('artifacts').get(id=extraction_id)
+    except ExtractedCSV.DoesNotExist:
+        return JsonResponse({'error': 'Extraction not found'}, status=404)
+
+    artifacts = []
+    for artifact in extraction.artifacts.all():
+        artifacts.append({
+            'artifact_id': artifact.artifact_id,
+            'artifact_type': artifact.artifact_type,
+            'content_type': artifact.content_type,
+            'row_count': artifact.row_count,
+            'data_hash': artifact.data_hash,
+            'bank_account': {
+                'id': artifact.bank_account.id,
+                'nickname': artifact.bank_account.nickname,
+            } if artifact.bank_account else None,
+            'created_at': artifact.created_at.isoformat(),
+        })
+
+    return JsonResponse({
+        'extraction_id': extraction.id,
+        'extraction_name': extraction.name,
+        'artifacts': artifacts,
+    })
+
+
+@extend_schema(
+    summary="Toggle bank extraction hidden",
+    description="Toggle the hidden status of a bank extraction.",
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Bank Extractions'],
+)
+@api_view(['POST'])
+def bank_extraction_toggle_hidden(request):
+    """Toggle hidden status for a bank extraction."""
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    extraction_id = data.get('extraction_id')
+    hidden = data.get('hidden')
+
+    if extraction_id is None:
+        return JsonResponse({'error': 'extraction_id is required'}, status=400)
+
+    if hidden is None:
+        return JsonResponse({'error': 'hidden is required'}, status=400)
+
+    try:
+        extraction = ExtractedCSV.objects.get(id=extraction_id)
+        extraction.hidden = hidden
+        extraction.save(update_fields=['hidden'])
+        # Update CC payment matches: soft delete when hiding, restore when unhiding
+        update_cc_payment_matches_for_extraction(extraction, is_active=not extraction.hidden)
+        # Invalidate caches since transactions are now included/excluded
+        invalidate_all_inconsistencies()
+
+        return JsonResponse({
+            'success': True,
+            'id': extraction_id,
+            'hidden': extraction.hidden,
+        })
+    except ExtractedCSV.DoesNotExist:
+        return JsonResponse({'error': 'Extraction not found'}, status=404)
+
+
+@extend_schema(
+    summary="Delete bank extraction",
+    description="Permanently delete a bank extraction and all its artifacts. Transactions remain but lose their link.",
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Bank Extractions'],
+)
+@api_view(['POST'])
+def bank_extraction_delete(request):
+    """Permanently delete a bank extraction and all its artifacts."""
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    extraction_id = data.get('extraction_id')
+    if extraction_id is None:
+        return JsonResponse({'error': 'extraction_id is required'}, status=400)
+
+    try:
+        extraction = ExtractedCSV.objects.get(id=extraction_id)
+    except ExtractedCSV.DoesNotExist:
+        return JsonResponse({'error': 'Extraction not found'}, status=404)
+
+    # Count affected transactions before deletion
+    transactions_affected = Transaction.objects.filter(extracted_csv=extraction).count()
+
+    # Delete the extraction (CASCADE will delete artifacts, SET_NULL on transactions)
+    extraction.delete()
+
+    return JsonResponse({
+        'success': True,
+        'id': extraction_id,
+        'transactions_affected': transactions_affected,
+    })
