@@ -47,8 +47,10 @@ def get_extracted_csvs_with_stats():
 
     csvs = []
     # Query ExtractedCSVs with status in extracted, transformed, loading, loaded, error
+    # Exclude hidden extractions from data sources
     for csv in ExtractedCSV.objects.filter(
-        status__in=['extracted', 'transformed', 'loading', 'loaded', 'error']
+        status__in=['extracted', 'transformed', 'loading', 'loaded', 'error'],
+        hidden=False
     ).select_related('source_file', 'bank_account').prefetch_related('artifacts').order_by('-extracted_at'):
         # Serialize artifacts
         artifacts = []
@@ -651,6 +653,54 @@ def bank_source_files_list(request):
     files.sort(key=lambda f: (f['extractions_count'] > 0, f['filename']))
 
     return JsonResponse({'data': files})
+
+
+@extend_schema(
+    summary="Sync bank source files from disk",
+    description="Scan bank_accs/data/ directory and sync files to database with file_data blobs.",
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Bank Extractions'],
+)
+@api_view(['POST'])
+def bank_source_files_sync(request):
+    """Sync source files from bank_accs/data/ directory to database."""
+    import gzip
+    import mimetypes
+    from pathlib import Path
+    from django.conf import settings
+
+    data_dir = Path(settings.BASE_DIR) / 'bank_accs' / 'data'
+    if not data_dir.exists():
+        return JsonResponse({'error': 'Data directory not found', 'synced': 0, 'skipped': 0})
+
+    synced = 0
+    skipped = 0
+
+    for f in data_dir.iterdir():
+        ext = f.suffix.lower()
+        if ext not in SUPPORTED_EXTENSIONS:
+            continue
+
+        # Get or create source file record
+        source_file, created = SourceFile.objects.get_or_create(filename=f.name)
+
+        # Skip if already has file_data
+        if source_file.file_data and not created:
+            skipped += 1
+            continue
+
+        # Read and compress file data
+        with open(f, 'rb') as file:
+            file_data = file.read()
+
+        source_file.file_data = gzip.compress(file_data)
+        source_file.file_size = len(file_data)
+        mime_type, _ = mimetypes.guess_type(str(f))
+        source_file.mime_type = mime_type or 'application/octet-stream'
+        source_file.save()
+        synced += 1
+
+    return JsonResponse({'synced': synced, 'skipped': skipped})
 
 
 @extend_schema(

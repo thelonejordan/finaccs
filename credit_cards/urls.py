@@ -34,6 +34,7 @@ urlpatterns = [
     path('api/cc-pdf-extractions/delete/', views.pdf_extraction_delete, name='pdf_extraction_delete'),
     path('api/cc-pdf-extractions/delete-all/', views.pdf_extraction_delete_all, name='pdf_extraction_delete_all'),
     path('api/cc-source-files/', views.pdf_source_files_list, name='pdf_source_files_list'),
+    path('api/cc-source-files/sync/', views.cc_source_files_sync, name='cc_source_files_sync'),
     path('api/cc-source-files/<int:source_file_id>/', views.pdf_source_file_delete, name='pdf_source_file_delete'),
     path('api/cc-source-files/<int:source_file_id>/extract/', views.pdf_extraction_extract, name='pdf_extraction_extract'),
     path('api/cc-source-files/<int:source_file_id>/password/', views.pdf_source_file_password, name='pdf_source_file_password'),

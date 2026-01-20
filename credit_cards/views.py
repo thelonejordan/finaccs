@@ -1889,6 +1889,55 @@ def pdf_source_files_list(request):
 
 
 @extend_schema(
+    summary="Sync credit card source files from disk",
+    description="Scan credit_cards/data/ directory and sync files to database with file_data blobs.",
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Credit Card PDF Extractions'],
+)
+@api_view(['POST'])
+def cc_source_files_sync(request):
+    """Sync source files from credit_cards/data/ directory to database."""
+    import gzip
+    import mimetypes
+    from pathlib import Path
+    from django.conf import settings
+
+    data_dir = Path(settings.BASE_DIR) / 'credit_cards' / 'data'
+    if not data_dir.exists():
+        return JsonResponse({'error': 'Data directory not found', 'synced': 0, 'skipped': 0})
+
+    supported_extensions = ['.pdf', '.csv']
+    synced = 0
+    skipped = 0
+
+    for f in data_dir.iterdir():
+        ext = f.suffix.lower()
+        if ext not in supported_extensions:
+            continue
+
+        # Get or create source file record
+        source_file, created = CreditCardSourceFile.objects.get_or_create(filename=f.name)
+
+        # Skip if already has file_data
+        if source_file.file_data and not created:
+            skipped += 1
+            continue
+
+        # Read and compress file data
+        with open(f, 'rb') as file:
+            file_data = file.read()
+
+        source_file.file_data = gzip.compress(file_data)
+        source_file.file_size = len(file_data)
+        mime_type, _ = mimetypes.guess_type(str(f))
+        source_file.mime_type = mime_type or 'application/octet-stream'
+        source_file.save()
+        synced += 1
+
+    return JsonResponse({'synced': synced, 'skipped': skipped})
+
+
+@extend_schema(
     summary="Update PDF password",
     description="Update or clear the saved password for a PDF source file.",
     request=OpenApiTypes.OBJECT,

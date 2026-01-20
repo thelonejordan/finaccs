@@ -10,6 +10,7 @@ urlpatterns = [
     path('api/extracted-csvs/load/', views.load_extracted_csvs, name='load_extracted_csvs'),
     # Bank Extractions
     path('api/bank-source-files/', views.bank_source_files_list, name='bank_source_files_list'),
+    path('api/bank-source-files/sync/', views.bank_source_files_sync, name='bank_source_files_sync'),
     path('api/bank-source-files/<int:source_file_id>/extract/', views.bank_source_file_extract, name='bank_source_file_extract'),
     path('api/bank-extracted-csvs/<int:csv_id>/content/', views.extracted_csv_content, name='extracted_csv_content'),
     path('api/bank-extracted-csvs/<int:csv_id>/preview/', views.extracted_csv_preview, name='extracted_csv_preview'),

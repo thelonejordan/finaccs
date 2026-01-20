@@ -31,8 +31,3 @@ dev = [
     "django-extensions>=4.1",
     "drf-spectacular>=0.28.0",
 ]
-
-[dependency-groups]
-dev = [
-    "python-dotenv[cli]>=1.2.1",
-]

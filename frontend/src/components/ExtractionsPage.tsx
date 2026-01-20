@@ -41,6 +41,7 @@ import {
   deleteAllPDFExtractions,
   fetchCSVSourceFiles,
   triggerCSVExtraction,
+  syncCCSourceFiles,
   type PDFSourceFile,
   type CreditCardPDFExtraction,
   type CSVSourceFile,
@@ -1233,6 +1234,7 @@ export function ExtractionsPage() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
+    await syncCCSourceFiles()
     await loadData()
     setIsRefreshing(false)
   }

@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8000"
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000"
 
 export interface AccountSummary {
   id: number
@@ -1506,6 +1506,20 @@ export async function deleteBankExtraction(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ extraction_id: extractionId }),
+  })
+  return res.json()
+}
+
+export async function syncBankSourceFiles(): Promise<{ synced: number; skipped: number; error?: string }> {
+  const res = await fetch(`${API_BASE}/api/bank-source-files/sync/`, {
+    method: 'POST',
+  })
+  return res.json()
+}
+
+export async function syncCCSourceFiles(): Promise<{ synced: number; skipped: number; error?: string }> {
+  const res = await fetch(`${API_BASE}/api/cc-source-files/sync/`, {
+    method: 'POST',
   })
   return res.json()
 }

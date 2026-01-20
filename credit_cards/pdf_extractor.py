@@ -175,12 +175,14 @@ def extract_transactions_from_text(text):
 
     # Pattern for international transactions (has currency code and two amounts)
     # Date, SerialNo, Description, RewardPoints (can be negative), IntlAmount, Currency, INRAmount, optional CR
-    intl_pattern = r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+(.+?)\s+(-?\d+)\s+([\d,]+\.?\d*)\s+([A-Z]{3})\s+([\d,]+\.?\d*)\s*(CR)?'
+    # Note: Amounts must have decimal point with 2 digits to avoid matching auth codes like 4029357733
+    intl_pattern = r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+(.+?)\s+(-?\d+)\s+([\d,]+\.\d{2})\s+([A-Z]{3})\s+([\d,]+\.\d{2})\s*(CR)?'
 
     # Pattern for domestic transactions (single amount)
     # Date, SerialNo, Description, optional RewardPoints (can be negative), Amount, optional CR
     # RewardPoints is optional to support PDFs that don't have this column (e.g., Amazon Pay ICICI)
-    domestic_pattern = r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+(.+?)\s+(?:(-?\d+)\s+)?([\d,]+\.?\d*)\s*(CR)?'
+    # Note: Amount must have decimal point with 2 digits to avoid matching auth codes
+    domestic_pattern = r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+(.+?)\s+(?:(-?\d+)\s+)?([\d,]+\.\d{2})\s*(CR)?'
 
     # Track which positions we've already matched to avoid duplicates
     matched_positions = set()

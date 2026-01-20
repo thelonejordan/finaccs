@@ -32,6 +32,7 @@ import {
   getBankExtractedCSVUrl,
   toggleBankExtractionHidden,
   deleteBankExtraction,
+  syncBankSourceFiles,
   type BankSourceFile,
   type ExtractedCSV,
 } from "@/lib/api"
@@ -619,8 +620,8 @@ function CSVPreviewSection({
       try {
         // Pass artifact_id to the API if we have one selected
         const url = activeArtifact
-          ? `http://localhost:8000/api/bank-extracted-csvs/${extractionId}/preview/?artifact_id=${activeArtifact}`
-          : `http://localhost:8000/api/bank-extracted-csvs/${extractionId}/preview/`
+          ? `${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/bank-extracted-csvs/${extractionId}/preview/?artifact_id=${activeArtifact}`
+          : `${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/bank-extracted-csvs/${extractionId}/preview/`
         const res = await fetch(url)
         const data = await res.json()
         setPreviewData(data)
@@ -848,6 +849,7 @@ export function BankExtractionsPage() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
+    await syncBankSourceFiles()
     await loadData()
     setIsRefreshing(false)
   }

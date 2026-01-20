@@ -513,18 +513,259 @@ function CreditCardDataSources({
     }
   })
 
-  // Sort PDF extractions: "Ready to Load" (transformed) first, then by date
-  const sortedPdfExtractions = [...pdfExtractions].sort((a, b) => {
-    const aReady = a.status === 'transformed'
-    const bReady = b.status === 'transformed'
-    if (aReady && !bReady) return -1
-    if (!aReady && bReady) return 1
-    // Secondary sort by statement date (most recent first)
+  // Separate PDF extractions by status
+  const readyToLoadExtractions = pdfExtractions.filter((ext) => !ext.loaded)
+  const loadedExtractions = pdfExtractions.filter((ext) => ext.loaded)
+
+  // Sort each group by statement date (most recent first)
+  const sortByDate = (a: PDFExtractionDataSource, b: PDFExtractionDataSource) => {
     if (a.statement_date && b.statement_date) {
       return new Date(b.statement_date).getTime() - new Date(a.statement_date).getTime()
     }
     return 0
-  })
+  }
+  readyToLoadExtractions.sort(sortByDate)
+  loadedExtractions.sort(sortByDate)
+
+  // Helper to render extraction card
+  const renderExtractionCard = (ext: PDFExtractionDataSource, isLoading: boolean, isSelected: boolean) => (
+    <div
+      key={`artifact-${ext.artifact_id}`}
+      className={`rounded-lg border transition-all hover:shadow-md ${isSelected ? 'border-primary bg-primary/5' : 'border-border'}`}
+    >
+      <div
+        className="p-4 cursor-pointer"
+        onClick={() => ext.artifact_id && onSelectArtifact(ext.artifact_id)}
+      >
+        <div className="flex items-start gap-3">
+          <div className="p-2.5 rounded-xl bg-muted">
+            <FileTextIcon className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-mono text-sm truncate font-medium" title={ext.name}>{ext.name}</p>
+                <p className="text-xs text-muted-foreground truncate">{ext.source_file}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {getExtractionStatusBadge(ext)}
+              </div>
+            </div>
+
+            {/* Date range and row count */}
+            <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+              {ext.statement_period_begin && ext.statement_period_end && (
+                <span className="flex items-center gap-1">
+                  <CalendarIcon className="h-3 w-3" />
+                  {formatDate(ext.statement_period_begin)} — {formatDate(ext.statement_period_end)}
+                </span>
+              )}
+              {!ext.statement_period_begin && ext.statement_date && (
+                <span className="flex items-center gap-1">
+                  <CalendarIcon className="h-3 w-3" />
+                  Statement: {formatDate(ext.statement_date)}
+                </span>
+              )}
+              <span className="flex items-center gap-1">
+                <HashIcon className="h-3 w-3" />
+                {ext.row_count} transactions
+              </span>
+            </div>
+
+            {/* Credit card and actions */}
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              {ext.credit_card ? (
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger asChild>
+                    <button className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 hover:bg-blue-500/25 text-blue-600 dark:text-blue-400 transition-colors cursor-pointer">
+                      <CreditCardIcon className="h-3.5 w-3.5" />
+                      <span className="font-medium text-sm">{ext.credit_card.nickname}</span>
+                      <ChevronDownIcon className="h-3 w-3 opacity-60" />
+                    </button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content
+                      className="w-64 bg-card rounded-lg shadow-lg border border-border z-50 p-2 animate-in fade-in-0 zoom-in-95"
+                      sideOffset={4}
+                      align="start"
+                    >
+                      {cards.filter((c) => c.id !== ext.credit_card?.id).length > 0 && (
+                        <>
+                          <DropdownMenu.Label className="text-xs font-medium text-muted-foreground px-2 py-1">
+                            Change to different card
+                          </DropdownMenu.Label>
+                          {cards.filter((c) => c.id !== ext.credit_card?.id).map((c) => (
+                            <DropdownMenu.Item
+                              key={c.id}
+                              disabled={isLinking}
+                              onSelect={() => handleUpdateArtifactCard(ext.artifact_id, c.id)}
+                              className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none disabled:opacity-50"
+                            >
+                              <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium truncate">{c.nickname}</p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {c.issuer} {c.card_number_mask && `• ${c.card_number_mask.slice(-8)}`}
+                                </p>
+                              </div>
+                            </DropdownMenu.Item>
+                          ))}
+                          <DropdownMenu.Separator className="h-px bg-border my-1" />
+                        </>
+                      )}
+                      <DropdownMenu.Item
+                        disabled={isLinking}
+                        onSelect={() => handleUpdateArtifactCard(ext.artifact_id, null)}
+                        className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-red-500/10 text-red-600 dark:text-red-400 transition-colors cursor-pointer outline-none disabled:opacity-50"
+                      >
+                        <Link2OffIcon className="h-4 w-4" />
+                        Unlink from card
+                      </DropdownMenu.Item>
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Root>
+              ) : (
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger asChild>
+                    <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium">
+                      <LinkIcon className="h-3.5 w-3.5" />
+                      Link Card
+                      <ChevronDownIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content
+                      className="w-64 bg-card rounded-lg shadow-lg border border-border z-50 p-2 animate-in fade-in-0 zoom-in-95"
+                      sideOffset={4}
+                      align="start"
+                    >
+                      {cards.length > 0 ? (
+                        <>
+                          <DropdownMenu.Label className="text-xs font-medium text-muted-foreground px-2 py-1">
+                            Link to existing card
+                          </DropdownMenu.Label>
+                          {cards.map((c) => (
+                            <DropdownMenu.Item
+                              key={c.id}
+                              disabled={isLinking}
+                              onSelect={() => handleUpdateArtifactCard(ext.artifact_id, c.id)}
+                              className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none disabled:opacity-50"
+                            >
+                              <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium truncate">{c.nickname}</p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {c.issuer} {c.card_number_mask && `• ${c.card_number_mask.slice(-8)}`}
+                                </p>
+                              </div>
+                            </DropdownMenu.Item>
+                          ))}
+                        </>
+                      ) : (
+                        <div className="px-2 py-3 text-sm text-muted-foreground text-center">
+                          No cards available. Create a card first.
+                        </div>
+                      )}
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Root>
+              )}
+
+              <div className="ml-auto flex items-center gap-1">
+                {!ext.loaded && (
+                  <Tooltip.Provider>
+                    <Tooltip.Root>
+                      <Tooltip.Trigger asChild>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleLoadArtifact(ext.artifact_id) }}
+                          disabled={isLoading}
+                          className="p-1.5 rounded-lg hover:bg-green-500/20 text-muted-foreground hover:text-green-600 dark:hover:text-green-400 transition-colors disabled:opacity-50"
+                        >
+                          {isLoading ? (
+                            <LoaderIcon className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <UploadIcon className="h-4 w-4" />
+                          )}
+                        </button>
+                      </Tooltip.Trigger>
+                      <Tooltip.Portal>
+                        <Tooltip.Content
+                          className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
+                          sideOffset={4}
+                        >
+                          Load transactions to database
+                          <Tooltip.Arrow className="fill-card" />
+                        </Tooltip.Content>
+                      </Tooltip.Portal>
+                    </Tooltip.Root>
+                  </Tooltip.Provider>
+                )}
+                {ext.loaded && (
+                  <Tooltip.Provider>
+                    <Tooltip.Root>
+                      <Tooltip.Trigger asChild>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleUnloadArtifact(ext.artifact_id) }}
+                          disabled={isLoading}
+                          className="p-1.5 rounded-lg hover:bg-amber-500/20 text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 transition-colors disabled:opacity-50"
+                        >
+                          {isLoading ? (
+                            <LoaderIcon className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <XIcon className="h-4 w-4" />
+                          )}
+                        </button>
+                      </Tooltip.Trigger>
+                      <Tooltip.Portal>
+                        <Tooltip.Content
+                          className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
+                          sideOffset={4}
+                        >
+                          Unload transactions from database
+                          <Tooltip.Arrow className="fill-card" />
+                        </Tooltip.Content>
+                      </Tooltip.Portal>
+                    </Tooltip.Root>
+                  </Tooltip.Provider>
+                )}
+                {/* Delete artifact button */}
+                <Tooltip.Provider>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDeleteArtifactId(ext.artifact_id) }}
+                        disabled={isLoading || deletingArtifactId === ext.artifact_id}
+                        className="p-1.5 rounded-lg hover:bg-red-500/20 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-50"
+                      >
+                        {deletingArtifactId === ext.artifact_id ? (
+                          <LoaderIcon className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2Icon className="h-4 w-4" />
+                        )}
+                      </button>
+                    </Tooltip.Trigger>
+                    <Tooltip.Portal>
+                      <Tooltip.Content
+                        className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
+                        sideOffset={4}
+                      >
+                        Delete data source
+                        <Tooltip.Arrow className="fill-card" />
+                      </Tooltip.Content>
+                    </Tooltip.Portal>
+                  </Tooltip.Root>
+                </Tooltip.Provider>
+                {/* Selection indicator */}
+                {ext.artifact_id && (
+                  <ChevronRightIcon className={`h-4 w-4 text-muted-foreground transition-transform ${isSelected ? 'rotate-90' : ''}`} />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 
   // Kept for potential future use with legacy source file linking
   const _handleLinkToCard = async (filename: string, cardId: number) => {
@@ -700,251 +941,32 @@ function CreditCardDataSources({
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {/* PDF Extractions */}
-              {sortedPdfExtractions.map((ext) => {
-                const isLoading = loadingArtifactIds.has(ext.artifact_id)
-                const isSelected = selectedArtifactId === ext.artifact_id
-                return (
-                  <div
-                    key={`artifact-${ext.artifact_id}`}
-                    className={`rounded-lg border transition-all hover:shadow-md ${isSelected ? 'border-primary bg-primary/5' : 'border-border'}`}
-                  >
-                    <div
-                      className="p-4 cursor-pointer"
-                      onClick={() => ext.artifact_id && onSelectArtifact(ext.artifact_id)}
-                    >
-                    <div className="flex items-start gap-3">
-                      <div className="p-2.5 rounded-xl bg-muted">
-                        <FileTextIcon className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="font-mono text-sm truncate font-medium" title={ext.name}>{ext.name}</p>
-                            <p className="text-xs text-muted-foreground truncate">{ext.source_file}</p>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            {getExtractionStatusBadge(ext)}
-                          </div>
-                        </div>
+            <div className="space-y-4">
+              {/* Ready to Load Section */}
+              {readyToLoadExtractions.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-xs font-medium text-purple-600 dark:text-purple-400 uppercase tracking-wider">Ready to Load</p>
+                  {readyToLoadExtractions.map((ext) => {
+                    const isLoading = loadingArtifactIds.has(ext.artifact_id)
+                    const isSelected = selectedArtifactId === ext.artifact_id
+                    return renderExtractionCard(ext, isLoading, isSelected)
+                  })}
+                </div>
+              )}
 
-                        {/* Date range and row count */}
-                        <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                          {ext.statement_period_begin && ext.statement_period_end && (
-                            <span className="flex items-center gap-1">
-                              <CalendarIcon className="h-3 w-3" />
-                              {formatDate(ext.statement_period_begin)} — {formatDate(ext.statement_period_end)}
-                            </span>
-                          )}
-                          {!ext.statement_period_begin && ext.statement_date && (
-                            <span className="flex items-center gap-1">
-                              <CalendarIcon className="h-3 w-3" />
-                              Statement: {formatDate(ext.statement_date)}
-                            </span>
-                          )}
-                          <span className="flex items-center gap-1">
-                            <HashIcon className="h-3 w-3" />
-                            {ext.row_count} transactions
-                          </span>
-                        </div>
-
-                        {/* Credit card and actions */}
-                        <div className="mt-2 flex items-center gap-2 flex-wrap">
-                          {ext.credit_card ? (
-                            <DropdownMenu.Root>
-                              <DropdownMenu.Trigger asChild>
-                                <button className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 hover:bg-blue-500/25 text-blue-600 dark:text-blue-400 transition-colors cursor-pointer">
-                                  <CreditCardIcon className="h-3.5 w-3.5" />
-                                  <span className="font-medium text-sm">{ext.credit_card.nickname}</span>
-                                  <ChevronDownIcon className="h-3 w-3 opacity-60" />
-                                </button>
-                              </DropdownMenu.Trigger>
-                              <DropdownMenu.Portal>
-                                <DropdownMenu.Content
-                                  className="w-64 bg-card rounded-lg shadow-lg border border-border z-50 p-2 animate-in fade-in-0 zoom-in-95"
-                                  sideOffset={4}
-                                  align="start"
-                                >
-                                  {cards.filter((c) => c.id !== ext.credit_card?.id).length > 0 && (
-                                    <>
-                                      <DropdownMenu.Label className="text-xs font-medium text-muted-foreground px-2 py-1">
-                                        Change to different card
-                                      </DropdownMenu.Label>
-                                      {cards.filter((c) => c.id !== ext.credit_card?.id).map((c) => (
-                                        <DropdownMenu.Item
-                                          key={c.id}
-                                          disabled={isLinking}
-                                          onSelect={() => handleUpdateArtifactCard(ext.artifact_id, c.id)}
-                                          className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none disabled:opacity-50"
-                                        >
-                                          <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
-                                          <div className="flex-1 min-w-0">
-                                            <p className="font-medium truncate">{c.nickname}</p>
-                                            <p className="text-xs text-muted-foreground truncate">
-                                              {c.issuer} {c.card_number_mask && `• ${c.card_number_mask.slice(-8)}`}
-                                            </p>
-                                          </div>
-                                        </DropdownMenu.Item>
-                                      ))}
-                                      <DropdownMenu.Separator className="h-px bg-border my-1" />
-                                    </>
-                                  )}
-                                  <DropdownMenu.Item
-                                    disabled={isLinking}
-                                    onSelect={() => handleUpdateArtifactCard(ext.artifact_id, null)}
-                                    className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-red-500/10 text-red-600 dark:text-red-400 transition-colors cursor-pointer outline-none disabled:opacity-50"
-                                  >
-                                    <Link2OffIcon className="h-4 w-4" />
-                                    Unlink from card
-                                  </DropdownMenu.Item>
-                                </DropdownMenu.Content>
-                              </DropdownMenu.Portal>
-                            </DropdownMenu.Root>
-                          ) : (
-                            <DropdownMenu.Root>
-                              <DropdownMenu.Trigger asChild>
-                                <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium">
-                                  <LinkIcon className="h-3.5 w-3.5" />
-                                  Link Card
-                                  <ChevronDownIcon className="h-3.5 w-3.5" />
-                                </button>
-                              </DropdownMenu.Trigger>
-                              <DropdownMenu.Portal>
-                                <DropdownMenu.Content
-                                  className="w-64 bg-card rounded-lg shadow-lg border border-border z-50 p-2 animate-in fade-in-0 zoom-in-95"
-                                  sideOffset={4}
-                                  align="start"
-                                >
-                                  {cards.length > 0 ? (
-                                    <>
-                                      <DropdownMenu.Label className="text-xs font-medium text-muted-foreground px-2 py-1">
-                                        Link to existing card
-                                      </DropdownMenu.Label>
-                                      {cards.map((c) => (
-                                        <DropdownMenu.Item
-                                          key={c.id}
-                                          disabled={isLinking}
-                                          onSelect={() => handleUpdateArtifactCard(ext.artifact_id, c.id)}
-                                          className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none disabled:opacity-50"
-                                        >
-                                          <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
-                                          <div className="flex-1 min-w-0">
-                                            <p className="font-medium truncate">{c.nickname}</p>
-                                            <p className="text-xs text-muted-foreground truncate">
-                                              {c.issuer} {c.card_number_mask && `• ${c.card_number_mask.slice(-8)}`}
-                                            </p>
-                                          </div>
-                                        </DropdownMenu.Item>
-                                      ))}
-                                    </>
-                                  ) : (
-                                    <div className="px-2 py-3 text-sm text-muted-foreground text-center">
-                                      No cards available. Create a card first.
-                                    </div>
-                                  )}
-                                </DropdownMenu.Content>
-                              </DropdownMenu.Portal>
-                            </DropdownMenu.Root>
-                          )}
-
-                          <div className="ml-auto flex items-center gap-1">
-                            {!ext.loaded && (
-                              <Tooltip.Provider>
-                                <Tooltip.Root>
-                                  <Tooltip.Trigger asChild>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); handleLoadArtifact(ext.artifact_id) }}
-                                      disabled={isLoading}
-                                      className="p-1.5 rounded-lg hover:bg-green-500/20 text-muted-foreground hover:text-green-600 dark:hover:text-green-400 transition-colors disabled:opacity-50"
-                                    >
-                                      {isLoading ? (
-                                        <LoaderIcon className="h-4 w-4 animate-spin" />
-                                      ) : (
-                                        <UploadIcon className="h-4 w-4" />
-                                      )}
-                                    </button>
-                                  </Tooltip.Trigger>
-                                  <Tooltip.Portal>
-                                    <Tooltip.Content
-                                      className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
-                                      sideOffset={4}
-                                    >
-                                      Load transactions to database
-                                      <Tooltip.Arrow className="fill-card" />
-                                    </Tooltip.Content>
-                                  </Tooltip.Portal>
-                                </Tooltip.Root>
-                              </Tooltip.Provider>
-                            )}
-                            {ext.loaded && (
-                              <Tooltip.Provider>
-                                <Tooltip.Root>
-                                  <Tooltip.Trigger asChild>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); handleUnloadArtifact(ext.artifact_id) }}
-                                      disabled={isLoading}
-                                      className="p-1.5 rounded-lg hover:bg-amber-500/20 text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 transition-colors disabled:opacity-50"
-                                    >
-                                      {isLoading ? (
-                                        <LoaderIcon className="h-4 w-4 animate-spin" />
-                                      ) : (
-                                        <XIcon className="h-4 w-4" />
-                                      )}
-                                    </button>
-                                  </Tooltip.Trigger>
-                                  <Tooltip.Portal>
-                                    <Tooltip.Content
-                                      className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
-                                      sideOffset={4}
-                                    >
-                                      Unload transactions from database
-                                      <Tooltip.Arrow className="fill-card" />
-                                    </Tooltip.Content>
-                                  </Tooltip.Portal>
-                                </Tooltip.Root>
-                              </Tooltip.Provider>
-                            )}
-                            {/* Delete artifact button */}
-                            <Tooltip.Provider>
-                              <Tooltip.Root>
-                                <Tooltip.Trigger asChild>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); setDeleteArtifactId(ext.artifact_id) }}
-                                    disabled={isLoading || deletingArtifactId === ext.artifact_id}
-                                    className="p-1.5 rounded-lg hover:bg-red-500/20 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-50"
-                                  >
-                                    {deletingArtifactId === ext.artifact_id ? (
-                                      <LoaderIcon className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <Trash2Icon className="h-4 w-4" />
-                                    )}
-                                  </button>
-                                </Tooltip.Trigger>
-                                <Tooltip.Portal>
-                                  <Tooltip.Content
-                                    className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
-                                    sideOffset={4}
-                                  >
-                                    Delete data source
-                                    <Tooltip.Arrow className="fill-card" />
-                                  </Tooltip.Content>
-                                </Tooltip.Portal>
-                              </Tooltip.Root>
-                            </Tooltip.Provider>
-                            {/* Selection indicator */}
-                            {ext.artifact_id && (
-                              <ChevronRightIcon className={`h-4 w-4 text-muted-foreground transition-transform ${isSelected ? 'rotate-90' : ''}`} />
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    </div>
-                  </div>
-                )
-              })}
-
+              {/* Loaded Section */}
+              {loadedExtractions.length > 0 && (
+                <div className="space-y-3">
+                  {readyToLoadExtractions.length > 0 && (
+                    <p className="text-xs font-medium text-green-600 dark:text-green-400 uppercase tracking-wider">Loaded</p>
+                  )}
+                  {loadedExtractions.map((ext) => {
+                    const isLoading = loadingArtifactIds.has(ext.artifact_id)
+                    const isSelected = selectedArtifactId === ext.artifact_id
+                    return renderExtractionCard(ext, isLoading, isSelected)
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
