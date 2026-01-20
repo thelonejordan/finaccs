@@ -898,7 +898,9 @@ function ConfirmedTab() {
   useEffect(() => {
     async function loadMatches() {
       if (!selectedYear) {
-        // Don't load until a year is selected
+        // No year selected (likely no matches exist) - stop loading
+        setLoading(false)
+        setMatches([])
         return
       }
       setLoading(true)

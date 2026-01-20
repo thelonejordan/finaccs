@@ -13,7 +13,7 @@ from decimal import Decimal
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from bank_accs.models import SourceFile, ExtractedCSV
+from bank_accs.models import SourceFile, ExtractedCSV, BankExtractionArtifact
 from dashboard.models import Transaction, FileLoadLog
 
 
@@ -91,12 +91,39 @@ class Command(BaseCommand):
             action='store_true',
             help='Force reload even if CSV is already loaded',
         )
+        parser.add_argument(
+            '--sync-accounts',
+            action='store_true',
+            help='Sync transaction bank_account_id from source_artifact.bank_account_id',
+        )
+        parser.add_argument(
+            '--backfill-artifacts',
+            action='store_true',
+            help='Link existing transactions to their source artifacts',
+        )
+        parser.add_argument(
+            '--fix-orphaned-matches',
+            action='store_true',
+            help='Fix CreditCardPaymentMatch records pointing to orphaned transactions',
+        )
 
     def handle(self, *args, **options):
         filename = options.get('file')
         csv_id = options.get('csv_id')
         load_all = options.get('all')
         self.force = options.get('force', False)
+
+        if options.get('fix_orphaned_matches'):
+            self.fix_orphaned_matches()
+            return
+
+        if options.get('backfill_artifacts'):
+            self.backfill_artifacts()
+            return
+
+        if options.get('sync_accounts'):
+            self.sync_bank_accounts()
+            return
 
         if options['clear']:
             deleted_count, _ = Transaction.objects.all().delete()
@@ -174,7 +201,17 @@ class Command(BaseCommand):
             int: Number of transactions loaded, -1 if skipped
         """
         source_file = extracted_csv.source_file
-        bank_account = source_file.bank_account
+
+        # Find the ingestable artifact for this extraction
+        ingestable_artifact = extracted_csv.artifacts.filter(
+            artifact_type='ingestable_transactions'
+        ).first()
+
+        # Get bank_account from artifact (preferred) or fall back to extracted_csv
+        if ingestable_artifact and ingestable_artifact.bank_account:
+            bank_account = ingestable_artifact.bank_account
+        else:
+            bank_account = extracted_csv.bank_account
 
         # Check if already loaded
         if not self.force and extracted_csv.status == 'loaded':
@@ -185,7 +222,7 @@ class Command(BaseCommand):
         if bank_account:
             self.stdout.write(f'  Linking to account: {bank_account.nickname}')
         else:
-            self.stdout.write(self.style.WARNING(f'  No bank account linked to {source_file.filename}'))
+            self.stdout.write(self.style.WARNING(f'  No bank account linked to extraction {extracted_csv.name}'))
 
         # Delete existing transactions from this extracted CSV before reloading
         if self.force:
@@ -235,6 +272,7 @@ class Command(BaseCommand):
                     bank_account=bank_account,
                     source_file=source_file,
                     extracted_csv=extracted_csv,
+                    source_artifact=ingestable_artifact,
                     row_number=row_number,
                 )
                 transactions_created += 1
@@ -274,3 +312,68 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(f'  Loaded {transactions_created} transactions'))
         return transactions_created
+
+    def sync_bank_accounts(self):
+        """Sync Transaction.bank_account_id from source_artifact.bank_account_id."""
+        from django.db.models import F
+
+        # Update transactions where bank_account doesn't match source_artifact's bank_account
+        updated = Transaction.objects.filter(
+            source_artifact__bank_account__isnull=False
+        ).exclude(
+            bank_account_id=F('source_artifact__bank_account_id')
+        ).update(
+            bank_account_id=F('source_artifact__bank_account_id')
+        )
+
+        self.stdout.write(self.style.SUCCESS(f'Synced bank_account for {updated} transactions'))
+
+    def backfill_artifacts(self):
+        """Link existing transactions to their source artifacts."""
+        updated = 0
+        for artifact in BankExtractionArtifact.objects.filter(artifact_type='ingestable_transactions'):
+            count = Transaction.objects.filter(
+                extracted_csv=artifact.extraction,
+                source_artifact__isnull=True
+            ).update(source_artifact=artifact)
+            updated += count
+
+        self.stdout.write(self.style.SUCCESS(f'Linked {updated} transactions to artifacts'))
+
+    def fix_orphaned_matches(self):
+        """Fix CreditCardPaymentMatch records pointing to orphaned transactions."""
+        from dashboard.models import CreditCardPaymentMatch
+
+        fixed = 0
+        orphaned_matches = CreditCardPaymentMatch.objects.filter(
+            bank_transaction__extracted_csv__isnull=True
+        )
+        total = orphaned_matches.count()
+        self.stdout.write(f'Found {total} matches pointing to orphaned transactions')
+
+        for match in orphaned_matches:
+            orphan = match.bank_transaction
+            # Find linked duplicate with matching attributes that has extracted_csv
+            linked = Transaction.objects.filter(
+                date=orphan.date,
+                narration=orphan.narration,
+                debit_amount=orphan.debit_amount,
+                credit_amount=orphan.credit_amount,
+                extracted_csv__isnull=False
+            ).first()
+
+            if linked:
+                self.stdout.write(
+                    f'  Updating match {match.id}: txn {orphan.id} -> {linked.id} '
+                    f'({orphan.date} {orphan.narration[:40]}...)'
+                )
+                match.bank_transaction = linked
+                match.save(update_fields=['bank_transaction'])
+                fixed += 1
+            else:
+                self.stdout.write(self.style.WARNING(
+                    f'  No linked duplicate found for match {match.id} '
+                    f'(txn {orphan.id}: {orphan.date} {orphan.narration[:40]}...)'
+                ))
+
+        self.stdout.write(self.style.SUCCESS(f'Fixed {fixed} of {total} orphaned matches'))

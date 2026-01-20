@@ -31,6 +31,13 @@ class Transaction(models.Model):
         blank=True,
         related_name='transactions'
     )
+    source_artifact = models.ForeignKey(
+        'bank_accs.BankExtractionArtifact',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transactions'
+    )
     linked_transaction = models.OneToOneField(
         'self',
         on_delete=models.SET_NULL,

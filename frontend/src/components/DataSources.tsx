@@ -22,7 +22,7 @@ import {
 } from "lucide-react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import * as Tooltip from "@radix-ui/react-tooltip"
-import { updateExtractedCSV, loadExtractedCSVs, type BankAccount, type ExtractedCSV } from "@/lib/api"
+import { updateExtractedCSV, loadExtractedCSVs, type BankAccount, type ExtractedCSV, type AccountStats } from "@/lib/api"
 import { useInconsistencyCache } from "@/lib/inconsistency-cache"
 import { useStoryCache } from "@/lib/story-cache"
 
@@ -39,12 +39,13 @@ interface DataSourcesProps {
   accounts: BankAccount[]
   onCreateAccount: (filename: string) => void
   onCSVUpdated: (csv: ExtractedCSV) => void
+  onAccountStatsUpdated?: (affectedAccounts: Record<number, AccountStats>) => void
   onRefresh?: () => void
   selectedCSVId?: number | null
   onSelectCSV?: (csvId: number | null) => void
 }
 
-export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpdated, onRefresh, selectedCSVId, onSelectCSV }: DataSourcesProps) {
+export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpdated, onAccountStatsUpdated, onRefresh, selectedCSVId, onSelectCSV }: DataSourcesProps) {
   const { invalidate: invalidateInconsistencyCache } = useInconsistencyCache()
   const { invalidate: invalidateStoryCache } = useStoryCache()
   const [isLinking, setIsLinking] = useState(false)
@@ -65,6 +66,9 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
     try {
       const updated = await updateExtractedCSV(csv.id, { disabled: !csv.disabled })
       onCSVUpdated({ ...csv, ...updated })
+      if (updated.affected_accounts && onAccountStatsUpdated) {
+        onAccountStatsUpdated(updated.affected_accounts)
+      }
       // Invalidate caches since transactions are now included/excluded
       invalidateInconsistencyCache()
       invalidateStoryCache()
@@ -80,6 +84,9 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
     try {
       const updated = await updateExtractedCSV(csv.id, { bank_account_id: accountId })
       onCSVUpdated({ ...csv, ...updated })
+      if (updated.affected_accounts && onAccountStatsUpdated) {
+        onAccountStatsUpdated(updated.affected_accounts)
+      }
     } catch (error) {
       console.error("Failed to link account:", error)
     } finally {
@@ -92,6 +99,9 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
     try {
       const updated = await updateExtractedCSV(csv.id, { bank_account_id: null })
       onCSVUpdated({ ...csv, ...updated })
+      if (updated.affected_accounts && onAccountStatsUpdated) {
+        onAccountStatsUpdated(updated.affected_accounts)
+      }
     } catch (error) {
       console.error("Failed to unlink account:", error)
     } finally {
@@ -104,6 +114,9 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
     try {
       const updated = await updateExtractedCSV(csv.id, { bank_account_id: newAccountId })
       onCSVUpdated({ ...csv, ...updated })
+      if (updated.affected_accounts && onAccountStatsUpdated) {
+        onAccountStatsUpdated(updated.affected_accounts)
+      }
     } catch (error) {
       console.error("Failed to change link:", error)
     } finally {

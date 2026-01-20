@@ -180,10 +180,22 @@ export async function toggleSourceFileDisabled(
   return res.json()
 }
 
+export interface AccountStats {
+  current_balance: number | null
+  last_transaction_date: string | null
+  starting_balance: number | null
+  first_transaction_date: string | null
+  transaction_count: number
+}
+
+export interface UpdateExtractedCSVResponse extends ExtractedCSV {
+  affected_accounts: Record<number, AccountStats>
+}
+
 export async function updateExtractedCSV(
   csvId: number,
   data: { bank_account_id?: number | null; disabled?: boolean }
-): Promise<ExtractedCSV> {
+): Promise<UpdateExtractedCSVResponse> {
   const res = await fetch(`${API_BASE}/api/extracted-csvs/${csvId}/`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },

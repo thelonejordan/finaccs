@@ -1407,12 +1407,13 @@ def api_cc_payment_suggestions(request):
     bank_txns = bank_txns.order_by('-date')
 
     # Get unmatched CC payments (amount < 0 = payment) from active sources only
-    # Exclude CC transactions that have an active match (is_active=True)
-    # CC transactions with inactive matches (bank extraction disabled/hidden) will appear here
+    # Exclude CC transactions that have an active match (is_active=True) pointing to an active bank transaction
+    # CC transactions with inactive matches or orphaned bank transactions will appear here
     unmatched_cc_payments = get_active_cc_transactions().filter(
         amount__lt=0
     ).exclude(
-        bank_payment_match__is_active=True
+        bank_payment_match__is_active=True,
+        bank_payment_match__bank_transaction__extracted_csv__isnull=False
     ).select_related('credit_card', 'source_file')
 
     # Get offset threshold from query params (default 20%)
@@ -1505,7 +1506,8 @@ def api_cc_payment_suggestions_reverse(request):
     cc_payments = get_active_cc_transactions().filter(
         category='Credit Card Payment',
     ).exclude(
-        bank_payment_match__is_active=True
+        bank_payment_match__is_active=True,
+        bank_payment_match__bank_transaction__extracted_csv__isnull=False
     ).select_related('credit_card', 'source_file')
 
     # Apply filters
@@ -1703,9 +1705,9 @@ def api_cc_payment_matches(request):
         return JsonResponse({'error': 'bank_transaction_id and credit_card_transaction_id are required'}, status=400)
 
     try:
-        bank_txn = Transaction.objects.get(id=bank_txn_id)
+        bank_txn = get_active_transactions().get(id=bank_txn_id)
     except Transaction.DoesNotExist:
-        return JsonResponse({'error': 'Bank transaction not found'}, status=404)
+        return JsonResponse({'error': 'Bank transaction not found or not active'}, status=404)
 
     try:
         cc_txn = CreditCardTransaction.objects.get(id=cc_txn_id)
@@ -1721,11 +1723,12 @@ def api_cc_payment_matches(request):
         # Delete the orphaned match so we can re-match
         bank_txn.cc_payment_match.delete()
     if hasattr(cc_txn, 'bank_payment_match'):
-        # Check if the existing match is active
-        if cc_txn.bank_payment_match.is_active:
+        # Check if the existing match is active AND points to an active bank transaction
+        existing_match = cc_txn.bank_payment_match
+        if existing_match.is_active and existing_match.bank_transaction.extracted_csv_id:
             return JsonResponse({'error': 'Credit card transaction is already matched'}, status=400)
-        # Delete the inactive match so we can re-match
-        cc_txn.bank_payment_match.delete()
+        # Delete the inactive/orphaned match so we can re-match
+        existing_match.delete()
 
     # Create the match
     match = CreditCardPaymentMatch.objects.create(

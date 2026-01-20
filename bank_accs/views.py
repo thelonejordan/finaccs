@@ -101,9 +101,9 @@ def get_extracted_csvs_with_stats():
 
 def get_account_stats(account):
     """Get transaction stats for a bank account."""
-    from dashboard.models import Transaction
+    from dashboard.views import get_active_transactions
 
-    transactions = Transaction.objects.filter(bank_account=account)
+    transactions = get_active_transactions().filter(bank_account=account)
 
     if not transactions.exists():
         return {
@@ -471,11 +471,13 @@ def extracted_csv_detail(request, csv_id):
             csv.bank_account = None
         csv.save(update_fields=['bank_account'])
 
-        # Update linked transactions' bank_account when changing linkage
+        # Update linked transactions and artifacts' bank_account when changing linkage
         if old_bank_account_id != csv.bank_account_id:
             Transaction.objects.filter(extracted_csv=csv).update(
                 bank_account_id=csv.bank_account_id
             )
+            # Also update artifacts' bank_account
+            csv.artifacts.update(bank_account=csv.bank_account)
             # Log the change
             if csv.bank_account:
                 AccountLog.objects.create(
@@ -505,14 +507,28 @@ def extracted_csv_detail(request, csv_id):
         # Invalidate caches since transactions are now included/excluded
         invalidate_all_inconsistencies()
 
-    return JsonResponse({
+    # Build response with updated account stats for affected accounts
+    response = {
         'id': csv.id,
         'source_filename': csv.source_file.filename,
         'source_file_id': csv.source_file.id,
         'status': csv.status,
         'bank_account_id': csv.bank_account.id if csv.bank_account else None,
         'disabled': csv.disabled,
-    })
+        'affected_accounts': {},
+    }
+
+    # Include updated stats for affected accounts
+    if csv.bank_account:
+        response['affected_accounts'][csv.bank_account.id] = get_account_stats(csv.bank_account)
+    if old_bank_account_id and old_bank_account_id != csv.bank_account_id:
+        try:
+            old_account = BankAccount.objects.get(id=old_bank_account_id)
+            response['affected_accounts'][old_bank_account_id] = get_account_stats(old_account)
+        except BankAccount.DoesNotExist:
+            pass
+
+    return JsonResponse(response)
 
 
 @extend_schema(

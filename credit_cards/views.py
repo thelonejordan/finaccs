@@ -426,6 +426,9 @@ def credit_card_transactions(request):
             bank_match = t.bank_payment_match
             if bank_match and bank_match.is_active:
                 bank_txn = bank_match.bank_transaction
+                # Skip orphaned transactions (no extracted_csv)
+                if not bank_txn.extracted_csv_id:
+                    raise AttributeError("Orphaned transaction")
                 bank_match_data = {
                     'id': bank_match.id,
                     'bank_transaction': {
@@ -498,6 +501,24 @@ def credit_card_date_range(request):
     return JsonResponse({'years': years})
 
 
+PREDEFINED_CC_CATEGORIES = [
+    'Uncategorized',
+    'Credit Card Payment',
+    'Food Delivery',
+    'Transport',
+    'Shopping',
+    'Entertainment',
+    'Utilities',
+    'Rent',
+    'Cafe & Restaurant',
+    'Personal Care',
+    'Legal Services',
+    'Sports',
+    'Medical',
+    'Groceries',
+]
+
+
 @extend_schema(
     summary="Get credit card categories",
     description="Get credit card categories with transaction counts and totals.",
@@ -529,21 +550,41 @@ def credit_card_categories(request):
         total_payments=Sum('amount', filter=Q(amount__lt=0)),
     ).order_by('-count')
 
-    data = []
+    # Build dict of existing categories
+    existing_categories = {}
     for cat in categories:
         category_name = cat['category'] or 'Uncategorized'
+        existing_categories[category_name] = {
+            'count': cat['count'],
+            'total_charges': float(cat['total_charges'] or 0),
+            'total_payments': float(abs(cat['total_payments'] or 0)),
+        }
+
+    # Add predefined categories with zero counts if they don't exist
+    for cat_name in PREDEFINED_CC_CATEGORIES:
+        if cat_name not in existing_categories:
+            existing_categories[cat_name] = {
+                'count': 0,
+                'total_charges': 0,
+                'total_payments': 0,
+            }
+
+    data = []
+    for category_name, stats in existing_categories.items():
         if not include_all and category_name == 'Uncategorized':
             continue
         data.append({
             'category': category_name,
-            'count': cat['count'],
-            'total_charges': float(cat['total_charges'] or 0),
-            'total_payments': float(abs(cat['total_payments'] or 0)),
+            'count': stats['count'],
+            'total_charges': stats['total_charges'],
+            'total_payments': stats['total_payments'],
         })
 
-    # Sort: Uncategorized first if include_all, then by count
+    # Sort: Uncategorized first if include_all, then by count (non-zero first), then alphabetically
     if include_all:
-        data.sort(key=lambda x: (x['category'] != 'Uncategorized', -x['count']))
+        data.sort(key=lambda x: (x['category'] != 'Uncategorized', -x['count'], x['category']))
+    else:
+        data.sort(key=lambda x: (-x['count'], x['category']))
 
     return JsonResponse({'data': data})
 

@@ -1230,10 +1230,10 @@ export function CreditCardsPage() {
                             />
                           </td>
                           <td className="px-3 py-3 align-middle text-center">
-                            {t.bank_payment_match ? (
+                            {t.bank_payment_match || t.category === 'Credit Card Payment' ? (
                               <BankPaymentLinkDialog
                                 transaction={t}
-                                onUnlink={() => handleUnlinkBankPayment(t.bank_payment_match!.id)}
+                                onUnlink={() => t.bank_payment_match && handleUnlinkBankPayment(t.bank_payment_match.id)}
                               />
                             ) : (
                               <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>

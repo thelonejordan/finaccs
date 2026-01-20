@@ -55,6 +55,7 @@ import {
   type ExtractedCSV,
   type PDFExtractionDataSource,
   type IngestableTransactionRow,
+  type AccountStats,
 } from "@/lib/api"
 
 function formatDate(dateStr: string): string {
@@ -1741,6 +1742,17 @@ export function SettingsPage() {
                     }
                     return prev
                   })
+                }}
+                onAccountStatsUpdated={(affectedAccounts: Record<number, AccountStats>) => {
+                  setBankAccounts((prev) =>
+                    prev.map((account) => {
+                      const stats = affectedAccounts[account.id]
+                      if (stats) {
+                        return { ...account, ...stats }
+                      }
+                      return account
+                    })
+                  )
                 }}
                 onRefresh={refreshBankData}
                 selectedCSVId={selectedBankCSVId}
