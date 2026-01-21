@@ -1,0 +1,1249 @@
+import React, { useState, useEffect, useCallback } from "react"
+import {
+  FileTextIcon,
+  PlayIcon,
+  Loader2Icon,
+  RefreshCwIcon,
+  ChevronRightIcon,
+  EyeOffIcon,
+  EyeIcon,
+  Trash2Icon,
+  WandIcon,
+  TableIcon,
+  FolderIcon,
+  KeyIcon,
+  SettingsIcon,
+  TagIcon,
+} from "lucide-react"
+import { Header } from "@/components/Header"
+import { Footer } from "@/components/Footer"
+import {
+  StatusBadge,
+  VisibilityDropdown,
+  BulkActionBar,
+  ExtractorSelector,
+  ConfirmDialog,
+  PasswordInput,
+  type VisibilityFilter,
+  type BulkAction,
+} from "@/components/extraction"
+import {
+  fetchSourceFilesNew,
+  refreshSourceFilesNew,
+  fetchExtractionsNew,
+  fetchExtractorsNew,
+  extractSourceFileNew,
+  updateSourceFileNew,
+  validatePasswordNew,
+  bulkUpdateSourceFilesNew,
+  bulkUpdateExtractionsNew,
+  bulkTransformArtifactsNew,
+  transformArtifactNew,
+  previewArtifactNew,
+  type SourceFileNew,
+  type ExtractionNew,
+  type ExtractorInfo,
+} from "@/lib/api"
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// Source Files Section
+function SourceFilesSection({
+  files,
+  extractors,
+  selectedIds,
+  onSelectionChange,
+  onExtract,
+  extractingId,
+  onRefresh,
+  isRefreshing,
+  visibility,
+  onVisibilityChange,
+  onBulkAction,
+  onDataChange,
+}: {
+  files: SourceFileNew[]
+  extractors: ExtractorInfo[]
+  selectedIds: Set<number>
+  onSelectionChange: (ids: Set<number>) => void
+  onExtract: (file: SourceFileNew, password?: string, extractor?: string) => void
+  extractingId: number | null
+  onRefresh: () => void
+  isRefreshing: boolean
+  visibility: VisibilityFilter
+  onVisibilityChange: (v: VisibilityFilter) => void
+  onBulkAction: (action: string) => void
+  onDataChange: () => void
+}) {
+  const [passwordInputId, setPasswordInputId] = useState<number | null>(null)
+  const [password, setPassword] = useState('')
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [isValidating, setIsValidating] = useState(false)
+  const [editingExtractorId, setEditingExtractorId] = useState<number | null>(null)
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === files.length) {
+      onSelectionChange(new Set())
+    } else {
+      onSelectionChange(new Set(files.map(f => f.id)))
+    }
+  }
+
+  const handleSelect = (id: number) => {
+    const newSet = new Set(selectedIds)
+    if (newSet.has(id)) {
+      newSet.delete(id)
+    } else {
+      newSet.add(id)
+    }
+    onSelectionChange(newSet)
+  }
+
+  const handleExtract = (file: SourceFileNew) => {
+    if (passwordInputId === file.id && password) {
+      onExtract(file, password)
+      setPasswordInputId(null)
+      setPassword('')
+    } else {
+      onExtract(file)
+    }
+  }
+
+  const handleSavePassword = async (file: SourceFileNew) => {
+    setPasswordError(null)
+
+    // If clearing password, just save
+    if (!password) {
+      await updateSourceFileNew(file.source_file_id, { password: '' })
+      setPasswordInputId(null)
+      setPassword('')
+      onDataChange()
+      return
+    }
+
+    // Validate password first
+    setIsValidating(true)
+    try {
+      const result = await validatePasswordNew(file.source_file_id, password)
+      if (result.valid) {
+        // Password is correct, save it
+        await updateSourceFileNew(file.source_file_id, { password })
+        setPasswordInputId(null)
+        setPassword('')
+        setPasswordError(null)
+        onDataChange()
+      } else {
+        // Password is invalid
+        setPasswordError(result.error || 'Invalid password')
+      }
+    } catch (error) {
+      setPasswordError('Failed to validate password')
+    } finally {
+      setIsValidating(false)
+    }
+  }
+
+  const bulkActions: BulkAction[] = [
+    { label: 'Extract', icon: <PlayIcon className="h-4 w-4" />, action: 'extract' },
+    { label: 'Transform All', icon: <WandIcon className="h-4 w-4" />, action: 'transform_all' },
+    { label: 'Set Password', icon: <KeyIcon className="h-4 w-4" />, action: 'set_password' },
+    { label: 'Set Extractor', icon: <SettingsIcon className="h-4 w-4" />, action: 'set_extractor' },
+    { label: 'Set Domain', icon: <TagIcon className="h-4 w-4" />, action: 'set_domain' },
+    { label: 'Hide', icon: <EyeOffIcon className="h-4 w-4" />, action: 'hide' },
+    { label: 'Unhide', icon: <EyeIcon className="h-4 w-4" />, action: 'unhide' },
+  ]
+
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-sm">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <FolderIcon className="h-5 w-5" />
+            Source Files
+          </h2>
+          <VisibilityDropdown value={visibility} onChange={onVisibilityChange} />
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={isRefreshing}
+          className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          <RefreshCwIcon className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
+
+      <BulkActionBar
+        selectedCount={selectedIds.size}
+        actions={bulkActions}
+        onAction={onBulkAction}
+        onClearSelection={() => onSelectionChange(new Set())}
+      />
+
+      <div className="overflow-x-auto">
+        {files.length === 0 ? (
+          <div className="p-8 text-center text-muted-foreground">
+            No source files found. Click Refresh to scan directories.
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="bg-muted text-xs font-medium text-muted-foreground uppercase">
+                <th className="px-4 py-3 text-left w-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size === files.length && files.length > 0}
+                    onChange={handleSelectAll}
+                    className="rounded border-border"
+                  />
+                </th>
+                <th className="px-4 py-3 text-left">Filename</th>
+                <th className="px-4 py-3 text-left w-20">Domain</th>
+                <th className="px-4 py-3 text-left w-36">Extractor</th>
+                <th className="px-4 py-3 text-left w-28">Status</th>
+                <th className="px-4 py-3 text-right w-20">Size</th>
+                <th className="px-4 py-3 text-center w-24">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {files.map(file => (
+                <tr
+                  key={file.id}
+                  className={`hover:bg-accent ${
+                    file.hidden ? 'opacity-50' : ''
+                  }`}
+                >
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(file.id)}
+                      onChange={() => handleSelect(file.id)}
+                      className="rounded border-border"
+                    />
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileTextIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <span className="text-sm font-medium text-foreground truncate max-w-md" title={file.filename}>
+                        {file.filename}
+                      </span>
+                      {file.hidden && (
+                        <EyeOffIcon className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                      )}
+                    </div>
+                    {passwordInputId === file.id && (
+                      <div className="mt-2 max-w-sm">
+                        <PasswordInput
+                          value={password}
+                          onChange={(v) => {
+                            setPassword(v)
+                            setPasswordError(null)
+                          }}
+                          onSave={() => handleSavePassword(file)}
+                          onCancel={() => {
+                            setPasswordInputId(null)
+                            setPassword('')
+                            setPasswordError(null)
+                          }}
+                          showSaveButtons
+                          isLoading={isValidating}
+                        />
+                        {isValidating && (
+                          <div className="mt-1 flex items-center gap-1 text-xs text-blue-600">
+                            <Loader2Icon className="h-3 w-3 animate-spin" />
+                            Validating password...
+                          </div>
+                        )}
+                        {passwordError && (
+                          <div className="mt-1 text-xs text-red-600 dark:text-red-400">
+                            {passwordError}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full ${
+                      file.domain === 'bank_account'
+                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                        : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                    }`}>
+                      {file.domain === 'bank_account' ? 'Bank' : 'Credit Card'}
+                    </span>
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <div className="relative">
+                      {editingExtractorId === file.id ? (
+                        <ExtractorSelector
+                          value={file.extractor}
+                          onChange={async (v) => {
+                            await updateSourceFileNew(file.source_file_id, { extractor: v })
+                            setEditingExtractorId(null)
+                          }}
+                          extractors={extractors}
+                          domain={file.domain}
+                          autoDetected={file.auto_detected_extractor}
+                        />
+                      ) : (
+                        <button
+                          onClick={() => setEditingExtractorId(file.id)}
+                          className="text-xs text-muted-foreground hover:text-foreground truncate block max-w-full"
+                          title={file.extractor || file.auto_detected_extractor || 'Click to select'}
+                        >
+                          {file.extractor || file.auto_detected_extractor || 'Select...'}
+                        </button>
+                      )}
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <StatusBadge status={file.extraction_status} />
+                  </td>
+
+                  <td className="px-4 py-3 text-right">
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                      {formatFileSize(file.file_size)}
+                    </span>
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        onClick={() => {
+                          setPasswordInputId(file.id)
+                          setPassword(file.password || '')
+                        }}
+                        className={`p-1.5 rounded hover:bg-accent ${
+                          file.password
+                            ? 'text-green-600 dark:text-green-400'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                        title={file.password ? 'Password set (click to update)' : 'Set password'}
+                      >
+                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                          <circle cx="12" cy="16" r="1" />
+                          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleExtract(file)}
+                        disabled={extractingId === file.id}
+                        className="p-1.5 rounded text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50"
+                        title="Extract"
+                      >
+                        {extractingId === file.id ? (
+                          <Loader2Icon className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <PlayIcon className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Extractions Section
+function ExtractionsSection({
+  extractions,
+  selectedIds,
+  onSelectionChange,
+  visibility,
+  onVisibilityChange,
+  onBulkAction,
+  onTransformAll,
+  isTransforming,
+  onDataChange,
+}: {
+  extractions: ExtractionNew[]
+  selectedIds: Set<number>
+  onSelectionChange: (ids: Set<number>) => void
+  visibility: VisibilityFilter
+  onVisibilityChange: (v: VisibilityFilter) => void
+  onBulkAction: (action: string) => void
+  onTransformAll: (artifactIds: string[]) => void
+  isTransforming: boolean
+  onDataChange: () => void
+}) {
+  // Expandable row state
+  const [expandedExtractionId, setExpandedExtractionId] = useState<number | null>(null)
+  const [transformingArtifactId, setTransformingArtifactId] = useState<string | null>(null)
+
+  // Preview state for expanded row
+  const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(null)
+  const [previewData, setPreviewData] = useState<{
+    data: Record<string, unknown>[]
+    columns: string[]
+    total: number
+  } | null>(null)
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false)
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === extractions.length) {
+      onSelectionChange(new Set())
+    } else {
+      onSelectionChange(new Set(extractions.map(e => e.id)))
+    }
+  }
+
+  const handleSelect = (id: number) => {
+    const newSet = new Set(selectedIds)
+    if (newSet.has(id)) {
+      newSet.delete(id)
+    } else {
+      newSet.add(id)
+    }
+    onSelectionChange(newSet)
+  }
+
+  const handleRowClick = (extraction: ExtractionNew, e: React.MouseEvent) => {
+    const target = e.target as HTMLElement
+    if (target.closest('button') || target.closest('input')) {
+      return
+    }
+
+    if (expandedExtractionId === extraction.id) {
+      setExpandedExtractionId(null)
+      setPreviewArtifactId(null)
+      setPreviewData(null)
+    } else {
+      setExpandedExtractionId(extraction.id)
+      setPreviewArtifactId(null)
+      setPreviewData(null)
+    }
+  }
+
+  const handleTransformArtifact = async (artifactId: string) => {
+    setTransformingArtifactId(artifactId)
+    try {
+      await transformArtifactNew(artifactId)
+      onDataChange()
+    } catch (error) {
+      console.error('Failed to transform artifact:', error)
+      alert('Failed to transform artifact')
+    } finally {
+      setTransformingArtifactId(null)
+    }
+  }
+
+  const handleTransformAllForExtraction = async (extraction: ExtractionNew) => {
+    if (!extraction.artifacts) return
+
+    const artifactIds = extraction.artifacts
+      .filter(a => a.transformation_status === 'not_transformed' && a.transformer)
+      .map(a => a.artifact_id)
+
+    if (artifactIds.length === 0) {
+      alert('No artifacts to transform')
+      return
+    }
+
+    setTransformingArtifactId('all')
+    try {
+      await bulkTransformArtifactsNew(artifactIds)
+      onDataChange()
+    } catch (error) {
+      console.error('Failed to transform artifacts:', error)
+      alert('Failed to transform artifacts')
+    } finally {
+      setTransformingArtifactId(null)
+    }
+  }
+
+  const handlePreviewArtifact = async (artifactId: string) => {
+    if (previewArtifactId === artifactId) {
+      setPreviewArtifactId(null)
+      setPreviewData(null)
+      return
+    }
+
+    setPreviewArtifactId(artifactId)
+    setIsLoadingPreview(true)
+    try {
+      const result = await previewArtifactNew(artifactId, 10)
+      if (result.format === 'csv' && Array.isArray(result.data)) {
+        setPreviewData({
+          data: result.data as Record<string, unknown>[],
+          columns: result.columns || [],
+          total: result.total || 0,
+        })
+      } else {
+        setPreviewData(null)
+      }
+    } catch (error) {
+      console.error('Failed to load preview:', error)
+      setPreviewData(null)
+    } finally {
+      setIsLoadingPreview(false)
+    }
+  }
+
+  const bulkActions: BulkAction[] = [
+    { label: 'Transform All', icon: <WandIcon className="h-4 w-4" />, action: 'transform_all' },
+    { label: 'Hide', icon: <EyeOffIcon className="h-4 w-4" />, action: 'hide' },
+    { label: 'Unhide', icon: <EyeIcon className="h-4 w-4" />, action: 'unhide' },
+    { label: 'Delete', icon: <Trash2Icon className="h-4 w-4" />, action: 'delete', variant: 'danger' },
+  ]
+
+  // Get all transformable artifacts from selected extractions
+  const getTransformableArtifacts = () => {
+    const artifactIds: string[] = []
+    extractions.forEach(e => {
+      if (selectedIds.has(e.id) && e.artifacts) {
+        e.artifacts.forEach(a => {
+          if (a.transformation_status === 'not_transformed' && a.transformer) {
+            artifactIds.push(a.artifact_id)
+          }
+        })
+      }
+    })
+    return artifactIds
+  }
+
+  const expandedExtraction = extractions.find(e => e.id === expandedExtractionId)
+
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-sm">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <TableIcon className="h-5 w-5" />
+            Extractions
+          </h2>
+          <VisibilityDropdown value={visibility} onChange={onVisibilityChange} />
+        </div>
+        {selectedIds.size > 0 && (
+          <button
+            onClick={() => onTransformAll(getTransformableArtifacts())}
+            disabled={isTransforming || getTransformableArtifacts().length === 0}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+          >
+            <WandIcon className={`h-4 w-4 ${isTransforming ? 'animate-pulse' : ''}`} />
+            Transform All ({getTransformableArtifacts().length})
+          </button>
+        )}
+      </div>
+
+      <BulkActionBar
+        selectedCount={selectedIds.size}
+        actions={bulkActions}
+        onAction={onBulkAction}
+        onClearSelection={() => onSelectionChange(new Set())}
+      />
+
+      <div className="overflow-x-auto">
+        {extractions.length === 0 ? (
+          <div className="p-8 text-center text-muted-foreground">
+            No extractions found. Extract a source file to get started.
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="bg-muted text-xs font-medium text-muted-foreground uppercase">
+                <th className="px-4 py-3 text-left w-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size === extractions.length && extractions.length > 0}
+                    onChange={handleSelectAll}
+                    className="rounded border-border"
+                  />
+                </th>
+                <th className="px-4 py-3 text-left">Source File</th>
+                <th className="px-4 py-3 text-left w-32">Extractor</th>
+                <th className="px-4 py-3 text-left w-24">Status</th>
+                <th className="px-4 py-3 text-center w-20">Artifacts</th>
+                <th className="px-4 py-3 text-left w-32">Extracted</th>
+                <th className="px-4 py-3 text-center w-8"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {extractions.map(extraction => (
+                <React.Fragment key={extraction.id}>
+                  <tr
+                    onClick={(e) => handleRowClick(extraction, e)}
+                    className={`hover:bg-accent cursor-pointer ${
+                      extraction.hidden ? 'opacity-50' : ''
+                    } ${expandedExtractionId === extraction.id ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  >
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(extraction.id)}
+                        onChange={() => handleSelect(extraction.id)}
+                        className="rounded border-border"
+                      />
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-foreground truncate">
+                          {extraction.source_filename}
+                        </span>
+                        {extraction.hidden && (
+                          <EyeOffIcon className="h-3 w-3 text-muted-foreground" />
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground">{extraction.extraction_id}</span>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <span className="text-xs text-muted-foreground">
+                        {extraction.extractor_name}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <StatusBadge status={extraction.status} />
+                    </td>
+
+                    <td className="px-4 py-3 text-center">
+                      <span className="text-sm text-muted-foreground">
+                        {extraction.artifacts?.length || 0}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <span className="text-xs text-muted-foreground">
+                        {formatDate(extraction.extracted_at)}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-3 text-center">
+                      <ChevronRightIcon className={`h-4 w-4 text-muted-foreground transition-transform ${
+                        expandedExtractionId === extraction.id ? 'rotate-90' : ''
+                      }`} />
+                    </td>
+                  </tr>
+
+                  {/* Expanded Row - Artifacts */}
+                  {expandedExtractionId === extraction.id && (
+                    <tr className="bg-muted">
+                      <td colSpan={7} className="px-4 py-4">
+                        {extraction.artifacts && extraction.artifacts.length > 0 ? (
+                          <div className="space-y-4">
+                            {/* Header with Transform All */}
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-sm font-medium text-foreground">
+                                Artifacts
+                              </h4>
+                              <button
+                                onClick={() => handleTransformAllForExtraction(extraction)}
+                                disabled={transformingArtifactId === 'all'}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+                              >
+                                {transformingArtifactId === 'all' ? (
+                                  <Loader2Icon className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <WandIcon className="h-3 w-3" />
+                                )}
+                                Transform All
+                              </button>
+                            </div>
+
+                            {/* Artifacts Table */}
+                            <div className="border border-border rounded-lg overflow-hidden">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="bg-muted text-muted-foreground">
+                                    <th className="px-3 py-2 text-left">Artifact ID</th>
+                                    <th className="px-3 py-2 text-left">Type</th>
+                                    <th className="px-3 py-2 text-left">Format</th>
+                                    <th className="px-3 py-2 text-right">Rows</th>
+                                    <th className="px-3 py-2 text-left">Status</th>
+                                    <th className="px-3 py-2 text-center">Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border">
+                                  {extraction.artifacts.map(artifact => (
+                                    <React.Fragment key={artifact.artifact_id}>
+                                      <tr className={`bg-card/50 ${previewArtifactId === artifact.artifact_id ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                                        <td className="px-3 py-2 font-mono text-muted-foreground">
+                                          {artifact.artifact_id}
+                                        </td>
+                                        <td className="px-3 py-2 text-foreground">
+                                          {artifact.artifact_type}
+                                          {artifact.artifact_key && (
+                                            <span className="ml-1 text-muted-foreground">({artifact.artifact_key})</span>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2 text-muted-foreground">{artifact.content_format}</td>
+                                        <td className="px-3 py-2 text-right text-muted-foreground">{artifact.row_count}</td>
+                                        <td className="px-3 py-2">
+                                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs ${
+                                            artifact.transformation_status === 'transformed'
+                                              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                                              : artifact.transformation_status === 'not_transformed'
+                                              ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                                              : 'bg-muted text-muted-foreground'
+                                          }`}>
+                                            {artifact.transformation_status === 'not_applicable' ? 'N/A' : artifact.transformation_status}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                          <div className="flex items-center justify-center gap-1">
+                                            <button
+                                              onClick={() => handlePreviewArtifact(artifact.artifact_id)}
+                                              className={`p-1 rounded hover:bg-accent ${
+                                                previewArtifactId === artifact.artifact_id
+                                                  ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30'
+                                                  : 'text-muted-foreground hover:text-foreground'
+                                              }`}
+                                              title="Preview"
+                                            >
+                                              <TableIcon className="h-3.5 w-3.5" />
+                                            </button>
+                                            {artifact.transformer && artifact.transformation_status === 'not_transformed' && (
+                                              <button
+                                                onClick={() => handleTransformArtifact(artifact.artifact_id)}
+                                                disabled={transformingArtifactId === artifact.artifact_id}
+                                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-900/50 disabled:opacity-50"
+                                                title={`Transform with ${artifact.transformer}`}
+                                              >
+                                                {transformingArtifactId === artifact.artifact_id ? (
+                                                  <Loader2Icon className="h-3 w-3 animate-spin" />
+                                                ) : (
+                                                  <WandIcon className="h-3 w-3" />
+                                                )}
+                                                Transform
+                                              </button>
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+
+                                      {/* Preview Row */}
+                                      {previewArtifactId === artifact.artifact_id && (
+                                        <tr className="bg-muted/50">
+                                          <td colSpan={6} className="px-3 py-3">
+                                            {isLoadingPreview ? (
+                                              <div className="flex items-center justify-center py-4">
+                                                <Loader2Icon className="h-5 w-5 animate-spin text-muted-foreground" />
+                                                <span className="ml-2 text-muted-foreground">Loading preview...</span>
+                                              </div>
+                                            ) : previewData ? (
+                                              <div className="overflow-x-auto border border-border rounded">
+                                                <table className="min-w-full text-xs">
+                                                  <thead className="bg-muted">
+                                                    <tr>
+                                                      {previewData.columns.map(col => (
+                                                        <th key={col} className="px-2 py-1.5 text-left font-medium text-muted-foreground uppercase whitespace-nowrap">
+                                                          {col}
+                                                        </th>
+                                                      ))}
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody className="divide-y divide-border">
+                                                    {previewData.data.map((row, i) => (
+                                                      <tr key={i} className="hover:bg-accent">
+                                                        {previewData.columns.map(col => (
+                                                          <td key={col} className="px-2 py-1.5 text-foreground whitespace-nowrap">
+                                                            {String(row[col] ?? '')}
+                                                          </td>
+                                                        ))}
+                                                      </tr>
+                                                    ))}
+                                                  </tbody>
+                                                </table>
+                                                {previewData.total > previewData.data.length && (
+                                                  <div className="px-2 py-1.5 text-xs text-muted-foreground bg-muted border-t border-border">
+                                                    Showing {previewData.data.length} of {previewData.total} rows
+                                                  </div>
+                                                )}
+                                              </div>
+                                            ) : (
+                                              <div className="text-center py-4 text-muted-foreground">
+                                                Preview not available for this format
+                                              </div>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      )}
+                                    </React.Fragment>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center py-4 text-muted-foreground">
+                            No artifacts in this extraction
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Main Page Component
+export function ExtractionsPageNew() {
+  const [sourceFiles, setSourceFiles] = useState<SourceFileNew[]>([])
+  const [extractions, setExtractions] = useState<ExtractionNew[]>([])
+  const [extractors, setExtractors] = useState<ExtractorInfo[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [extractingId, setExtractingId] = useState<number | null>(null)
+  const [isTransforming, setIsTransforming] = useState(false)
+
+  // Visibility filters
+  const [sourceFilesVisibility, setSourceFilesVisibility] = useState<VisibilityFilter>('visible')
+  const [extractionsVisibility, setExtractionsVisibility] = useState<VisibilityFilter>('visible')
+
+  // Selection state
+  const [selectedSourceFiles, setSelectedSourceFiles] = useState<Set<number>>(new Set())
+  const [selectedExtractions, setSelectedExtractions] = useState<Set<number>>(new Set())
+
+  // Confirm dialog
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean
+    title: string
+    description: string
+    action: () => void
+    variant?: 'default' | 'danger'
+  }>({ open: false, title: '', description: '', action: () => {} })
+
+  // Bulk action dialogs
+  const [bulkPasswordDialog, setBulkPasswordDialog] = useState<{ open: boolean; password: string }>({ open: false, password: '' })
+  const [bulkExtractorDialog, setBulkExtractorDialog] = useState<{ open: boolean; extractor: string }>({ open: false, extractor: '' })
+  const [bulkDomainDialog, setBulkDomainDialog] = useState<{ open: boolean; domain: 'bank_account' | 'credit_card' }>({ open: false, domain: 'bank_account' })
+  const [isBulkExtracting, setIsBulkExtracting] = useState(false)
+
+  const loadData = useCallback(async () => {
+    setLoadError(null)
+    try {
+      const [filesRes, extractionsRes, extractorsRes] = await Promise.all([
+        fetchSourceFilesNew({ visibility: sourceFilesVisibility }),
+        fetchExtractionsNew({ visibility: extractionsVisibility }),
+        fetchExtractorsNew(),
+      ])
+      setSourceFiles(filesRes.data || [])
+      setExtractions(extractionsRes.data || [])
+      setExtractors(extractorsRes.data || [])
+    } catch (error) {
+      console.error('Failed to load data:', error)
+      setLoadError(error instanceof Error ? error.message : 'Failed to load data')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [sourceFilesVisibility, extractionsVisibility])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    try {
+      const result = await refreshSourceFilesNew()
+      await loadData()
+      if (result.errors.length > 0) {
+        alert(`Refresh completed with errors:\nCreated: ${result.created}\nSkipped: ${result.skipped}\nErrors: ${result.errors.length}`)
+      } else if (result.created > 0) {
+        alert(`Added ${result.created} new file(s)`)
+      }
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  const handleExtract = async (file: SourceFileNew, password?: string, extractor?: string) => {
+    setExtractingId(file.id)
+    try {
+      const result = await extractSourceFileNew(file.source_file_id, { password, extractor })
+      if (result.success) {
+        await loadData()
+      } else if (result.needs_password) {
+        alert('Password required for this file')
+      } else {
+        alert(result.error || 'Extraction failed')
+      }
+    } catch (error) {
+      console.error('Extraction failed:', error)
+      alert('Extraction failed')
+    } finally {
+      setExtractingId(null)
+    }
+  }
+
+  const handleSourceFilesBulkAction = async (action: string) => {
+    const ids = Array.from(selectedSourceFiles)
+    if (ids.length === 0) return
+
+    if (action === 'hide' || action === 'unhide') {
+      await bulkUpdateSourceFilesNew(ids, action)
+      await loadData()
+      setSelectedSourceFiles(new Set())
+    } else if (action === 'set_password') {
+      setBulkPasswordDialog({ open: true, password: '' })
+    } else if (action === 'set_extractor') {
+      setBulkExtractorDialog({ open: true, extractor: '' })
+    } else if (action === 'set_domain') {
+      setBulkDomainDialog({ open: true, domain: 'bank_account' })
+    } else if (action === 'extract') {
+      // Extract all selected files
+      setIsBulkExtracting(true)
+      const selectedFiles = sourceFiles.filter(f => selectedSourceFiles.has(f.id))
+      let successCount = 0
+      let errorCount = 0
+      for (const file of selectedFiles) {
+        try {
+          const result = await extractSourceFileNew(file.source_file_id)
+          if (result.success) {
+            successCount++
+          } else {
+            errorCount++
+          }
+        } catch {
+          errorCount++
+        }
+      }
+      setIsBulkExtracting(false)
+      await loadData()
+      setSelectedSourceFiles(new Set())
+      alert(`Extraction complete: ${successCount} succeeded, ${errorCount} failed`)
+    } else if (action === 'transform_all') {
+      // Get source_file_ids for selected files
+      const selectedFiles = sourceFiles.filter(f => selectedSourceFiles.has(f.id))
+      const sourceFileIds = new Set(selectedFiles.map(f => f.source_file_id))
+
+      // Find all transformable artifacts from extractions of selected source files
+      const artifactIds: string[] = []
+      extractions.forEach(extraction => {
+        if (sourceFileIds.has(extraction.source_file_id) && extraction.artifacts) {
+          extraction.artifacts.forEach(artifact => {
+            if (artifact.transformation_status === 'not_transformed' && artifact.transformer) {
+              artifactIds.push(artifact.artifact_id)
+            }
+          })
+        }
+      })
+
+      if (artifactIds.length === 0) {
+        alert('No transformable artifacts found for selected files')
+        return
+      }
+
+      setIsTransforming(true)
+      try {
+        await bulkTransformArtifactsNew(artifactIds)
+        await loadData()
+        setSelectedSourceFiles(new Set())
+        alert(`Transformed ${artifactIds.length} artifact(s)`)
+      } catch (error) {
+        console.error('Transform failed:', error)
+        alert('Transform failed')
+      } finally {
+        setIsTransforming(false)
+      }
+    }
+  }
+
+  const handleBulkPasswordSubmit = async () => {
+    const ids = Array.from(selectedSourceFiles)
+    await bulkUpdateSourceFilesNew(ids, 'set_password', bulkPasswordDialog.password)
+    await loadData()
+    setSelectedSourceFiles(new Set())
+    setBulkPasswordDialog({ open: false, password: '' })
+  }
+
+  const handleBulkExtractorSubmit = async () => {
+    const ids = Array.from(selectedSourceFiles)
+    await bulkUpdateSourceFilesNew(ids, 'set_extractor', bulkExtractorDialog.extractor)
+    await loadData()
+    setSelectedSourceFiles(new Set())
+    setBulkExtractorDialog({ open: false, extractor: '' })
+  }
+
+  const handleBulkDomainSubmit = async () => {
+    const ids = Array.from(selectedSourceFiles)
+    await bulkUpdateSourceFilesNew(ids, 'set_domain', bulkDomainDialog.domain)
+    await loadData()
+    setSelectedSourceFiles(new Set())
+    setBulkDomainDialog({ open: false, domain: 'bank_account' })
+  }
+
+  const handleExtractionsBulkAction = async (action: string) => {
+    const ids = Array.from(selectedExtractions)
+    if (action === 'delete') {
+      setConfirmDialog({
+        open: true,
+        title: 'Delete Extractions',
+        description: `Are you sure you want to delete ${ids.length} extraction(s)? This action cannot be undone.`,
+        variant: 'danger',
+        action: async () => {
+          await bulkUpdateExtractionsNew(ids, 'delete')
+          await loadData()
+          setSelectedExtractions(new Set())
+          setConfirmDialog(prev => ({ ...prev, open: false }))
+        },
+      })
+    } else if (action === 'hide' || action === 'unhide') {
+      await bulkUpdateExtractionsNew(ids, action)
+      await loadData()
+      setSelectedExtractions(new Set())
+    } else if (action === 'transform_all') {
+      // Transform all selected extractions' artifacts
+      const artifactIds: string[] = []
+      extractions.forEach(e => {
+        if (selectedExtractions.has(e.id) && e.artifacts) {
+          e.artifacts.forEach(a => {
+            if (a.transformation_status === 'not_transformed' && a.transformer) {
+              artifactIds.push(a.artifact_id)
+            }
+          })
+        }
+      })
+      if (artifactIds.length > 0) {
+        await handleTransformAll(artifactIds)
+        setSelectedExtractions(new Set())
+      }
+    }
+  }
+
+  const handleTransformAll = async (artifactIds: string[]) => {
+    if (artifactIds.length === 0) return
+    setIsTransforming(true)
+    try {
+      await bulkTransformArtifactsNew(artifactIds)
+      await loadData()
+    } finally {
+      setIsTransforming(false)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-muted/40">
+        <Header />
+        <main className="max-w-7xl mx-auto px-4 py-6 flex justify-center items-center h-96">
+          <Loader2Icon className="h-8 w-8 animate-spin text-muted-foreground" />
+        </main>
+        <Footer />
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-muted/40">
+      <Header />
+
+      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+        <h1 className="text-2xl font-bold text-foreground">
+          Extractions (New)
+        </h1>
+
+        {loadError && (
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
+            <strong>Error loading data:</strong> {loadError}
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="text-center py-8 text-muted-foreground">Loading...</div>
+        ) : (
+          <>
+            <SourceFilesSection
+              files={sourceFiles}
+              extractors={extractors}
+              selectedIds={selectedSourceFiles}
+              onSelectionChange={setSelectedSourceFiles}
+              onExtract={handleExtract}
+              extractingId={extractingId}
+              onRefresh={handleRefresh}
+              isRefreshing={isRefreshing}
+              visibility={sourceFilesVisibility}
+              onVisibilityChange={setSourceFilesVisibility}
+              onBulkAction={handleSourceFilesBulkAction}
+              onDataChange={loadData}
+            />
+
+            <ExtractionsSection
+              extractions={extractions}
+              selectedIds={selectedExtractions}
+              onSelectionChange={setSelectedExtractions}
+              visibility={extractionsVisibility}
+              onVisibilityChange={setExtractionsVisibility}
+              onBulkAction={handleExtractionsBulkAction}
+              onTransformAll={handleTransformAll}
+              isTransforming={isTransforming}
+              onDataChange={loadData}
+            />
+          </>
+        )}
+      </main>
+
+      <Footer />
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog(prev => ({ ...prev, open }))}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        variant={confirmDialog.variant}
+        onConfirm={confirmDialog.action}
+      />
+
+      {/* Bulk Password Dialog */}
+      {bulkPasswordDialog.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/50" onClick={() => setBulkPasswordDialog({ open: false, password: '' })} />
+          <div className="relative bg-card rounded-xl border border-border shadow-sm-xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-foreground mb-4">
+              Set Password for {selectedSourceFiles.size} File(s)
+            </h3>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-foreground mb-1">
+                Password
+              </label>
+              <input
+                type="password"
+                value={bulkPasswordDialog.password}
+                onChange={(e) => setBulkPasswordDialog(prev => ({ ...prev, password: e.target.value }))}
+                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter password for selected files"
+                autoFocus
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Leave empty to clear password</p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setBulkPasswordDialog({ open: false, password: '' })}
+                className="px-4 py-2 text-sm font-medium text-foreground hover:bg-accent rounded-md"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkPasswordSubmit}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+              >
+                Apply to {selectedSourceFiles.size} File(s)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Extractor Dialog */}
+      {bulkExtractorDialog.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/50" onClick={() => setBulkExtractorDialog({ open: false, extractor: '' })} />
+          <div className="relative bg-card rounded-xl border border-border shadow-sm-xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-foreground mb-4">
+              Set Extractor for {selectedSourceFiles.size} File(s)
+            </h3>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-foreground mb-1">
+                Extractor
+              </label>
+              <select
+                value={bulkExtractorDialog.extractor}
+                onChange={(e) => setBulkExtractorDialog(prev => ({ ...prev, extractor: e.target.value }))}
+                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Auto-detect</option>
+                {extractors.map(e => (
+                  <option key={e.name} value={e.name}>
+                    {e.name} ({e.supported_extensions.join(', ')})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setBulkExtractorDialog({ open: false, extractor: '' })}
+                className="px-4 py-2 text-sm font-medium text-foreground hover:bg-accent rounded-md"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkExtractorSubmit}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+              >
+                Apply to {selectedSourceFiles.size} File(s)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Domain Dialog */}
+      {bulkDomainDialog.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/50" onClick={() => setBulkDomainDialog({ open: false, domain: 'bank_account' })} />
+          <div className="relative bg-card rounded-xl border border-border shadow-sm-xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-foreground mb-4">
+              Set Domain for {selectedSourceFiles.size} File(s)
+            </h3>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-foreground mb-1">
+                Domain
+              </label>
+              <select
+                value={bulkDomainDialog.domain}
+                onChange={(e) => setBulkDomainDialog(prev => ({ ...prev, domain: e.target.value as 'bank_account' | 'credit_card' }))}
+                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="bank_account">Bank Account</option>
+                <option value="credit_card">Credit Card</option>
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setBulkDomainDialog({ open: false, domain: 'bank_account' })}
+                className="px-4 py-2 text-sm font-medium text-foreground hover:bg-accent rounded-md"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDomainSubmit}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+              >
+                Apply to {selectedSourceFiles.size} File(s)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Extracting Overlay */}
+      {isBulkExtracting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-card rounded-xl border border-border shadow-sm-xl p-6 flex items-center gap-4">
+            <Loader2Icon className="h-6 w-6 animate-spin text-blue-600" />
+            <span className="text-foreground">Extracting files...</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

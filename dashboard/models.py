@@ -38,6 +38,15 @@ class Transaction(models.Model):
         blank=True,
         related_name='transactions'
     )
+    # New unified extraction system
+    data_source_artifact = models.ForeignKey(
+        'extractions.DataSourceArtifact',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bank_transactions'
+    )
+    artifact_row_id = models.CharField(max_length=50, blank=True)  # For link snapshot matching
     linked_transaction = models.OneToOneField(
         'self',
         on_delete=models.SET_NULL,

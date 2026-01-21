@@ -1535,3 +1535,399 @@ export async function syncCCSourceFiles(): Promise<{ synced: number; skipped: nu
   })
   return res.json()
 }
+
+// ==================== Unified Extraction System API ====================
+
+// Source Files (New)
+export interface SourceFileNew {
+  id: number
+  source_file_id: string
+  filename: string
+  file_path: string
+  file_hash: string
+  file_size: number
+  mime_type: string
+  domain: 'bank_account' | 'credit_card'
+  password: string
+  extractor: string
+  extraction_status: 'not_extracted' | 'extracted'
+  hidden: boolean
+  created_at: string
+  updated_at: string
+  auto_detected_extractor: string | null
+  extractions?: ExtractionNew[]
+}
+
+// Extractions (New)
+export interface ExtractionArtifactNew {
+  id: number
+  artifact_id: string
+  artifact_type: string
+  artifact_key: string
+  content_format: 'csv' | 'json' | 'txt'
+  content_hash: string
+  row_count: number
+  data_source_target: string
+  transformer: string
+  transformation_status: 'not_applicable' | 'not_transformed' | 'transformed'
+  created_at: string
+  data_source_artifacts_count: number
+}
+
+export interface ExtractionNew {
+  id: number
+  extraction_id: string
+  source_file_id: string  // UUID from SourceFile
+  source_filename: string
+  extractor_name: string
+  extractor_version: string
+  status: 'pending' | 'completed' | 'error'
+  error_message: string
+  hidden: boolean
+  extracted_at: string
+  artifacts?: ExtractionArtifactNew[]
+}
+
+// Data Source Artifacts (New)
+export interface DataSourceArtifactNew {
+  id: number
+  artifact_id: string
+  source_artifact_id: string
+  source_artifact_type: string
+  source_artifact_key: string
+  source_extraction_id: string
+  source_filename: string
+  data_source_target: 'bank_account_transactions' | 'credit_card_transactions'
+  content_hash: string
+  row_count: number
+  bank_account_id: number | null
+  bank_account_name: string | null
+  credit_card_id: number | null
+  credit_card_name: string | null
+  transformer: string
+  status: 'unloaded' | 'loading' | 'loaded' | 'error'
+  error_message: string
+  enabled: boolean
+  hidden: boolean
+  transformed_at: string
+  loaded_at: string | null
+}
+
+// Extractors
+export interface ExtractorInfo {
+  name: string
+  version: string
+  domain: 'bank_account' | 'credit_card'
+  supported_extensions: string[]
+}
+
+// API Functions for Unified Extraction System
+
+export async function fetchSourceFilesNew(params?: {
+  visibility?: 'visible' | 'hidden' | 'all'
+  domain?: 'bank_account' | 'credit_card' | 'all'
+}): Promise<{ data: SourceFileNew[] }> {
+  const searchParams = new URLSearchParams()
+  if (params?.visibility) searchParams.set('visibility', params.visibility)
+  if (params?.domain) searchParams.set('domain', params.domain)
+  const queryString = searchParams.toString()
+  const url = queryString
+    ? `${API_BASE}/api/extractions/source-files/?${queryString}`
+    : `${API_BASE}/api/extractions/source-files/`
+  const res = await fetch(url)
+  return res.json()
+}
+
+export async function refreshSourceFilesNew(): Promise<{
+  created: number
+  skipped: number
+  errors: { file: string; error: string }[]
+}> {
+  const res = await fetch(`${API_BASE}/api/extractions/source-files/refresh/`, {
+    method: 'POST',
+  })
+  return res.json()
+}
+
+export async function bulkUpdateSourceFilesNew(
+  ids: number[],
+  action: 'hide' | 'unhide' | 'set_extractor' | 'set_password' | 'set_domain',
+  value?: string
+): Promise<{ success: boolean; updated_count: number }> {
+  const res = await fetch(`${API_BASE}/api/extractions/source-files/bulk-update/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, action, value }),
+  })
+  return res.json()
+}
+
+export async function getSourceFileNew(sourceFileId: string): Promise<SourceFileNew> {
+  const res = await fetch(`${API_BASE}/api/extractions/source-files/${sourceFileId}/`)
+  return res.json()
+}
+
+export async function updateSourceFileNew(
+  sourceFileId: string,
+  data: Partial<{ password: string; extractor: string; domain: string; hidden: boolean }>
+): Promise<SourceFileNew> {
+  const res = await fetch(`${API_BASE}/api/extractions/source-files/${sourceFileId}/`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  return res.json()
+}
+
+export async function extractSourceFileNew(
+  sourceFileId: string,
+  options?: { password?: string; extractor?: string }
+): Promise<{
+  success: boolean
+  extraction?: ExtractionNew
+  error?: string
+  needs_password?: boolean
+}> {
+  const res = await fetch(`${API_BASE}/api/extractions/source-files/${sourceFileId}/extract/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options || {}),
+  })
+  return res.json()
+}
+
+export async function validatePasswordNew(
+  sourceFileId: string,
+  password: string
+): Promise<{ valid: boolean; error?: string }> {
+  const res = await fetch(`${API_BASE}/api/extractions/source-files/${sourceFileId}/validate-password/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  })
+  return res.json()
+}
+
+export async function fetchExtractionsNew(params?: {
+  visibility?: 'visible' | 'hidden' | 'all'
+  domain?: 'bank_account' | 'credit_card' | 'all'
+  status?: 'pending' | 'completed' | 'error' | 'all'
+}): Promise<{ data: ExtractionNew[] }> {
+  const searchParams = new URLSearchParams()
+  if (params?.visibility) searchParams.set('visibility', params.visibility)
+  if (params?.domain) searchParams.set('domain', params.domain)
+  if (params?.status) searchParams.set('status', params.status)
+  const queryString = searchParams.toString()
+  const url = queryString
+    ? `${API_BASE}/api/extractions/?${queryString}`
+    : `${API_BASE}/api/extractions/`
+  const res = await fetch(url)
+  return res.json()
+}
+
+export async function bulkUpdateExtractionsNew(
+  ids: number[],
+  action: 'hide' | 'unhide' | 'delete'
+): Promise<{ success: boolean; updated_count?: number; deleted_count?: number }> {
+  const res = await fetch(`${API_BASE}/api/extractions/bulk-update/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, action }),
+  })
+  return res.json()
+}
+
+export async function getExtractionNew(extractionId: string): Promise<ExtractionNew> {
+  const res = await fetch(`${API_BASE}/api/extractions/${extractionId}/`)
+  return res.json()
+}
+
+export async function updateExtractionNew(
+  extractionId: string,
+  data: { hidden?: boolean }
+): Promise<ExtractionNew> {
+  const res = await fetch(`${API_BASE}/api/extractions/${extractionId}/`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  return res.json()
+}
+
+export async function deleteExtractionNew(extractionId: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/api/extractions/${extractionId}/`, {
+    method: 'DELETE',
+  })
+  return res.json()
+}
+
+export async function getArtifactNew(artifactId: string): Promise<ExtractionArtifactNew> {
+  const res = await fetch(`${API_BASE}/api/extractions/artifacts/${artifactId}/`)
+  return res.json()
+}
+
+export async function previewArtifactNew(
+  artifactId: string,
+  limit?: number
+): Promise<{
+  data: Record<string, unknown>[] | Record<string, unknown> | string
+  total?: number
+  columns?: string[]
+  format: 'csv' | 'json' | 'text'
+}> {
+  const params = new URLSearchParams()
+  if (limit) params.set('limit', limit.toString())
+  const queryString = params.toString()
+  const url = queryString
+    ? `${API_BASE}/api/extractions/artifacts/${artifactId}/preview/?${queryString}`
+    : `${API_BASE}/api/extractions/artifacts/${artifactId}/preview/`
+  const res = await fetch(url)
+  return res.json()
+}
+
+export async function transformArtifactNew(
+  artifactId: string,
+  options?: { bank_account_id?: number; credit_card_id?: number }
+): Promise<{
+  success: boolean
+  data_source_artifact?: DataSourceArtifactNew
+  error?: string
+}> {
+  const res = await fetch(`${API_BASE}/api/extractions/artifacts/${artifactId}/transform/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options || {}),
+  })
+  return res.json()
+}
+
+export async function bulkTransformArtifactsNew(
+  artifactIds: string[],
+  options?: { bank_account_id?: number; credit_card_id?: number }
+): Promise<{
+  results: {
+    artifact_id: string
+    success: boolean
+    data_source_artifact_id?: string
+    error?: string
+  }[]
+}> {
+  const res = await fetch(`${API_BASE}/api/extractions/artifacts/bulk-transform/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ artifact_ids: artifactIds, ...options }),
+  })
+  return res.json()
+}
+
+export async function fetchDataSourcesNew(params?: {
+  visibility?: 'visible' | 'hidden' | 'all'
+  domain?: 'bank_account_transactions' | 'credit_card_transactions' | 'all'
+  status?: 'unloaded' | 'loading' | 'loaded' | 'error' | 'all'
+}): Promise<{ data: DataSourceArtifactNew[] }> {
+  const searchParams = new URLSearchParams()
+  if (params?.visibility) searchParams.set('visibility', params.visibility)
+  if (params?.domain) searchParams.set('domain', params.domain)
+  if (params?.status) searchParams.set('status', params.status)
+  const queryString = searchParams.toString()
+  const url = queryString
+    ? `${API_BASE}/api/extractions/data-sources/?${queryString}`
+    : `${API_BASE}/api/extractions/data-sources/`
+  const res = await fetch(url)
+  return res.json()
+}
+
+export async function bulkUpdateDataSourcesNew(
+  ids: number[],
+  action: 'hide' | 'unhide' | 'enable' | 'disable' | 'set_bank_account' | 'set_credit_card' | 'load' | 'unload' | 'delete',
+  value?: number
+): Promise<{
+  success?: boolean
+  updated_count?: number
+  results?: {
+    id: number
+    artifact_id?: string
+    success: boolean
+    count?: number
+    error?: string
+  }[]
+}> {
+  const res = await fetch(`${API_BASE}/api/extractions/data-sources/bulk-update/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, action, value }),
+  })
+  return res.json()
+}
+
+export async function getDataSourceNew(artifactId: string): Promise<DataSourceArtifactNew> {
+  const res = await fetch(`${API_BASE}/api/extractions/data-sources/${artifactId}/`)
+  return res.json()
+}
+
+export async function updateDataSourceNew(
+  artifactId: string,
+  data: Partial<{
+    enabled: boolean
+    hidden: boolean
+    bank_account_id: number | null
+    credit_card_id: number | null
+  }>
+): Promise<DataSourceArtifactNew> {
+  const res = await fetch(`${API_BASE}/api/extractions/data-sources/${artifactId}/`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  return res.json()
+}
+
+export async function deleteDataSourceNew(artifactId: string): Promise<{ success: boolean; error?: string }> {
+  const res = await fetch(`${API_BASE}/api/extractions/data-sources/${artifactId}/`, {
+    method: 'DELETE',
+  })
+  return res.json()
+}
+
+export async function loadDataSourceNew(artifactId: string): Promise<{
+  success: boolean
+  count?: number
+  data_source_artifact?: DataSourceArtifactNew
+  error?: string
+}> {
+  const res = await fetch(`${API_BASE}/api/extractions/data-sources/${artifactId}/load/`, {
+    method: 'POST',
+  })
+  return res.json()
+}
+
+export async function unloadDataSourceNew(artifactId: string): Promise<{
+  success: boolean
+  count?: number
+  data_source_artifact?: DataSourceArtifactNew
+  error?: string
+}> {
+  const res = await fetch(`${API_BASE}/api/extractions/data-sources/${artifactId}/unload/`, {
+    method: 'POST',
+  })
+  return res.json()
+}
+
+export async function previewDataSourceNew(
+  artifactId: string,
+  limit?: number
+): Promise<{
+  data: Record<string, unknown>[]
+  total: number
+  columns: string[]
+  format: 'csv'
+}> {
+  const params = limit ? `?limit=${limit}` : ''
+  const res = await fetch(`${API_BASE}/api/extractions/data-sources/${artifactId}/preview/${params}`)
+  return res.json()
+}
+
+export async function fetchExtractorsNew(): Promise<{ data: ExtractorInfo[] }> {
+  const res = await fetch(`${API_BASE}/api/extractions/extractors/`)
+  return res.json()
+}

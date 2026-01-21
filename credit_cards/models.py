@@ -297,6 +297,15 @@ class CreditCardTransaction(models.Model):
         blank=True,
         related_name='transactions'
     )
+    # New unified extraction system
+    data_source_artifact = models.ForeignKey(
+        'extractions.DataSourceArtifact',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cc_transactions'
+    )
+    artifact_row_id = models.CharField(max_length=50, blank=True)  # For link snapshot matching
     row_number = models.IntegerField(default=0)  # Position in extracted CSV for ordering
 
     class Meta:

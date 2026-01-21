@@ -46,6 +46,7 @@ urlpatterns = [
     path('', include('bank_accs.urls')),
     path('', include('dashboard.urls')),
     path('', include('credit_cards.urls')),
+    path('', include('extractions.urls')),
 ]
 
 # API docs (dev only)

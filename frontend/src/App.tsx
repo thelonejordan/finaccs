@@ -8,6 +8,8 @@ import { LogsPage } from "@/components/LogsPage"
 import { StoryPage } from "@/components/StoryPage"
 import { ExtractionsPage } from "@/components/ExtractionsPage"
 import { BankExtractionsPage } from "@/components/BankExtractionsPage"
+import { ExtractionsPageNew } from "@/components/ExtractionsPageNew"
+import { DataSourcesPageNew } from "@/components/DataSourcesPageNew"
 import { ThemeProvider } from "@/lib/theme"
 import { InconsistencyCacheProvider } from "@/lib/inconsistency-cache"
 import { StoryCacheProvider } from "@/lib/story-cache"
@@ -25,6 +27,8 @@ function App() {
           <Route path="/credit-cards" element={<CreditCardsPage />} />
           <Route path="/extractions" element={<ExtractionsPage />} />
           <Route path="/bank-extractions" element={<BankExtractionsPage />} />
+          <Route path="/extractions-new" element={<ExtractionsPageNew />} />
+          <Route path="/data-sources-new" element={<DataSourcesPageNew />} />
           <Route path="/story" element={<StoryPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/inconsistencies" element={<InconsistenciesPage />} />

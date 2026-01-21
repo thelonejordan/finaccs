@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'bank_accs',
     'dashboard',
     'credit_cards',
+    'extractions',
 ]
 
 # Development tools

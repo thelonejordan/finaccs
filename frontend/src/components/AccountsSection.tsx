@@ -329,7 +329,7 @@ export function AccountsSection({ accounts, extractedCSVs, onSave, initialAddSou
             </div>
             Accounts
           </h3>
-          {!isAdding && availableFileNames.length > 0 && accounts.length > 0 && (
+          {!isAdding && accounts.length > 0 && (
             <button
               onClick={() => setIsAdding(true)}
               className="px-3 py-1.5 text-sm rounded-lg bg-muted text-foreground hover:bg-muted/80 transition-colors inline-flex items-center gap-1.5 font-medium"
@@ -349,15 +349,13 @@ export function AccountsSection({ accounts, extractedCSVs, onSave, initialAddSou
               </div>
               <p className="font-medium">No accounts configured</p>
               <p className="text-sm text-muted-foreground mt-1">Add a bank account to get started</p>
-              {availableFileNames.length > 0 && (
-                <button
-                  onClick={() => setIsAdding(true)}
-                  className="mt-4 px-4 py-2 text-sm rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors inline-flex items-center gap-2 font-medium shadow-sm"
-                >
-                  <PlusIcon className="h-4 w-4" />
-                  Add Account
-                </button>
-              )}
+              <button
+                onClick={() => setIsAdding(true)}
+                className="mt-4 px-4 py-2 text-sm rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors inline-flex items-center gap-2 font-medium shadow-sm"
+              >
+                <PlusIcon className="h-4 w-4" />
+                Add Account
+              </button>
             </div>
           ) : (
             <>
