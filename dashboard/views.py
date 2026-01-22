@@ -2014,10 +2014,18 @@ def api_cc_payment_match_years(request):
     """Get available years with match counts."""
     from django.db.models import Count
     from django.db.models.functions import ExtractYear
+    from credit_cards.views import get_active_cc_transactions_experimental
+
+    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
+    source = request.GET.get('source', 'legacy')
 
     # Get IDs of active transactions (consistent with matches endpoint)
-    active_bank_txn_ids = get_active_transactions().values_list('id', flat=True)
-    active_cc_txn_ids = get_active_cc_transactions().values_list('id', flat=True)
+    if source == 'experimental':
+        active_bank_txn_ids = get_active_transactions_experimental().values_list('id', flat=True)
+        active_cc_txn_ids = get_active_cc_transactions_experimental().values_list('id', flat=True)
+    else:
+        active_bank_txn_ids = get_active_transactions().values_list('id', flat=True)
+        active_cc_txn_ids = get_active_cc_transactions().values_list('id', flat=True)
 
     # Count matches by year (only active matches where both bank and CC transactions are from active sources)
     year_counts = (

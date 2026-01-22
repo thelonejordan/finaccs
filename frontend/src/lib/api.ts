@@ -991,8 +991,13 @@ export async function deleteCCPaymentMatch(matchId: number): Promise<{ success: 
   return res.json()
 }
 
-export async function fetchCCPaymentMatchYears(): Promise<{ years: Record<string, number> }> {
-  const res = await fetch(`${API_BASE}/api/cc-payment-matches/years/`)
+export async function fetchCCPaymentMatchYears(params?: {
+  source?: 'legacy' | 'experimental'
+}): Promise<{ years: Record<string, number> }> {
+  const searchParams = new URLSearchParams()
+  if (params?.source) searchParams.set('source', params.source)
+  const query = searchParams.toString()
+  const res = await fetch(`${API_BASE}/api/cc-payment-matches/years/${query ? `?${query}` : ''}`)
   return res.json()
 }
 

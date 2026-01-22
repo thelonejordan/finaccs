@@ -885,7 +885,7 @@ function ConfirmedTab() {
   useEffect(() => {
     async function loadYears() {
       try {
-        const result = await fetchCCPaymentMatchYears()
+        const result = await fetchCCPaymentMatchYears({ source: 'experimental' })
         setYears(result.years)
         // Auto-select most recent year if available
         const yearKeys = Object.keys(result.years).sort((a, b) => parseInt(b) - parseInt(a))
