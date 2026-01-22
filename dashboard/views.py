@@ -383,7 +383,50 @@ def api_transactions(request):
     offset = int(request.GET.get('offset', 0))
 
     total = transactions.count()
-    transactions_page = transactions[offset:offset + limit]
+
+    # Custom sorting for experimental mode (overlapping data sources)
+    # For descending display: within same date, smaller row numbers first (newer data sources),
+    # larger row numbers last (older data sources)
+    if source == 'experimental':
+        from itertools import groupby
+
+        # Fetch all transactions for custom sorting, then paginate
+        all_txns = list(transactions.order_by('-date', 'row_number'))
+
+        # Sort by date descending first
+        all_txns.sort(key=lambda t: t.date, reverse=True)
+
+        sorted_result = []
+        # Group by date
+        for date, date_group in groupby(all_txns, key=lambda t: t.date):
+            date_txns = list(date_group)
+
+            # Group by data_source_artifact_id
+            artifact_groups = {}
+            for txn in date_txns:
+                aid = txn.data_source_artifact_id
+                if aid not in artifact_groups:
+                    artifact_groups[aid] = []
+                artifact_groups[aid].append(txn)
+
+            # Sort each artifact group by row_number descending (for display)
+            for aid in artifact_groups:
+                artifact_groups[aid].sort(key=lambda t: t.row_number, reverse=True)
+
+            # Sort artifact groups by min row_number ascending (smaller/newer first)
+            sorted_groups = sorted(
+                artifact_groups.values(),
+                key=lambda g: min(t.row_number for t in g),
+                reverse=False
+            )
+
+            # Flatten
+            for group in sorted_groups:
+                sorted_result.extend(group)
+
+        transactions_page = sorted_result[offset:offset + limit]
+    else:
+        transactions_page = transactions[offset:offset + limit]
 
     data = []
     for t in transactions_page:
