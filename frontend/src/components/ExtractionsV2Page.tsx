@@ -35,30 +35,30 @@ import {
   type BulkAction,
 } from "@/components/extraction"
 import {
-  fetchSourceFilesNew,
-  refreshSourceFilesNew,
-  fetchExtractionsNew,
-  fetchExtractorsNew,
-  extractSourceFileNew,
-  updateSourceFileNew,
-  validatePasswordNew,
-  bulkUpdateSourceFilesNew,
-  bulkUpdateExtractionsNew,
-  bulkTransformArtifactsNew,
-  transformArtifactNew,
-  previewArtifactNew,
-  fetchDataSourcesNew,
-  bulkUpdateDataSourcesNew,
-  updateDataSourceNew,
-  loadDataSourceNew,
-  unloadDataSourceNew,
-  previewDataSourceNew,
+  fetchSourceFiles,
+  refreshSourceFiles,
+  fetchExtractions,
+  fetchExtractors,
+  extractSourceFile,
+  updateSourceFile,
+  validatePassword,
+  bulkUpdateSourceFiles,
+  bulkUpdateExtractions,
+  bulkTransformArtifacts,
+  transformArtifact,
+  previewArtifact,
+  fetchDataSources,
+  bulkUpdateDataSources,
+  updateDataSource,
+  loadDataSource,
+  unloadDataSource,
+  previewDataSource,
   fetchBankAccounts,
   fetchCreditCards,
-  type SourceFileNew,
-  type ExtractionNew,
+  type SourceFile,
+  type Extraction,
   type ExtractorInfo,
-  type DataSourceArtifactNew,
+  type DataSourceArtifact,
   type BankAccount,
   type CreditCard,
 } from "@/lib/api"
@@ -95,11 +95,11 @@ function SourceFilesSection({
   onBulkAction,
   onDataChange,
 }: {
-  files: SourceFileNew[]
+  files: SourceFile[]
   extractors: ExtractorInfo[]
   selectedIds: Set<number>
   onSelectionChange: (ids: Set<number>) => void
-  onExtract: (file: SourceFileNew, password?: string, extractor?: string) => void
+  onExtract: (file: SourceFile, password?: string, extractor?: string) => void
   extractingId: number | null
   onRefresh: () => void
   isRefreshing: boolean
@@ -132,7 +132,7 @@ function SourceFilesSection({
     onSelectionChange(newSet)
   }
 
-  const handleExtract = (file: SourceFileNew) => {
+  const handleExtract = (file: SourceFile) => {
     if (passwordInputId === file.id && password) {
       onExtract(file, password)
       setPasswordInputId(null)
@@ -142,12 +142,12 @@ function SourceFilesSection({
     }
   }
 
-  const handleSavePassword = async (file: SourceFileNew) => {
+  const handleSavePassword = async (file: SourceFile) => {
     setPasswordError(null)
 
     // If clearing password, just save
     if (!password) {
-      await updateSourceFileNew(file.source_file_id, { password: '' })
+      await updateSourceFile(file.source_file_id, { password: '' })
       setPasswordInputId(null)
       setPassword('')
       onDataChange()
@@ -157,10 +157,10 @@ function SourceFilesSection({
     // Validate password first
     setIsValidating(true)
     try {
-      const result = await validatePasswordNew(file.source_file_id, password)
+      const result = await validatePassword(file.source_file_id, password)
       if (result.valid) {
         // Password is correct, save it
-        await updateSourceFileNew(file.source_file_id, { password })
+        await updateSourceFile(file.source_file_id, { password })
         setPasswordInputId(null)
         setPassword('')
         setPasswordError(null)
@@ -309,7 +309,7 @@ function SourceFilesSection({
                         <ExtractorSelector
                           value={file.extractor}
                           onChange={async (v) => {
-                            await updateSourceFileNew(file.source_file_id, { extractor: v })
+                            await updateSourceFile(file.source_file_id, { extractor: v })
                             setEditingExtractorId(null)
                           }}
                           extractors={extractors}
@@ -394,7 +394,7 @@ function ExtractionsSection({
   isTransforming,
   onDataChange,
 }: {
-  extractions: ExtractionNew[]
+  extractions: Extraction[]
   selectedIds: Set<number>
   onSelectionChange: (ids: Set<number>) => void
   visibility: VisibilityFilter
@@ -435,7 +435,7 @@ function ExtractionsSection({
     onSelectionChange(newSet)
   }
 
-  const handleRowClick = (extraction: ExtractionNew, e: React.MouseEvent) => {
+  const handleRowClick = (extraction: Extraction, e: React.MouseEvent) => {
     const target = e.target as HTMLElement
     if (target.closest('button') || target.closest('input')) {
       return
@@ -455,7 +455,7 @@ function ExtractionsSection({
   const handleTransformArtifact = async (artifactId: string) => {
     setTransformingArtifactId(artifactId)
     try {
-      await transformArtifactNew(artifactId)
+      await transformArtifact(artifactId)
       onDataChange()
     } catch (error) {
       console.error('Failed to transform artifact:', error)
@@ -465,7 +465,7 @@ function ExtractionsSection({
     }
   }
 
-  const handleTransformAllForExtraction = async (extraction: ExtractionNew) => {
+  const handleTransformAllForExtraction = async (extraction: Extraction) => {
     if (!extraction.artifacts) return
 
     const artifactIds = extraction.artifacts
@@ -479,7 +479,7 @@ function ExtractionsSection({
 
     setTransformingArtifactId('all')
     try {
-      await bulkTransformArtifactsNew(artifactIds)
+      await bulkTransformArtifacts(artifactIds)
       onDataChange()
     } catch (error) {
       console.error('Failed to transform artifacts:', error)
@@ -499,7 +499,7 @@ function ExtractionsSection({
     setPreviewArtifactId(artifactId)
     setIsLoadingPreview(true)
     try {
-      const result = await previewArtifactNew(artifactId, 10)
+      const result = await previewArtifact(artifactId, 10)
       if (result.format === 'csv' && Array.isArray(result.data)) {
         setPreviewData({
           data: result.data as Record<string, unknown>[],
@@ -832,9 +832,8 @@ function DataSourcesSection({
   onToggleEnabled,
   onEntityChange,
   loadingId,
-  onDataChange,
 }: {
-  dataSources: DataSourceArtifactNew[]
+  dataSources: DataSourceArtifact[]
   bankAccounts: BankAccount[]
   creditCards: CreditCard[]
   selectedIds: Set<number>
@@ -844,10 +843,10 @@ function DataSourcesSection({
   domainFilter: DomainFilter
   onDomainFilterChange: (v: DomainFilter) => void
   onBulkAction: (action: string) => void
-  onLoad: (ds: DataSourceArtifactNew) => void
-  onUnload: (ds: DataSourceArtifactNew) => void
-  onToggleEnabled: (ds: DataSourceArtifactNew) => void
-  onEntityChange: (ds: DataSourceArtifactNew, entityId: number | null) => void
+  onLoad: (ds: DataSourceArtifact) => void
+  onUnload: (ds: DataSourceArtifact) => void
+  onToggleEnabled: (ds: DataSourceArtifact) => void
+  onEntityChange: (ds: DataSourceArtifact, entityId: number | null) => void
   loadingId: number | null
 }) {
   // Preview state
@@ -901,7 +900,7 @@ function DataSourcesSection({
     setPreviewArtifactId(artifactId)
     setIsLoadingPreview(true)
     try {
-      const result = await previewDataSourceNew(artifactId, 10)
+      const result = await previewDataSource(artifactId, 10)
       setPreviewData({
         data: result.data,
         columns: result.columns,
@@ -1175,15 +1174,15 @@ function DataSourcesSection({
 }
 
 // Main Page Component
-export function ExtractionsPageNew() {
+export function ExtractionsV2Page() {
   // View mode
   const [viewMode, setViewMode] = useState<ViewMode>('source_files')
 
   // Data state
-  const [sourceFiles, setSourceFiles] = useState<SourceFileNew[]>([])
-  const [extractions, setExtractions] = useState<ExtractionNew[]>([])
+  const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([])
+  const [extractions, setExtractions] = useState<Extraction[]>([])
   const [extractors, setExtractors] = useState<ExtractorInfo[]>([])
-  const [dataSources, setDataSources] = useState<DataSourceArtifactNew[]>([])
+  const [dataSources, setDataSources] = useState<DataSourceArtifact[]>([])
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   const [creditCards, setCreditCards] = useState<CreditCard[]>([])
 
@@ -1233,10 +1232,10 @@ export function ExtractionsPageNew() {
     setLoadError(null)
     try {
       const [filesRes, extractionsRes, extractorsRes, dsRes, accountsRes, cardsRes] = await Promise.all([
-        fetchSourceFilesNew({ visibility: sourceFilesVisibility }),
-        fetchExtractionsNew({ visibility: extractionsVisibility }),
-        fetchExtractorsNew(),
-        fetchDataSourcesNew({
+        fetchSourceFiles({ visibility: sourceFilesVisibility }),
+        fetchExtractions({ visibility: extractionsVisibility }),
+        fetchExtractors(),
+        fetchDataSources({
           visibility: dataSourcesVisibility,
           domain: domainFilter === 'all' ? undefined : domainFilter,
         }),
@@ -1264,7 +1263,7 @@ export function ExtractionsPageNew() {
   const handleRefresh = async () => {
     setIsRefreshing(true)
     try {
-      const result = await refreshSourceFilesNew()
+      const result = await refreshSourceFiles()
       await loadData()
       if (result.errors.length > 0) {
         alert(`Refresh completed with errors:\nCreated: ${result.created}\nSkipped: ${result.skipped}\nErrors: ${result.errors.length}`)
@@ -1276,10 +1275,10 @@ export function ExtractionsPageNew() {
     }
   }
 
-  const handleExtract = async (file: SourceFileNew, password?: string, extractor?: string) => {
+  const handleExtract = async (file: SourceFile, password?: string, extractor?: string) => {
     setExtractingId(file.id)
     try {
-      const result = await extractSourceFileNew(file.source_file_id, { password, extractor })
+      const result = await extractSourceFile(file.source_file_id, { password, extractor })
       if (result.success) {
         await loadData()
       } else if (result.needs_password) {
@@ -1300,7 +1299,7 @@ export function ExtractionsPageNew() {
     if (ids.length === 0) return
 
     if (action === 'hide' || action === 'unhide') {
-      await bulkUpdateSourceFilesNew(ids, action)
+      await bulkUpdateSourceFiles(ids, action)
       await loadData()
       setSelectedSourceFiles(new Set())
     } else if (action === 'set_password') {
@@ -1316,7 +1315,7 @@ export function ExtractionsPageNew() {
       let errorCount = 0
       for (const file of selectedFiles) {
         try {
-          const result = await extractSourceFileNew(file.source_file_id)
+          const result = await extractSourceFile(file.source_file_id)
           if (result.success) {
             successCount++
           } else {
@@ -1352,7 +1351,7 @@ export function ExtractionsPageNew() {
 
       setIsTransforming(true)
       try {
-        await bulkTransformArtifactsNew(artifactIds)
+        await bulkTransformArtifacts(artifactIds)
         await loadData()
         setSelectedSourceFiles(new Set())
         alert(`Transformed ${artifactIds.length} artifact(s)`)
@@ -1367,7 +1366,7 @@ export function ExtractionsPageNew() {
 
   const handleBulkPasswordSubmit = async () => {
     const ids = Array.from(selectedSourceFiles)
-    await bulkUpdateSourceFilesNew(ids, 'set_password', bulkPasswordDialog.password)
+    await bulkUpdateSourceFiles(ids, 'set_password', bulkPasswordDialog.password)
     await loadData()
     setSelectedSourceFiles(new Set())
     setBulkPasswordDialog({ open: false, password: '' })
@@ -1375,7 +1374,7 @@ export function ExtractionsPageNew() {
 
   const handleBulkExtractorSubmit = async () => {
     const ids = Array.from(selectedSourceFiles)
-    await bulkUpdateSourceFilesNew(ids, 'set_extractor', bulkExtractorDialog.extractor)
+    await bulkUpdateSourceFiles(ids, 'set_extractor', bulkExtractorDialog.extractor)
     await loadData()
     setSelectedSourceFiles(new Set())
     setBulkExtractorDialog({ open: false, extractor: '' })
@@ -1383,7 +1382,7 @@ export function ExtractionsPageNew() {
 
   const handleBulkDomainSubmit = async () => {
     const ids = Array.from(selectedSourceFiles)
-    await bulkUpdateSourceFilesNew(ids, 'set_domain', bulkDomainDialog.domain)
+    await bulkUpdateSourceFiles(ids, 'set_domain', bulkDomainDialog.domain)
     await loadData()
     setSelectedSourceFiles(new Set())
     setBulkDomainDialog({ open: false, domain: 'bank_account' })
@@ -1398,14 +1397,14 @@ export function ExtractionsPageNew() {
         description: `Are you sure you want to delete ${ids.length} extraction(s)? This action cannot be undone.`,
         variant: 'danger',
         action: async () => {
-          await bulkUpdateExtractionsNew(ids, 'delete')
+          await bulkUpdateExtractions(ids, 'delete')
           await loadData()
           setSelectedExtractions(new Set())
           setConfirmDialog(prev => ({ ...prev, open: false }))
         },
       })
     } else if (action === 'hide' || action === 'unhide') {
-      await bulkUpdateExtractionsNew(ids, action)
+      await bulkUpdateExtractions(ids, action)
       await loadData()
       setSelectedExtractions(new Set())
     } else if (action === 'transform_all') {
@@ -1430,7 +1429,7 @@ export function ExtractionsPageNew() {
     if (artifactIds.length === 0) return
     setIsTransforming(true)
     try {
-      await bulkTransformArtifactsNew(artifactIds)
+      await bulkTransformArtifacts(artifactIds)
       await loadData()
     } finally {
       setIsTransforming(false)
@@ -1438,10 +1437,10 @@ export function ExtractionsPageNew() {
   }
 
   // Data Source handlers
-  const handleDsLoad = async (ds: DataSourceArtifactNew) => {
+  const handleDsLoad = async (ds: DataSourceArtifact) => {
     setDsLoadingId(ds.id)
     try {
-      const result = await loadDataSourceNew(ds.artifact_id)
+      const result = await loadDataSource(ds.artifact_id)
       if (!result.success) {
         alert(result.error || 'Load failed')
       }
@@ -1451,7 +1450,7 @@ export function ExtractionsPageNew() {
     }
   }
 
-  const handleDsUnload = async (ds: DataSourceArtifactNew) => {
+  const handleDsUnload = async (ds: DataSourceArtifact) => {
     setConfirmDialog({
       open: true,
       title: 'Unload Data Source',
@@ -1461,7 +1460,7 @@ export function ExtractionsPageNew() {
         setDsLoadingId(ds.id)
         setConfirmDialog(prev => ({ ...prev, open: false }))
         try {
-          const result = await unloadDataSourceNew(ds.artifact_id)
+          const result = await unloadDataSource(ds.artifact_id)
           if (!result.success) {
             alert(result.error || 'Unload failed')
           }
@@ -1473,16 +1472,16 @@ export function ExtractionsPageNew() {
     })
   }
 
-  const handleDsToggleEnabled = async (ds: DataSourceArtifactNew) => {
-    await updateDataSourceNew(ds.artifact_id, { enabled: !ds.enabled })
+  const handleDsToggleEnabled = async (ds: DataSourceArtifact) => {
+    await updateDataSource(ds.artifact_id, { enabled: !ds.enabled })
     await loadData()
   }
 
-  const handleDsEntityChange = async (ds: DataSourceArtifactNew, entityId: number | null) => {
+  const handleDsEntityChange = async (ds: DataSourceArtifact, entityId: number | null) => {
     if (ds.data_source_target === 'bank_account_transactions') {
-      await updateDataSourceNew(ds.artifact_id, { bank_account_id: entityId })
+      await updateDataSource(ds.artifact_id, { bank_account_id: entityId })
     } else {
-      await updateDataSourceNew(ds.artifact_id, { credit_card_id: entityId })
+      await updateDataSource(ds.artifact_id, { credit_card_id: entityId })
     }
     await loadData()
   }
@@ -1497,7 +1496,7 @@ export function ExtractionsPageNew() {
         description: `Are you sure you want to delete ${ids.length} data source(s)? This will also delete all associated transactions. This action cannot be undone.`,
         variant: 'danger',
         action: async () => {
-          await bulkUpdateDataSourcesNew(ids, 'delete')
+          await bulkUpdateDataSources(ids, 'delete')
           await loadData()
           setSelectedDataSources(new Set())
           setConfirmDialog(prev => ({ ...prev, open: false }))
@@ -1511,14 +1510,14 @@ export function ExtractionsPageNew() {
           description: `This will delete all transactions loaded from ${ids.length} data source(s). Continue?`,
           variant: 'danger',
           action: async () => {
-            await bulkUpdateDataSourcesNew(ids, action)
+            await bulkUpdateDataSources(ids, action)
             await loadData()
             setSelectedDataSources(new Set())
             setConfirmDialog(prev => ({ ...prev, open: false }))
           },
         })
       } else {
-        await bulkUpdateDataSourcesNew(ids, action)
+        await bulkUpdateDataSources(ids, action)
         await loadData()
         setSelectedDataSources(new Set())
       }
@@ -1529,7 +1528,7 @@ export function ExtractionsPageNew() {
       setAssignDialog({ open: true, type: 'credit_card', ids })
       setAssignValue(null)
     } else {
-      await bulkUpdateDataSourcesNew(ids, action as 'hide' | 'unhide' | 'enable' | 'disable')
+      await bulkUpdateDataSources(ids, action as 'hide' | 'unhide' | 'enable' | 'disable')
       await loadData()
       setSelectedDataSources(new Set())
     }
@@ -1538,7 +1537,7 @@ export function ExtractionsPageNew() {
   const handleAssignConfirm = async () => {
     if (!assignDialog) return
     const action = assignDialog.type === 'bank_account' ? 'set_bank_account' : 'set_credit_card'
-    await bulkUpdateDataSourcesNew(assignDialog.ids, action, assignValue ?? undefined)
+    await bulkUpdateDataSources(assignDialog.ids, action, assignValue ?? undefined)
     await loadData()
     setSelectedDataSources(new Set())
     setAssignDialog(null)

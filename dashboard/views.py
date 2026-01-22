@@ -80,7 +80,7 @@ def get_active_transactions_experimental():
 @api_view(['GET'])
 def api_summary(request):
     # Get active transactions (excludes disabled source files and superseded CSVs)
-    source = request.GET.get('source', 'legacy')
+    source = request.GET.get('source', 'experimental')
     if source == 'experimental':
         all_transactions = get_active_transactions_experimental()
     else:
@@ -220,7 +220,7 @@ def api_summary(request):
 @api_view(['GET'])
 def api_monthly(request):
     # Exclude self transfers from monthly breakdown
-    source = request.GET.get('source', 'legacy')
+    source = request.GET.get('source', 'experimental')
     if source == 'experimental':
         transactions = get_active_transactions_experimental().exclude(category__in=EXCLUDED_CATEGORIES)
     else:
@@ -266,7 +266,7 @@ def api_monthly(request):
 def api_categories(request):
     # Check if we should include all categories (for filtering purposes)
     include_all = request.GET.get('include_all', 'false').lower() == 'true'
-    source = request.GET.get('source', 'legacy')
+    source = request.GET.get('source', 'experimental')
 
     # Get active transactions with debits
     if source == 'experimental':
@@ -330,7 +330,7 @@ def api_transactions(request):
     from django.db.models import Q
 
     # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'legacy')
+    source = request.GET.get('source', 'experimental')
     if source == 'experimental':
         transactions = get_active_transactions_experimental()
     else:
@@ -546,7 +546,7 @@ def api_transactions(request):
 @api_view(['GET'])
 def api_top_expenses(request):
     limit = int(request.GET.get('limit', 10))
-    source = request.GET.get('source', 'legacy')
+    source = request.GET.get('source', 'experimental')
 
     # Exclude self transfers from top expenses
     if source == 'experimental':
@@ -994,7 +994,7 @@ def api_date_range(request):
     from django.db.models import Q
 
     # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'legacy')
+    source = request.GET.get('source', 'experimental')
     if source == 'experimental':
         transactions = get_active_transactions_experimental()
     else:
@@ -1173,7 +1173,7 @@ def bank_inconsistencies(request):
     from .models import DismissedBankInconsistency
 
     # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'legacy')
+    source = request.GET.get('source', 'experimental')
     bank_account_id = request.GET.get('bank_account')
     type_filter = request.GET.get('type')
     show_dismissed = request.GET.get('show_dismissed', 'false').lower() == 'true'
@@ -1573,7 +1573,7 @@ def api_cc_payment_suggestions(request):
     from credit_cards.views import get_active_cc_transactions_experimental
 
     # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'legacy')
+    source = request.GET.get('source', 'experimental')
 
     # Get unlinked bank transactions tagged as "Credit Card Payment"
     # No amount filter - show all tagged transactions so incorrectly tagged ones can be re-categorized
@@ -1704,7 +1704,7 @@ def api_cc_payment_suggestions_reverse(request):
     from credit_cards.views import get_active_cc_transactions_experimental
 
     # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'legacy')
+    source = request.GET.get('source', 'experimental')
 
     # Get the appropriate transaction query functions based on source
     if source == 'experimental':
@@ -1855,7 +1855,7 @@ def api_cc_payment_matches(request):
         from credit_cards.views import get_active_cc_transactions_experimental
 
         # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-        source = request.GET.get('source', 'legacy')
+        source = request.GET.get('source', 'experimental')
 
         # Get IDs of active transactions (bank and CC)
         if source == 'experimental':
@@ -1931,7 +1931,7 @@ def api_cc_payment_matches(request):
 
     bank_txn_id = body.get('bank_transaction_id')
     cc_txn_id = body.get('credit_card_transaction_id')
-    source = body.get('source', 'legacy')
+    source = body.get('source', 'experimental')
 
     if not bank_txn_id or not cc_txn_id:
         return JsonResponse({'error': 'bank_transaction_id and credit_card_transaction_id are required'}, status=400)
@@ -2035,7 +2035,7 @@ def api_cc_payment_match_years(request):
     from credit_cards.views import get_active_cc_transactions_experimental
 
     # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'legacy')
+    source = request.GET.get('source', 'experimental')
 
     # Get IDs of active transactions (consistent with matches endpoint)
     if source == 'experimental':

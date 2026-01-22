@@ -224,32 +224,20 @@ export async function loadExtractedCSVs(
   return res.json()
 }
 
-export async function fetchSummary(params?: {
-  source?: 'legacy' | 'experimental'
-}): Promise<Summary> {
-  const searchParams = new URLSearchParams()
-  if (params?.source) searchParams.set("source", params.source)
-  const query = searchParams.toString()
-  const res = await fetch(`${API_BASE}/api/summary/${query ? `?${query}` : ''}`)
+export async function fetchSummary(): Promise<Summary> {
+  const res = await fetch(`${API_BASE}/api/summary/`)
   return res.json()
 }
 
-export async function fetchMonthly(params?: {
-  source?: 'legacy' | 'experimental'
-}): Promise<{ data: MonthlyData[] }> {
-  const searchParams = new URLSearchParams()
-  if (params?.source) searchParams.set("source", params.source)
-  const query = searchParams.toString()
-  const res = await fetch(`${API_BASE}/api/monthly/${query ? `?${query}` : ''}`)
+export async function fetchMonthly(): Promise<{ data: MonthlyData[] }> {
+  const res = await fetch(`${API_BASE}/api/monthly/`)
   return res.json()
 }
 
 export async function fetchCategories(params?: {
-  source?: 'legacy' | 'experimental'
   include_all?: boolean
 }): Promise<{ data: CategoryData[] }> {
   const searchParams = new URLSearchParams()
-  if (params?.source) searchParams.set("source", params.source)
   if (params?.include_all) searchParams.set("include_all", "true")
   const query = searchParams.toString()
   const res = await fetch(`${API_BASE}/api/categories/${query ? `?${query}` : ''}`)
@@ -257,7 +245,6 @@ export async function fetchCategories(params?: {
 }
 
 export async function fetchTransactions(params?: {
-  source?: 'legacy' | 'experimental'
   category?: string
   type?: string
   bank_account?: number
@@ -269,7 +256,6 @@ export async function fetchTransactions(params?: {
   offset?: number
 }): Promise<{ data: Transaction[]; total: number; stats: TransactionStats }> {
   const searchParams = new URLSearchParams()
-  if (params?.source) searchParams.set("source", params.source)
   if (params?.category) searchParams.set("category", params.category)
   if (params?.type) searchParams.set("type", params.type)
   if (params?.bank_account) searchParams.set("bank_account", params.bank_account.toString())
@@ -285,11 +271,9 @@ export async function fetchTransactions(params?: {
 }
 
 export async function fetchTopExpenses(params?: {
-  source?: 'legacy' | 'experimental'
   limit?: number
 }): Promise<{ data: TopExpense[] }> {
   const searchParams = new URLSearchParams()
-  if (params?.source) searchParams.set("source", params.source)
   searchParams.set("limit", (params?.limit ?? 10).toString())
   const res = await fetch(`${API_BASE}/api/top-expenses/?${searchParams}`)
   return res.json()
@@ -518,7 +502,6 @@ export interface BankInconsistency {
 }
 
 export async function fetchBankInconsistencies(params?: {
-  source?: 'legacy' | 'experimental'
   bank_account?: number
   type?: 'duplicate' | 'cross_account' | 'balance_gap'
   show_dismissed?: boolean
@@ -534,7 +517,6 @@ export async function fetchBankInconsistencies(params?: {
   }
 }> {
   const searchParams = new URLSearchParams()
-  if (params?.source) searchParams.set("source", params.source)
   if (params?.bank_account) searchParams.set("bank_account", params.bank_account.toString())
   if (params?.type) searchParams.set("type", params.type)
   if (params?.show_dismissed) searchParams.set("show_dismissed", "true")
@@ -575,7 +557,6 @@ export interface DateRange {
 }
 
 export interface DateRangeFilters {
-  source?: 'legacy' | 'experimental'
   bank_account?: number
   category?: string
   type?: string
@@ -585,7 +566,6 @@ export interface DateRangeFilters {
 
 export async function fetchDateRange(filters?: DateRangeFilters): Promise<DateRange> {
   const searchParams = new URLSearchParams()
-  if (filters?.source) searchParams.set('source', filters.source)
   if (filters?.bank_account) searchParams.set('bank_account', filters.bank_account.toString())
   if (filters?.category) searchParams.set('category', filters.category)
   if (filters?.type) searchParams.set('type', filters.type)
@@ -734,7 +714,6 @@ export async function toggleCreditCardSourceFileDisabled(
 }
 
 export async function fetchCreditCardTransactions(params?: {
-  source?: 'legacy' | 'experimental'
   credit_card?: number
   category?: string
   type?: string  // 'charge' | 'payment'
@@ -746,7 +725,6 @@ export async function fetchCreditCardTransactions(params?: {
   offset?: number
 }): Promise<{ data: CreditCardTransaction[]; total: number; stats: CreditCardTransactionStats }> {
   const searchParams = new URLSearchParams()
-  if (params?.source) searchParams.set("source", params.source)
   if (params?.credit_card) searchParams.set("credit_card", params.credit_card.toString())
   if (params?.category) searchParams.set("category", params.category)
   if (params?.type) searchParams.set("type", params.type)
@@ -761,24 +739,16 @@ export async function fetchCreditCardTransactions(params?: {
   return res.json()
 }
 
-export async function fetchCreditCardDateRange(params?: {
-  source?: 'legacy' | 'experimental'
-}): Promise<DateRange> {
-  const searchParams = new URLSearchParams()
-  if (params?.source) searchParams.set("source", params.source)
-  const queryString = searchParams.toString()
-  const url = queryString ? `${API_BASE}/api/credit-card-date-range/?${queryString}` : `${API_BASE}/api/credit-card-date-range/`
-  const res = await fetch(url)
+export async function fetchCreditCardDateRange(): Promise<DateRange> {
+  const res = await fetch(`${API_BASE}/api/credit-card-date-range/`)
   return res.json()
 }
 
 export async function fetchCreditCardCategories(params?: {
-  source?: 'legacy' | 'experimental'
   credit_card?: number
   include_all?: boolean
 }): Promise<{ data: CreditCardCategoryData[] }> {
   const searchParams = new URLSearchParams()
-  if (params?.source) searchParams.set("source", params.source)
   if (params?.credit_card) searchParams.set("credit_card", params.credit_card.toString())
   if (params?.include_all) searchParams.set("include_all", "true")
 
@@ -819,7 +789,6 @@ export interface CreditCardInconsistency {
 }
 
 export async function fetchCreditCardInconsistencies(params?: {
-  source?: 'legacy' | 'experimental'
   credit_card?: number
   include_dismissed?: boolean
 }): Promise<{
@@ -832,7 +801,6 @@ export async function fetchCreditCardInconsistencies(params?: {
   }
 }> {
   const searchParams = new URLSearchParams()
-  if (params?.source) searchParams.set("source", params.source)
   if (params?.credit_card) searchParams.set("credit_card", params.credit_card.toString())
   if (params?.include_dismissed) searchParams.set("include_dismissed", "true")
 
@@ -929,13 +897,11 @@ export async function fetchCCPaymentSuggestions(params?: {
   bank_account?: number
   year?: number
   offset_threshold?: number
-  source?: 'legacy' | 'experimental'
 }): Promise<{ data: CCPaymentSuggestionItem[]; total: number }> {
   const searchParams = new URLSearchParams()
   if (params?.bank_account) searchParams.set("bank_account", params.bank_account.toString())
   if (params?.year) searchParams.set("year", params.year.toString())
   if (params?.offset_threshold !== undefined) searchParams.set("offset_threshold", params.offset_threshold.toString())
-  if (params?.source) searchParams.set("source", params.source)
 
   const queryString = searchParams.toString()
   const url = queryString
@@ -949,13 +915,11 @@ export async function fetchCCPaymentSuggestionsReverse(params?: {
   credit_card?: number
   year?: number
   offset_threshold?: number
-  source?: 'legacy' | 'experimental'
 }): Promise<{ data: CCPaymentSuggestionReverseItem[]; total: number }> {
   const searchParams = new URLSearchParams()
   if (params?.credit_card) searchParams.set("credit_card", params.credit_card.toString())
   if (params?.year) searchParams.set("year", params.year.toString())
   if (params?.offset_threshold !== undefined) searchParams.set("offset_threshold", params.offset_threshold.toString())
-  if (params?.source) searchParams.set("source", params.source)
 
   const queryString = searchParams.toString()
   const url = queryString
@@ -967,11 +931,9 @@ export async function fetchCCPaymentSuggestionsReverse(params?: {
 
 export async function fetchCCPaymentMatches(params?: {
   year?: number
-  source?: 'legacy' | 'experimental'
 }): Promise<{ data: CCPaymentMatch[]; total: number }> {
   const searchParams = new URLSearchParams()
   if (params?.year) searchParams.set("year", params.year.toString())
-  if (params?.source) searchParams.set("source", params.source)
 
   const queryString = searchParams.toString()
   const url = queryString
@@ -987,7 +949,6 @@ export async function createCCPaymentMatch(data: {
   offset: number
   confidence_score: number
   match_reasons: string[]
-  source?: 'legacy' | 'experimental'
 }): Promise<{
   id: number
   bank_transaction_id: number
@@ -1012,13 +973,8 @@ export async function deleteCCPaymentMatch(matchId: number): Promise<{ success: 
   return res.json()
 }
 
-export async function fetchCCPaymentMatchYears(params?: {
-  source?: 'legacy' | 'experimental'
-}): Promise<{ years: Record<string, number> }> {
-  const searchParams = new URLSearchParams()
-  if (params?.source) searchParams.set('source', params.source)
-  const query = searchParams.toString()
-  const res = await fetch(`${API_BASE}/api/cc-payment-matches/years/${query ? `?${query}` : ''}`)
+export async function fetchCCPaymentMatchYears(): Promise<{ years: Record<string, number> }> {
+  const res = await fetch(`${API_BASE}/api/cc-payment-matches/years/`)
   return res.json()
 }
 
@@ -1590,7 +1546,7 @@ export async function syncCCSourceFiles(): Promise<{ synced: number; skipped: nu
 // ==================== Unified Extraction System API ====================
 
 // Source Files (New)
-export interface SourceFileNew {
+export interface SourceFile {
   id: number
   source_file_id: string
   filename: string
@@ -1606,11 +1562,11 @@ export interface SourceFileNew {
   created_at: string
   updated_at: string
   auto_detected_extractor: string | null
-  extractions?: ExtractionNew[]
+  extractions?: Extraction[]
 }
 
 // Extractions (New)
-export interface ExtractionArtifactNew {
+export interface ExtractionArtifact {
   id: number
   artifact_id: string
   artifact_type: string
@@ -1625,7 +1581,7 @@ export interface ExtractionArtifactNew {
   data_source_artifacts_count: number
 }
 
-export interface ExtractionNew {
+export interface Extraction {
   id: number
   extraction_id: string
   source_file_id: string  // UUID from SourceFile
@@ -1636,11 +1592,11 @@ export interface ExtractionNew {
   error_message: string
   hidden: boolean
   extracted_at: string
-  artifacts?: ExtractionArtifactNew[]
+  artifacts?: ExtractionArtifact[]
 }
 
 // Data Source Artifacts (New)
-export interface DataSourceArtifactNew {
+export interface DataSourceArtifact {
   id: number
   artifact_id: string
   source_artifact_id: string
@@ -1674,10 +1630,10 @@ export interface ExtractorInfo {
 
 // API Functions for Unified Extraction System
 
-export async function fetchSourceFilesNew(params?: {
+export async function fetchSourceFiles(params?: {
   visibility?: 'visible' | 'hidden' | 'all'
   domain?: 'bank_account' | 'credit_card' | 'all'
-}): Promise<{ data: SourceFileNew[] }> {
+}): Promise<{ data: SourceFile[] }> {
   const searchParams = new URLSearchParams()
   if (params?.visibility) searchParams.set('visibility', params.visibility)
   if (params?.domain) searchParams.set('domain', params.domain)
@@ -1689,7 +1645,7 @@ export async function fetchSourceFilesNew(params?: {
   return res.json()
 }
 
-export async function refreshSourceFilesNew(): Promise<{
+export async function refreshSourceFiles(): Promise<{
   created: number
   skipped: number
   errors: { file: string; error: string }[]
@@ -1700,7 +1656,7 @@ export async function refreshSourceFilesNew(): Promise<{
   return res.json()
 }
 
-export async function bulkUpdateSourceFilesNew(
+export async function bulkUpdateSourceFiles(
   ids: number[],
   action: 'hide' | 'unhide' | 'set_extractor' | 'set_password' | 'set_domain',
   value?: string
@@ -1713,15 +1669,15 @@ export async function bulkUpdateSourceFilesNew(
   return res.json()
 }
 
-export async function getSourceFileNew(sourceFileId: string): Promise<SourceFileNew> {
+export async function getSourceFile(sourceFileId: string): Promise<SourceFile> {
   const res = await fetch(`${API_BASE}/api/extractions/source-files/${sourceFileId}/`)
   return res.json()
 }
 
-export async function updateSourceFileNew(
+export async function updateSourceFile(
   sourceFileId: string,
   data: Partial<{ password: string; extractor: string; domain: string; hidden: boolean }>
-): Promise<SourceFileNew> {
+): Promise<SourceFile> {
   const res = await fetch(`${API_BASE}/api/extractions/source-files/${sourceFileId}/`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -1730,12 +1686,12 @@ export async function updateSourceFileNew(
   return res.json()
 }
 
-export async function extractSourceFileNew(
+export async function extractSourceFile(
   sourceFileId: string,
   options?: { password?: string; extractor?: string }
 ): Promise<{
   success: boolean
-  extraction?: ExtractionNew
+  extraction?: Extraction
   error?: string
   needs_password?: boolean
 }> {
@@ -1747,7 +1703,7 @@ export async function extractSourceFileNew(
   return res.json()
 }
 
-export async function validatePasswordNew(
+export async function validatePassword(
   sourceFileId: string,
   password: string
 ): Promise<{ valid: boolean; error?: string }> {
@@ -1759,11 +1715,11 @@ export async function validatePasswordNew(
   return res.json()
 }
 
-export async function fetchExtractionsNew(params?: {
+export async function fetchExtractions(params?: {
   visibility?: 'visible' | 'hidden' | 'all'
   domain?: 'bank_account' | 'credit_card' | 'all'
   status?: 'pending' | 'completed' | 'error' | 'all'
-}): Promise<{ data: ExtractionNew[] }> {
+}): Promise<{ data: Extraction[] }> {
   const searchParams = new URLSearchParams()
   if (params?.visibility) searchParams.set('visibility', params.visibility)
   if (params?.domain) searchParams.set('domain', params.domain)
@@ -1776,7 +1732,7 @@ export async function fetchExtractionsNew(params?: {
   return res.json()
 }
 
-export async function bulkUpdateExtractionsNew(
+export async function bulkUpdateExtractions(
   ids: number[],
   action: 'hide' | 'unhide' | 'delete'
 ): Promise<{ success: boolean; updated_count?: number; deleted_count?: number }> {
@@ -1788,15 +1744,15 @@ export async function bulkUpdateExtractionsNew(
   return res.json()
 }
 
-export async function getExtractionNew(extractionId: string): Promise<ExtractionNew> {
+export async function getExtraction(extractionId: string): Promise<Extraction> {
   const res = await fetch(`${API_BASE}/api/extractions/${extractionId}/`)
   return res.json()
 }
 
-export async function updateExtractionNew(
+export async function updateExtraction(
   extractionId: string,
   data: { hidden?: boolean }
-): Promise<ExtractionNew> {
+): Promise<Extraction> {
   const res = await fetch(`${API_BASE}/api/extractions/${extractionId}/`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -1805,19 +1761,19 @@ export async function updateExtractionNew(
   return res.json()
 }
 
-export async function deleteExtractionNew(extractionId: string): Promise<{ success: boolean }> {
+export async function deleteExtraction(extractionId: string): Promise<{ success: boolean }> {
   const res = await fetch(`${API_BASE}/api/extractions/${extractionId}/`, {
     method: 'DELETE',
   })
   return res.json()
 }
 
-export async function getArtifactNew(artifactId: string): Promise<ExtractionArtifactNew> {
+export async function getArtifact(artifactId: string): Promise<ExtractionArtifact> {
   const res = await fetch(`${API_BASE}/api/extractions/artifacts/${artifactId}/`)
   return res.json()
 }
 
-export async function previewArtifactNew(
+export async function previewArtifact(
   artifactId: string,
   limit?: number
 ): Promise<{
@@ -1836,12 +1792,12 @@ export async function previewArtifactNew(
   return res.json()
 }
 
-export async function transformArtifactNew(
+export async function transformArtifact(
   artifactId: string,
   options?: { bank_account_id?: number; credit_card_id?: number }
 ): Promise<{
   success: boolean
-  data_source_artifact?: DataSourceArtifactNew
+  data_source_artifact?: DataSourceArtifact
   error?: string
 }> {
   const res = await fetch(`${API_BASE}/api/extractions/artifacts/${artifactId}/transform/`, {
@@ -1852,7 +1808,7 @@ export async function transformArtifactNew(
   return res.json()
 }
 
-export async function bulkTransformArtifactsNew(
+export async function bulkTransformArtifacts(
   artifactIds: string[],
   options?: { bank_account_id?: number; credit_card_id?: number }
 ): Promise<{
@@ -1871,11 +1827,11 @@ export async function bulkTransformArtifactsNew(
   return res.json()
 }
 
-export async function fetchDataSourcesNew(params?: {
+export async function fetchDataSources(params?: {
   visibility?: 'visible' | 'hidden' | 'all'
   domain?: 'bank_account_transactions' | 'credit_card_transactions' | 'all'
   status?: 'unloaded' | 'loading' | 'loaded' | 'error' | 'all'
-}): Promise<{ data: DataSourceArtifactNew[] }> {
+}): Promise<{ data: DataSourceArtifact[] }> {
   const searchParams = new URLSearchParams()
   if (params?.visibility) searchParams.set('visibility', params.visibility)
   if (params?.domain) searchParams.set('domain', params.domain)
@@ -1888,7 +1844,7 @@ export async function fetchDataSourcesNew(params?: {
   return res.json()
 }
 
-export async function bulkUpdateDataSourcesNew(
+export async function bulkUpdateDataSources(
   ids: number[],
   action: 'hide' | 'unhide' | 'enable' | 'disable' | 'set_bank_account' | 'set_credit_card' | 'load' | 'unload' | 'delete',
   value?: number
@@ -1911,12 +1867,12 @@ export async function bulkUpdateDataSourcesNew(
   return res.json()
 }
 
-export async function getDataSourceNew(artifactId: string): Promise<DataSourceArtifactNew> {
+export async function getDataSource(artifactId: string): Promise<DataSourceArtifact> {
   const res = await fetch(`${API_BASE}/api/extractions/data-sources/${artifactId}/`)
   return res.json()
 }
 
-export async function updateDataSourceNew(
+export async function updateDataSource(
   artifactId: string,
   data: Partial<{
     enabled: boolean
@@ -1924,7 +1880,7 @@ export async function updateDataSourceNew(
     bank_account_id: number | null
     credit_card_id: number | null
   }>
-): Promise<DataSourceArtifactNew> {
+): Promise<DataSourceArtifact> {
   const res = await fetch(`${API_BASE}/api/extractions/data-sources/${artifactId}/`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -1933,17 +1889,17 @@ export async function updateDataSourceNew(
   return res.json()
 }
 
-export async function deleteDataSourceNew(artifactId: string): Promise<{ success: boolean; error?: string }> {
+export async function deleteDataSource(artifactId: string): Promise<{ success: boolean; error?: string }> {
   const res = await fetch(`${API_BASE}/api/extractions/data-sources/${artifactId}/`, {
     method: 'DELETE',
   })
   return res.json()
 }
 
-export async function loadDataSourceNew(artifactId: string): Promise<{
+export async function loadDataSource(artifactId: string): Promise<{
   success: boolean
   count?: number
-  data_source_artifact?: DataSourceArtifactNew
+  data_source_artifact?: DataSourceArtifact
   error?: string
 }> {
   const res = await fetch(`${API_BASE}/api/extractions/data-sources/${artifactId}/load/`, {
@@ -1952,10 +1908,10 @@ export async function loadDataSourceNew(artifactId: string): Promise<{
   return res.json()
 }
 
-export async function unloadDataSourceNew(artifactId: string): Promise<{
+export async function unloadDataSource(artifactId: string): Promise<{
   success: boolean
   count?: number
-  data_source_artifact?: DataSourceArtifactNew
+  data_source_artifact?: DataSourceArtifact
   error?: string
 }> {
   const res = await fetch(`${API_BASE}/api/extractions/data-sources/${artifactId}/unload/`, {
@@ -1964,7 +1920,7 @@ export async function unloadDataSourceNew(artifactId: string): Promise<{
   return res.json()
 }
 
-export async function previewDataSourceNew(
+export async function previewDataSource(
   artifactId: string,
   limit?: number
 ): Promise<{
@@ -1978,7 +1934,7 @@ export async function previewDataSourceNew(
   return res.json()
 }
 
-export async function fetchExtractorsNew(): Promise<{ data: ExtractorInfo[] }> {
+export async function fetchExtractors(): Promise<{ data: ExtractorInfo[] }> {
   const res = await fetch(`${API_BASE}/api/extractions/extractors/`)
   return res.json()
 }

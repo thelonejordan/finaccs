@@ -30,19 +30,18 @@ import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import {
   getArtifactUrl,
-  // New APIs
-  fetchSourceFilesNew,
-  fetchExtractionsNew,
-  fetchExtractorsNew,
-  refreshSourceFilesNew,
-  extractSourceFileNew,
-  updateSourceFileNew,
-  bulkTransformArtifactsNew,
-  previewArtifactNew,
-  deleteExtractionNew,
-  updateExtractionNew,
-  type SourceFileNew,
-  type ExtractionNew,
+  fetchSourceFiles,
+  fetchExtractions,
+  fetchExtractors,
+  refreshSourceFiles,
+  extractSourceFile,
+  updateSourceFile,
+  bulkTransformArtifacts,
+  previewArtifact,
+  deleteExtraction,
+  updateExtraction,
+  type SourceFile,
+  type Extraction,
   type ExtractorInfo,
 } from "@/lib/api"
 
@@ -91,7 +90,7 @@ function StatusBadge({ status }: { status: MappedExtraction['status'] }) {
   )
 }
 
-// PDFSourceFile type for component props (mapped from SourceFileNew)
+// PDFSourceFile type for component props (mapped from SourceFile)
 type PDFSourceFile = {
   id: number
   filename: string
@@ -183,7 +182,7 @@ function SourceFilesSection({
     }
     setSavingPasswordId(fileId)
     try {
-      await updateSourceFileNew(file.source_file_id, { password })
+      await updateSourceFile(file.source_file_id, { password })
       onPasswordSaved(fileId, true, password)
       setPasswordFileId(null)
       setPassword('')
@@ -205,7 +204,7 @@ function SourceFilesSection({
     }
     setSavingPasswordId(fileId)
     try {
-      await updateSourceFileNew(file.source_file_id, { password: '' })
+      await updateSourceFile(file.source_file_id, { password: '' })
       onPasswordSaved(fileId, false, '')
       setPasswordFileId(null)
       setPassword('')
@@ -931,7 +930,7 @@ function ArtifactPreviewSection({
     async function loadRawArtifact() {
       setLoading(true)
       try {
-        const result = await previewArtifactNew(artifactId, 100)
+        const result = await previewArtifact(artifactId, 100)
         if (result.format === 'csv' && result.columns && Array.isArray(result.data)) {
           // Convert preview data to CSV format for display
           const header = result.columns.join(',')
@@ -1106,7 +1105,7 @@ type DeleteTarget =
   | { type: 'source_file'; item: PDFSourceFile }
 
 // Mapping functions for experimental API data
-function mapSourceFileNew(sf: SourceFileNew): PDFSourceFile {
+function mapSourceFile(sf: SourceFile): PDFSourceFile {
   return {
     id: sf.id,
     filename: sf.filename,
@@ -1150,7 +1149,7 @@ interface MappedExtraction {
   error_message?: string
 }
 
-function mapExtractionNew(ext: ExtractionNew, sourceFiles: SourceFileNew[]): MappedExtraction {
+function mapExtraction(ext: Extraction, sourceFiles: SourceFile[]): MappedExtraction {
   // Check transformation status
   const transformableArtifacts = ext.artifacts?.filter(a => a.transformer) ?? []
   const transformedArtifacts = ext.artifacts?.filter(a => a.transformation_status === 'transformed') ?? []
@@ -1197,8 +1196,8 @@ export function ExtractionsPage() {
   const [extractions, setExtractions] = useState<MappedExtraction[]>([])
 
   // Raw data for lookups
-  const [sourceFilesNewRaw, setSourceFilesNewRaw] = useState<SourceFileNew[]>([])
-  const [extractionsNewRaw, setExtractionsNewRaw] = useState<ExtractionNew[]>([])
+  const [sourceFilesNewRaw, setSourceFilesNewRaw] = useState<SourceFile[]>([])
+  const [extractionsNewRaw, setExtractionsNewRaw] = useState<Extraction[]>([])
   const [_extractors, setExtractors] = useState<ExtractorInfo[]>([])
 
   const [selectedExtractionId, setSelectedExtractionId] = useState<number | null>(null)
@@ -1223,9 +1222,9 @@ export function ExtractionsPage() {
   const loadData = async () => {
     try {
       const [filesRes, extractionsRes, extractorsRes] = await Promise.all([
-        fetchSourceFilesNew({ domain, visibility: showHidden ? 'all' : 'visible' }),
-        fetchExtractionsNew({ domain, visibility: showHidden ? 'all' : 'visible' }),
-        fetchExtractorsNew(),
+        fetchSourceFiles({ domain, visibility: showHidden ? 'all' : 'visible' }),
+        fetchExtractions({ domain, visibility: showHidden ? 'all' : 'visible' }),
+        fetchExtractors(),
       ])
 
       // Store raw data for lookups
@@ -1234,8 +1233,8 @@ export function ExtractionsPage() {
       setExtractors(extractorsRes.data || [])
 
       // Map to UI-compatible interfaces
-      setSourceFiles((filesRes.data || []).map(mapSourceFileNew))
-      setExtractions((extractionsRes.data || []).map(ext => mapExtractionNew(ext, filesRes.data || [])))
+      setSourceFiles((filesRes.data || []).map(mapSourceFile))
+      setExtractions((extractionsRes.data || []).map(ext => mapExtraction(ext, filesRes.data || [])))
     } catch (error) {
       console.error("Failed to load data:", error)
     }
@@ -1249,7 +1248,7 @@ export function ExtractionsPage() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
-    await refreshSourceFilesNew()
+    await refreshSourceFiles()
     await loadData()
     setIsRefreshing(false)
   }
@@ -1263,7 +1262,7 @@ export function ExtractionsPage() {
         alert("Source file not found")
         return
       }
-      const result = await extractSourceFileNew(file.source_file_id, { password })
+      const result = await extractSourceFile(file.source_file_id, { password })
       if (result.success) {
         await loadData()
       } else if (result.needs_password) {
@@ -1287,7 +1286,7 @@ export function ExtractionsPage() {
         alert("Extraction not found")
         return
       }
-      await updateExtractionNew(extraction.extraction_id, { hidden })
+      await updateExtraction(extraction.extraction_id, { hidden })
       // Update local state immediately
       setExtractions((prev) =>
         prev.map((ext) =>
@@ -1329,7 +1328,7 @@ export function ExtractionsPage() {
         return
       }
 
-      await bulkTransformArtifactsNew(artifactIds)
+      await bulkTransformArtifacts(artifactIds)
       await loadData()
     } catch (error) {
       console.error("Transform failed:", error)
@@ -1356,7 +1355,7 @@ export function ExtractionsPage() {
     try {
       // Delete all extractions
       for (const ext of extractionsNewRaw) {
-        await deleteExtractionNew(ext.extraction_id)
+        await deleteExtraction(ext.extraction_id)
       }
       setSelectedExtractionId(null)
       await loadData()
@@ -1379,7 +1378,7 @@ export function ExtractionsPage() {
         // Find the extraction_id from raw data
         const extNew = extractionsNewRaw.find(e => e.id === extraction.id)
         if (extNew) {
-          await deleteExtractionNew(extNew.extraction_id)
+          await deleteExtraction(extNew.extraction_id)
           // If deleted extraction was selected, clear selection
           if (selectedExtractionId === extraction.id) {
             setSelectedExtractionId(null)

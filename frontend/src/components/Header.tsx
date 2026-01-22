@@ -25,7 +25,7 @@ const NAV_ITEMS = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboardIcon },
   { path: "/transactions", label: "Transactions", icon: ListIcon },
   { path: "/extractions", label: "Extractions", icon: FileArchiveIcon },
-  { path: "/extractions-new", label: "Extractions v2", icon: SparklesIcon },
+  { path: "/extractions-v2", label: "Extractions v2", icon: SparklesIcon },
   { path: "/console", label: "Console", icon: SettingsIcon },
   { path: "/story", label: "Payments", icon: BookOpenIcon },
   { path: "/inconsistencies", label: "Inconsistencies", icon: AlertTriangleIcon },

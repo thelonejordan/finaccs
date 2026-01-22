@@ -382,7 +382,7 @@ def credit_card_source_file_toggle(request, source_file_id):
 def credit_card_transactions(request):
     """List credit card transactions with filters."""
     # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'legacy')
+    source = request.GET.get('source', 'experimental')
     if source == 'experimental':
         transactions = get_active_cc_transactions_experimental()
     else:
@@ -522,7 +522,7 @@ def credit_card_transactions(request):
 def credit_card_date_range(request):
     """Get available years and months with credit card transaction data."""
     # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'legacy')
+    source = request.GET.get('source', 'experimental')
     if source == 'experimental':
         transactions = get_active_cc_transactions_experimental()
     else:
@@ -576,7 +576,7 @@ def credit_card_categories(request):
     from django.db.models import Count
 
     # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'legacy')
+    source = request.GET.get('source', 'experimental')
     if source == 'experimental':
         transactions = get_active_cc_transactions_experimental()
     else:
@@ -704,7 +704,7 @@ def credit_card_inconsistencies(request):
     from .models import DismissedCreditCardInconsistency
 
     # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'legacy')
+    source = request.GET.get('source', 'experimental')
     card_id = request.GET.get('credit_card')
     include_dismissed = request.GET.get('include_dismissed', 'false').lower() == 'true'
 

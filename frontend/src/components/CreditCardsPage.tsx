@@ -22,7 +22,6 @@ import {
   Link2OffIcon,
   XIcon,
   BuildingIcon,
-  LandmarkIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
@@ -578,7 +577,7 @@ export function CreditCardsPage() {
   useEffect(() => {
     async function loadDateRange() {
       try {
-        const data = await fetchCreditCardDateRange({ source: 'experimental' })
+        const data = await fetchCreditCardDateRange()
         setDateRange(data)
 
         const years = Object.keys(data.years).map(Number).sort((a, b) => b - a)
@@ -637,7 +636,7 @@ export function CreditCardsPage() {
   useEffect(() => {
     async function loadCategories() {
       try {
-        const data = await fetchCreditCardCategories({ source: 'experimental', include_all: true })
+        const data = await fetchCreditCardCategories({ include_all: true })
         setCategories(data.data)
       } catch (error) {
         console.error("Failed to load categories:", error)
@@ -671,7 +670,6 @@ export function CreditCardsPage() {
 
       try {
         const data = await fetchCreditCardTransactions({
-          source: 'experimental',
           category: selectedCategory || undefined,
           type: selectedType || undefined,
           credit_card: selectedCreditCard || undefined,

@@ -134,11 +134,11 @@ export function Dashboard() {
       try {
         const [summaryData, monthlyData, categoryData, transactionsData, topExpensesData] =
           await Promise.all([
-            fetchSummary({ source: 'experimental' }),
-            fetchMonthly({ source: 'experimental' }),
-            fetchCategories({ source: 'experimental' }),
-            fetchTransactions({ source: 'experimental', limit: 10 }),
-            fetchTopExpenses({ source: 'experimental', limit: 10 }),
+            fetchSummary(),
+            fetchMonthly(),
+            fetchCategories(),
+            fetchTransactions({ limit: 10 }),
+            fetchTopExpenses({ limit: 10 }),
           ])
 
         setSummary(summaryData)
@@ -261,11 +261,11 @@ export function Dashboard() {
               <span className="text-red-700 dark:text-red-400" style={{ fontFamily: "'Rock Salt', cursive" }}>Total Debits</span>
               <span className="text-muted-foreground" style={{ fontFamily: "'Rock Salt', cursive" }}>=</span>
               <span className="text-blue-600 dark:text-blue-400" style={{ fontFamily: "'Rock Salt', cursive" }}>Current Balance</span>
-              {Math.abs(summary.unaccounted) > 0.01 ? (
+              {Math.abs(summary?.unaccounted ?? 0) > 0.01 ? (
                 <>
                   <span className="text-muted-foreground mx-2">→</span>
                   <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400" style={{ fontFamily: "'Shadows Into Light', cursive" }}>
-                    Current is <span className="text-xl" style={{ fontFamily: "'Permanent Marker', cursive" }}>{formatCurrency(Math.abs(summary.unaccounted))}</span> {summary.unaccounted > 0 ? 'more' : 'less'} than expected
+                    Current is <span className="text-xl" style={{ fontFamily: "'Permanent Marker', cursive" }}>{formatCurrency(Math.abs(summary?.unaccounted ?? 0))}</span> {(summary?.unaccounted ?? 0) > 0 ? 'more' : 'less'} than expected
                   </span>
                 </>
               ) : (

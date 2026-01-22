@@ -39,31 +39,18 @@ import {
   fetchCreditCards,
   createCreditCard,
   updateCreditCard,
-  toggleCreditCardSourceFileDisabled,
   fetchBankAccounts,
-  fetchPDFExtractionDataSources,
-  loadArtifacts,
-  unloadArtifacts,
-  deleteArtifact,
-  fetchArtifactPreview,
-  fetchBankExtractedCSVPreview,
-  updateArtifactCreditCard,
-  // New experimental APIs
-  fetchDataSourcesNew,
-  loadDataSourceNew,
-  unloadDataSourceNew,
-  deleteDataSourceNew,
-  previewDataSourceNew,
-  updateDataSourceNew,
+  fetchDataSources,
+  loadDataSource,
+  unloadDataSource,
+  deleteDataSource,
+  previewDataSource,
+  updateDataSource,
   type CreditCard,
   type CreditCardInput,
-  type CreditCardSourceFile,
   type BankAccount,
-  type ExtractedCSV,
-  type PDFExtractionDataSource,
   type IngestableTransactionRow,
-  type AccountStats,
-  type DataSourceArtifactNew,
+  type DataSourceArtifact,
 } from "@/lib/api"
 
 function formatDate(dateStr: string): string {
@@ -439,38 +426,27 @@ function CreditCardsSection({
 
 // Credit Card Data Sources Component
 function CreditCardDataSources({
-  sourceFiles,
-  pdfExtractions,
+  dataSources,
   cards,
   selectedArtifactId,
   onSelectArtifact,
-  onCreateCard: _onCreateCard,
   onCardUpdated,
-  onSourceFileUpdated,
   onLoadArtifact,
   onUnloadArtifact,
   onDeleteArtifact,
   onRefresh,
-  source = 'legacy',
 }: {
-  sourceFiles: CreditCardSourceFile[]
-  pdfExtractions: PDFExtractionDataSource[]
+  dataSources: DataSourceArtifact[]
   cards: CreditCard[]
   selectedArtifactId: string | null
   onSelectArtifact: (artifactId: string) => void
-  onCreateCard: (filename: string) => void
   onCardUpdated: () => void
-  onSourceFileUpdated: (sourceFile: CreditCardSourceFile) => void
   onLoadArtifact: (artifactIds: string[]) => Promise<void>
   onUnloadArtifact: (artifactIds: string[]) => Promise<void>
   onDeleteArtifact: (artifactId: string) => Promise<void>
   onRefresh?: () => void
-  source?: 'legacy' | 'experimental'
 }) {
-  void _onCreateCard // Suppress unused warning - kept for future use
   const [isLinking, setIsLinking] = useState(false)
-  const [_togglingId, setTogglingId] = useState<number | null>(null)
-  void _togglingId // Suppress unused warning - kept for future use
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [loadingArtifactIds, setLoadingArtifactIds] = useState<Set<string>>(new Set())
   const [deleteArtifactId, setDeleteArtifactId] = useState<string | null>(null)
@@ -486,29 +462,11 @@ function CreditCardDataSources({
     }
   }
 
-  // Kept for potential future use with source file toggle functionality
-  const _handleToggleDisabled = async (file: CreditCardSourceFile) => {
-    setTogglingId(file.id)
-    try {
-      await toggleCreditCardSourceFileDisabled(file.id, !file.disabled)
-      onSourceFileUpdated({ ...file, disabled: !file.disabled })
-    } catch (error) {
-      console.error("Failed to toggle source file:", error)
-    } finally {
-      setTogglingId(null)
-    }
-  }
-  void _handleToggleDisabled
-
   // Handler for updating artifact credit card
   const handleUpdateArtifactCard = async (artifactId: string, cardId: number | null) => {
     setIsLinking(true)
     try {
-      if (source === 'experimental') {
-        await updateDataSourceNew(artifactId, { credit_card_id: cardId })
-      } else {
-        await updateArtifactCreditCard(artifactId, cardId)
-      }
+      await updateDataSource(artifactId, { credit_card_id: cardId })
       onCardUpdated()
     } catch (error) {
       console.error("Failed to update artifact card:", error)
@@ -517,40 +475,33 @@ function CreditCardDataSources({
     }
   }
 
-  // Create a map of source_file -> card
-  const fileToCard = new Map<string, CreditCard>()
-  sourceFiles.forEach((sf) => {
-    if (sf.credit_card_id) {
-      const card = cards.find((c) => c.id === sf.credit_card_id)
-      if (card) {
-        fileToCard.set(sf.filename, card)
-      }
-    }
-  })
-
-  // Separate PDF extractions by status
-  const readyToLoadExtractions = pdfExtractions.filter((ext) => !ext.loaded)
-  const loadedExtractions = pdfExtractions.filter((ext) => ext.loaded)
-
-  // Sort each group by statement date (most recent first)
-  const sortByDate = (a: PDFExtractionDataSource, b: PDFExtractionDataSource) => {
-    if (a.statement_date && b.statement_date) {
-      return new Date(b.statement_date).getTime() - new Date(a.statement_date).getTime()
-    }
-    return 0
+  // Helper to get display name for data source
+  const getDisplayName = (ds: DataSourceArtifact): string => {
+    return ds.source_artifact_key
+      ? `${ds.source_artifact_type} (${ds.source_artifact_key})`
+      : ds.source_artifact_type
   }
-  readyToLoadExtractions.sort(sortByDate)
-  loadedExtractions.sort(sortByDate)
 
-  // Helper to render extraction card
-  const renderExtractionCard = (ext: PDFExtractionDataSource, isLoading: boolean, isSelected: boolean) => (
+  // Separate data sources by status
+  const readyToLoadSources = dataSources.filter((ds) => ds.status === 'unloaded')
+  const loadedSources = dataSources.filter((ds) => ds.status === 'loaded')
+
+  // Sort each group by transformed date (most recent first)
+  const sortByDate = (a: DataSourceArtifact, b: DataSourceArtifact) => {
+    return new Date(b.transformed_at).getTime() - new Date(a.transformed_at).getTime()
+  }
+  readyToLoadSources.sort(sortByDate)
+  loadedSources.sort(sortByDate)
+
+  // Helper to render data source card
+  const renderDataSourceCard = (ds: DataSourceArtifact, isLoading: boolean, isSelected: boolean) => (
     <div
-      key={`artifact-${ext.artifact_id}`}
+      key={`artifact-${ds.artifact_id}`}
       className={`rounded-lg border transition-all hover:shadow-md ${isSelected ? 'border-primary bg-primary/5' : 'border-border'}`}
     >
       <div
         className="p-4 cursor-pointer"
-        onClick={() => ext.artifact_id && onSelectArtifact(ext.artifact_id)}
+        onClick={() => ds.artifact_id && onSelectArtifact(ds.artifact_id)}
       >
         <div className="flex items-start gap-3">
           <div className="p-2.5 rounded-xl bg-muted">
@@ -559,42 +510,36 @@ function CreditCardDataSources({
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <p className="font-mono text-sm truncate font-medium" title={ext.name}>{ext.name}</p>
-                <p className="text-xs text-muted-foreground truncate">{ext.source_file}</p>
+                <p className="font-mono text-sm truncate font-medium" title={getDisplayName(ds)}>{getDisplayName(ds)}</p>
+                <p className="text-xs text-muted-foreground truncate">{ds.source_filename}</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {getExtractionStatusBadge(ext)}
+                {getStatusBadge(ds)}
               </div>
             </div>
 
-            {/* Date range and row count */}
+            {/* Row count and date */}
             <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-              {ext.statement_period_begin && ext.statement_period_end && (
-                <span className="flex items-center gap-1">
-                  <CalendarIcon className="h-3 w-3" />
-                  {formatDate(ext.statement_period_begin)} — {formatDate(ext.statement_period_end)}
-                </span>
-              )}
-              {!ext.statement_period_begin && ext.statement_date && (
-                <span className="flex items-center gap-1">
-                  <CalendarIcon className="h-3 w-3" />
-                  Statement: {formatDate(ext.statement_date)}
-                </span>
-              )}
               <span className="flex items-center gap-1">
                 <HashIcon className="h-3 w-3" />
-                {ext.row_count} transactions
+                {ds.row_count} transactions
               </span>
+              {ds.transformed_at && (
+                <span className="flex items-center gap-1">
+                  <CalendarIcon className="h-3 w-3" />
+                  {formatDate(ds.transformed_at)}
+                </span>
+              )}
             </div>
 
             {/* Credit card and actions */}
             <div className="mt-2 flex items-center gap-2 flex-wrap">
-              {ext.credit_card ? (
+              {ds.credit_card_id ? (
                 <DropdownMenu.Root>
                   <DropdownMenu.Trigger asChild>
                     <button className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 hover:bg-blue-500/25 text-blue-600 dark:text-blue-400 transition-colors cursor-pointer">
                       <CreditCardIcon className="h-3.5 w-3.5" />
-                      <span className="font-medium text-sm">{ext.credit_card.nickname}</span>
+                      <span className="font-medium text-sm">{ds.credit_card_name || 'Linked'}</span>
                       <ChevronDownIcon className="h-3 w-3 opacity-60" />
                     </button>
                   </DropdownMenu.Trigger>
@@ -604,16 +549,16 @@ function CreditCardDataSources({
                       sideOffset={4}
                       align="start"
                     >
-                      {cards.filter((c) => c.id !== ext.credit_card?.id).length > 0 && (
+                      {cards.filter((c) => c.id !== ds.credit_card_id).length > 0 && (
                         <>
                           <DropdownMenu.Label className="text-xs font-medium text-muted-foreground px-2 py-1">
                             Change to different card
                           </DropdownMenu.Label>
-                          {cards.filter((c) => c.id !== ext.credit_card?.id).map((c) => (
+                          {cards.filter((c) => c.id !== ds.credit_card_id).map((c) => (
                             <DropdownMenu.Item
                               key={c.id}
                               disabled={isLinking}
-                              onSelect={() => handleUpdateArtifactCard(ext.artifact_id, c.id)}
+                              onSelect={() => handleUpdateArtifactCard(ds.artifact_id, c.id)}
                               className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none disabled:opacity-50"
                             >
                               <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
@@ -630,7 +575,7 @@ function CreditCardDataSources({
                       )}
                       <DropdownMenu.Item
                         disabled={isLinking}
-                        onSelect={() => handleUpdateArtifactCard(ext.artifact_id, null)}
+                        onSelect={() => handleUpdateArtifactCard(ds.artifact_id, null)}
                         className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-red-500/10 text-red-600 dark:text-red-400 transition-colors cursor-pointer outline-none disabled:opacity-50"
                       >
                         <Link2OffIcon className="h-4 w-4" />
@@ -663,7 +608,7 @@ function CreditCardDataSources({
                             <DropdownMenu.Item
                               key={c.id}
                               disabled={isLinking}
-                              onSelect={() => handleUpdateArtifactCard(ext.artifact_id, c.id)}
+                              onSelect={() => handleUpdateArtifactCard(ds.artifact_id, c.id)}
                               className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none disabled:opacity-50"
                             >
                               <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
@@ -687,12 +632,12 @@ function CreditCardDataSources({
               )}
 
               <div className="ml-auto flex items-center gap-1">
-                {!ext.loaded && (
+                {ds.status === 'unloaded' && (
                   <Tooltip.Provider>
                     <Tooltip.Root>
                       <Tooltip.Trigger asChild>
                         <button
-                          onClick={(e) => { e.stopPropagation(); handleLoadArtifact(ext.artifact_id) }}
+                          onClick={(e) => { e.stopPropagation(); handleLoadArtifact(ds.artifact_id) }}
                           disabled={isLoading}
                           className="p-1.5 rounded-lg hover:bg-green-500/20 text-muted-foreground hover:text-green-600 dark:hover:text-green-400 transition-colors disabled:opacity-50"
                         >
@@ -715,12 +660,12 @@ function CreditCardDataSources({
                     </Tooltip.Root>
                   </Tooltip.Provider>
                 )}
-                {ext.loaded && (
+                {ds.status === 'loaded' && (
                   <Tooltip.Provider>
                     <Tooltip.Root>
                       <Tooltip.Trigger asChild>
                         <button
-                          onClick={(e) => { e.stopPropagation(); handleUnloadArtifact(ext.artifact_id) }}
+                          onClick={(e) => { e.stopPropagation(); handleUnloadArtifact(ds.artifact_id) }}
                           disabled={isLoading}
                           className="p-1.5 rounded-lg hover:bg-amber-500/20 text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 transition-colors disabled:opacity-50"
                         >
@@ -748,11 +693,11 @@ function CreditCardDataSources({
                   <Tooltip.Root>
                     <Tooltip.Trigger asChild>
                       <button
-                        onClick={(e) => { e.stopPropagation(); setDeleteArtifactId(ext.artifact_id) }}
-                        disabled={isLoading || deletingArtifactId === ext.artifact_id}
+                        onClick={(e) => { e.stopPropagation(); setDeleteArtifactId(ds.artifact_id) }}
+                        disabled={isLoading || deletingArtifactId === ds.artifact_id}
                         className="p-1.5 rounded-lg hover:bg-red-500/20 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-50"
                       >
-                        {deletingArtifactId === ext.artifact_id ? (
+                        {deletingArtifactId === ds.artifact_id ? (
                           <LoaderIcon className="h-4 w-4 animate-spin" />
                         ) : (
                           <Trash2Icon className="h-4 w-4" />
@@ -771,7 +716,7 @@ function CreditCardDataSources({
                   </Tooltip.Root>
                 </Tooltip.Provider>
                 {/* Selection indicator */}
-                {ext.artifact_id && (
+                {ds.artifact_id && (
                   <ChevronRightIcon className={`h-4 w-4 text-muted-foreground transition-transform ${isSelected ? 'rotate-90' : ''}`} />
                 )}
               </div>
@@ -781,78 +726,6 @@ function CreditCardDataSources({
       </div>
     </div>
   )
-
-  // Kept for potential future use with legacy source file linking
-  const _handleLinkToCard = async (filename: string, cardId: number) => {
-    setIsLinking(true)
-    try {
-      // Fetch fresh data to avoid stale state
-      const freshData = await fetchCreditCards()
-      const card = freshData.cards.find((c) => c.id === cardId)
-      if (card) {
-        const newSourceFiles = [...(card.source_files || []), filename]
-        await updateCreditCard(cardId, { source_files: newSourceFiles })
-        onCardUpdated()
-      }
-    } catch (error) {
-      console.error("Failed to link card:", error)
-    } finally {
-      setIsLinking(false)
-    }
-  }
-  void _handleLinkToCard
-
-  const _handleUnlinkFromCard = async (filename: string, currentCardId: number) => {
-    setIsLinking(true)
-    try {
-      // Fetch fresh data to avoid stale state
-      const freshData = await fetchCreditCards()
-      const card = freshData.cards.find((c) => c.id === currentCardId)
-      if (card) {
-        const newSourceFiles = (card.source_files || []).filter((f) => f !== filename)
-        await updateCreditCard(currentCardId, { source_files: newSourceFiles })
-        onCardUpdated()
-      }
-    } catch (error) {
-      console.error("Failed to unlink card:", error)
-    } finally {
-      setIsLinking(false)
-    }
-  }
-  void _handleUnlinkFromCard
-
-  const _handleChangeLinkToCard = async (filename: string, currentCardId: number, newCardId: number) => {
-    setIsLinking(true)
-    try {
-      // Fetch fresh data to avoid stale state
-      const freshData = await fetchCreditCards()
-
-      // Remove from current card
-      const currentCard = freshData.cards.find((c) => c.id === currentCardId)
-      if (currentCard) {
-        const newCurrentSourceFiles = (currentCard.source_files || []).filter((f) => f !== filename)
-        await updateCreditCard(currentCardId, { source_files: newCurrentSourceFiles })
-      }
-
-      // Fetch fresh data again after the first update
-      const freshData2 = await fetchCreditCards()
-
-      // Add to new card
-      const newCard = freshData2.cards.find((c) => c.id === newCardId)
-      if (newCard) {
-        const newSourceFiles = [...(newCard.source_files || []), filename]
-        await updateCreditCard(newCardId, { source_files: newSourceFiles })
-      }
-
-      // Refresh UI
-      onCardUpdated()
-    } catch (error) {
-      console.error("Failed to change link:", error)
-    } finally {
-      setIsLinking(false)
-    }
-  }
-  void _handleChangeLinkToCard
 
   const handleLoadArtifact = async (artifactId: string) => {
     setLoadingArtifactIds((prev) => new Set(prev).add(artifactId))
@@ -892,33 +765,37 @@ function CreditCardDataSources({
     }
   }
 
-  const getExtractionStatusBadge = (ext: PDFExtractionDataSource) => {
-    // Use artifact-level loaded flag - this is the source of truth for whether
-    // this specific artifact has transactions loaded
-    if (ext.loaded) {
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-700 dark:text-green-400">
-          <CheckCircleIcon className="h-3 w-3" />
-          Loaded
-        </span>
-      )
+  const getStatusBadge = (ds: DataSourceArtifact) => {
+    switch (ds.status) {
+      case 'loaded':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-700 dark:text-green-400">
+            <CheckCircleIcon className="h-3 w-3" />
+            Loaded
+          </span>
+        )
+      case 'loading':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-600 dark:text-blue-400">
+            <LoaderIcon className="h-3 w-3 animate-spin" />
+            Loading...
+          </span>
+        )
+      case 'error':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/20 text-red-600 dark:text-red-400">
+            <XIcon className="h-3 w-3" />
+            Error
+          </span>
+        )
+      default: // 'unloaded'
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-600 dark:text-purple-400">
+            <CheckCircleIcon className="h-3 w-3" />
+            Ready to Load
+          </span>
+        )
     }
-    // Not loaded - show "Ready to Load" regardless of extraction status
-    // (extraction status is shared across all artifacts from same extraction)
-    if (ext.status === 'error') {
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/20 text-red-600 dark:text-red-400">
-          <XIcon className="h-3 w-3" />
-          Error
-        </span>
-      )
-    }
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-600 dark:text-purple-400">
-        <CheckCircleIcon className="h-3 w-3" />
-        Ready to Load
-      </span>
-    )
   }
 
   return (
@@ -945,40 +822,40 @@ function CreditCardDataSources({
       </header>
       <div className="relative">
         <div className="p-6 pt-0 max-h-[512px] overflow-y-auto">
-          {pdfExtractions.length === 0 ? (
+          {dataSources.length === 0 ? (
             <div className="text-center py-8 rounded-xl bg-gradient-to-br from-muted/50 to-transparent border border-border">
               <div className="p-3 rounded-full bg-muted w-fit mx-auto mb-3">
                 <FileTextIcon className="h-6 w-6 text-muted-foreground" />
               </div>
-              <p className="font-medium">No extractions found</p>
+              <p className="font-medium">No data sources found</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Extract PDF statements from the Extractions page
+                Transform extractions from the Extractions page
               </p>
             </div>
           ) : (
             <div className="space-y-4">
               {/* Ready to Load Section */}
-              {readyToLoadExtractions.length > 0 && (
+              {readyToLoadSources.length > 0 && (
                 <div className="space-y-3">
                   <p className="text-xs font-medium text-purple-600 dark:text-purple-400 uppercase tracking-wider">Ready to Load</p>
-                  {readyToLoadExtractions.map((ext) => {
-                    const isLoading = loadingArtifactIds.has(ext.artifact_id)
-                    const isSelected = selectedArtifactId === ext.artifact_id
-                    return renderExtractionCard(ext, isLoading, isSelected)
+                  {readyToLoadSources.map((ds) => {
+                    const isLoading = loadingArtifactIds.has(ds.artifact_id)
+                    const isSelected = selectedArtifactId === ds.artifact_id
+                    return renderDataSourceCard(ds, isLoading, isSelected)
                   })}
                 </div>
               )}
 
               {/* Loaded Section */}
-              {loadedExtractions.length > 0 && (
+              {loadedSources.length > 0 && (
                 <div className="space-y-3">
-                  {readyToLoadExtractions.length > 0 && (
+                  {readyToLoadSources.length > 0 && (
                     <p className="text-xs font-medium text-green-600 dark:text-green-400 uppercase tracking-wider">Loaded</p>
                   )}
-                  {loadedExtractions.map((ext) => {
-                    const isLoading = loadingArtifactIds.has(ext.artifact_id)
-                    const isSelected = selectedArtifactId === ext.artifact_id
-                    return renderExtractionCard(ext, isLoading, isSelected)
+                  {loadedSources.map((ds) => {
+                    const isLoading = loadingArtifactIds.has(ds.artifact_id)
+                    const isSelected = selectedArtifactId === ds.artifact_id
+                    return renderDataSourceCard(ds, isLoading, isSelected)
                   })}
                 </div>
               )}
@@ -1004,7 +881,7 @@ function CreditCardDataSources({
                 <>
                   Are you sure you want to delete{' '}
                   <span className="font-mono text-foreground">
-                    {pdfExtractions.find(e => e.artifact_id === deleteArtifactId)?.name || deleteArtifactId}
+                    {dataSources.find(ds => ds.artifact_id === deleteArtifactId)?.source_filename || deleteArtifactId}
                   </span>?
                   <ul className="mt-3 space-y-1.5 text-sm">
                     <li className="flex items-center gap-2">
@@ -1017,7 +894,7 @@ function CreditCardDataSources({
                     </li>
                     <li className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground" />
-                      Other data sources from the same PDF are not affected
+                      Other data sources from the same extraction are not affected
                     </li>
                   </ul>
                 </>
@@ -1056,7 +933,7 @@ function CreditCardDataSources({
 
 // Data Source Preview Section Component
 function DataSourcePreviewSection({
-  extraction,
+  dataSource,
   previewData,
   previewLoading,
   previewTotal,
@@ -1066,7 +943,7 @@ function DataSourcePreviewSection({
   onToggleColumnSelector,
   onToggleColumn,
 }: {
-  extraction: PDFExtractionDataSource | null
+  dataSource: DataSourceArtifact | null
   previewData: IngestableTransactionRow[]
   previewLoading: boolean
   previewTotal: number
@@ -1076,6 +953,12 @@ function DataSourcePreviewSection({
   onToggleColumnSelector: () => void
   onToggleColumn: (key: string) => void
 }) {
+  // Helper to get display name for data source
+  const getDisplayName = (ds: DataSourceArtifact): string => {
+    return ds.source_artifact_key
+      ? `${ds.source_artifact_type} (${ds.source_artifact_key})`
+      : ds.source_artifact_type
+  }
   const renderPreviewCell = (row: IngestableTransactionRow, key: string) => {
     switch (key) {
       case 'date':
@@ -1120,15 +1003,15 @@ function DataSourcePreviewSection({
             <EyeIcon className="h-5 w-5 text-muted-foreground" />
           </div>
           Data Source Preview
-          {extraction && (
+          {dataSource && (
             <span className="ml-2 text-sm font-normal text-muted-foreground">
-              — {extraction.name}
+              — {getDisplayName(dataSource)}
             </span>
           )}
         </h3>
       </header>
       <div className="p-6 pt-0">
-        {!extraction ? (
+        {!dataSource ? (
           <div className="text-center py-8 rounded-xl bg-gradient-to-br from-muted/50 to-transparent border border-border">
             <div className="p-3 rounded-full bg-muted w-fit mx-auto mb-3">
               <EyeOffIcon className="h-6 w-6 text-muted-foreground" />
@@ -1146,17 +1029,15 @@ function DataSourcePreviewSection({
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <CalendarIcon className="h-3.5 w-3.5" />
-                  {extraction.statement_period_begin && extraction.statement_period_end
-                    ? `${formatDate(extraction.statement_period_begin)} — ${formatDate(extraction.statement_period_end)}`
-                    : extraction.statement_date
-                    ? `Statement: ${formatDate(extraction.statement_date)}`
-                    : 'No date range'}
-                </span>
+                {dataSource.transformed_at && (
+                  <span className="flex items-center gap-1">
+                    <CalendarIcon className="h-3.5 w-3.5" />
+                    {formatDate(dataSource.transformed_at)}
+                  </span>
+                )}
                 <span className="flex items-center gap-1">
                   <HashIcon className="h-3.5 w-3.5" />
-                  {extraction.row_count} transactions
+                  {dataSource.row_count} transactions
                 </span>
               </div>
               <div className="flex items-center gap-3">
@@ -1249,7 +1130,7 @@ function DataSourcePreviewSection({
 
 // Bank Data Source Preview Section Component
 function BankDataSourcePreviewSection({
-  csv,
+  dataSource,
   previewData,
   previewLoading,
   previewTotal,
@@ -1259,7 +1140,7 @@ function BankDataSourcePreviewSection({
   onToggleColumnSelector,
   onToggleColumn,
 }: {
-  csv: ExtractedCSV | null
+  dataSource: DataSourceArtifact | null
   previewData: Record<string, string>[]
   previewLoading: boolean
   previewTotal: number
@@ -1269,6 +1150,13 @@ function BankDataSourcePreviewSection({
   onToggleColumnSelector: () => void
   onToggleColumn: (key: string) => void
 }) {
+  // Helper to get display name for data source
+  const getDisplayName = (ds: DataSourceArtifact): string => {
+    return ds.source_artifact_key
+      ? `${ds.source_artifact_type} (${ds.source_artifact_key})`
+      : ds.source_artifact_type
+  }
+
   const renderPreviewCell = (row: Record<string, string>, key: string) => {
     const value = row[key] || ''
     switch (key) {
@@ -1304,15 +1192,15 @@ function BankDataSourcePreviewSection({
             <EyeIcon className="h-5 w-5 text-muted-foreground" />
           </div>
           Data Source Preview
-          {csv && (
+          {dataSource && (
             <span className="ml-2 text-sm font-normal text-muted-foreground">
-              — {csv.name}
+              — {getDisplayName(dataSource)}
             </span>
           )}
         </h3>
       </header>
       <div className="p-6 pt-0">
-        {!csv ? (
+        {!dataSource ? (
           <div className="text-center py-8 rounded-xl bg-gradient-to-br from-muted/50 to-transparent border border-border">
             <div className="p-3 rounded-full bg-muted w-fit mx-auto mb-3">
               <EyeOffIcon className="h-6 w-6 text-muted-foreground" />
@@ -1330,15 +1218,15 @@ function BankDataSourcePreviewSection({
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                {csv.first_transaction_date && csv.last_transaction_date && (
+                {dataSource.transformed_at && (
                   <span className="flex items-center gap-1">
                     <CalendarIcon className="h-3.5 w-3.5" />
-                    {formatDate(csv.first_transaction_date)} — {formatDate(csv.last_transaction_date)}
+                    {formatDate(dataSource.transformed_at)}
                   </span>
                 )}
                 <span className="flex items-center gap-1">
                   <HashIcon className="h-3.5 w-3.5" />
-                  {csv.transaction_count || csv.row_count} transactions
+                  {dataSource.row_count} transactions
                 </span>
               </div>
               <div className="flex items-center gap-3">
@@ -1432,15 +1320,11 @@ function BankDataSourcePreviewSection({
 type SettingsTab = "bank" | "credit"
 
 // Main Console Page
-export function SettingsPage() {
+export function ConsolePage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("bank")
-
-  // Source toggle: 'legacy' uses old APIs, 'experimental' uses new extraction system
-  const [source, setSource] = useState<'legacy' | 'experimental'>('experimental')
 
   // Bank Accounts state
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
-  const [extractedCSVs, setExtractedCSVs] = useState<ExtractedCSV[]>([])
   const [bankAddSourceFile, setBankAddSourceFile] = useState<string | null>(null)
 
   // Bank data source preview state
@@ -1455,13 +1339,11 @@ export function SettingsPage() {
 
   // Credit Cards state
   const [creditCards, setCreditCards] = useState<CreditCard[]>([])
-  const [creditCardSourceFiles, setCreditCardSourceFiles] = useState<CreditCardSourceFile[]>([])
   const [creditAddSourceFile, setCreditAddSourceFile] = useState<string | null>(null)
-  const [pdfExtractionDataSources, setPdfExtractionDataSources] = useState<PDFExtractionDataSource[]>([])
 
-  // Experimental data sources state
-  const [bankDataSourcesNew, setBankDataSourcesNew] = useState<DataSourceArtifactNew[]>([])
-  const [ccDataSourcesNew, setCcDataSourcesNew] = useState<DataSourceArtifactNew[]>([])
+  // Data sources state
+  const [bankDataSources, setBankDataSources] = useState<DataSourceArtifact[]>([])
+  const [ccDataSources, setCcDataSources] = useState<DataSourceArtifact[]>([])
 
   // Data source preview state (lifted from CreditCardDataSources)
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
@@ -1513,76 +1395,6 @@ export function SettingsPage() {
     })
   }
 
-  // Map DataSourceArtifactNew to PDFExtractionDataSource format for UI compatibility
-  const mapDataSourceToPDFExtraction = (ds: DataSourceArtifactNew): PDFExtractionDataSource => {
-    const linkedCard = creditCards.find(c => c.id === ds.credit_card_id)
-    return {
-      artifact_id: ds.artifact_id,
-      name: ds.source_artifact_key
-        ? `${ds.source_artifact_type} (${ds.source_artifact_key})`
-        : ds.source_artifact_type,
-      source_file: ds.source_filename,
-      status: ds.status === 'loaded' ? 'loaded' : 'extracted',
-      statement_date: null,
-      statement_period_begin: null,
-      statement_period_end: null,
-      row_count: ds.row_count,
-      credit_card: linkedCard ? {
-        id: linkedCard.id,
-        nickname: linkedCard.nickname,
-      } : null,
-      loaded: ds.status === 'loaded',
-    }
-  }
-
-  // Get mapped data sources for UI (experimental or legacy)
-  const mappedCcDataSources: PDFExtractionDataSource[] = source === 'experimental'
-    ? ccDataSourcesNew.map(mapDataSourceToPDFExtraction)
-    : pdfExtractionDataSources
-
-  // Map DataSourceArtifactNew to ExtractedCSV format for bank data sources
-  const mapBankDataSourceToExtractedCSV = (ds: DataSourceArtifactNew): ExtractedCSV => {
-    const linkedAccount = bankAccounts.find(a => a.id === ds.bank_account_id)
-    return {
-      id: ds.id,
-      name: ds.source_artifact_key
-        ? `${ds.source_artifact_type} (${ds.source_artifact_key})`
-        : ds.source_filename,
-      source_filename: ds.source_filename,
-      source_file_id: ds.id, // Using id as source_file_id
-      status: ds.status === 'loaded' ? 'loaded' : 'extracted',
-      bank_account_id: ds.bank_account_id,
-      disabled: !ds.enabled,
-      hidden: ds.hidden,
-      row_count: ds.row_count,
-      extracted_at: ds.transformed_at,
-      loaded_at: ds.loaded_at,
-      first_transaction_date: null,
-      last_transaction_date: null,
-      transaction_count: ds.row_count,
-      error_message: ds.error_message,
-      artifacts: [{
-        artifact_id: ds.artifact_id,
-        artifact_type: ds.source_artifact_type,
-        artifact_key: ds.source_artifact_key,
-        content_type: 'csv',
-        row_count: ds.row_count,
-        data_hash: ds.content_hash,
-      }],
-      // Add linked account info for display
-      bank_account: linkedAccount ? {
-        id: linkedAccount.id,
-        name: linkedAccount.name,
-        nickname: linkedAccount.nickname,
-      } : undefined,
-    }
-  }
-
-  // Get mapped bank data sources (experimental or legacy)
-  const mappedBankDataSources: ExtractedCSV[] = source === 'experimental'
-    ? bankDataSourcesNew.map(mapBankDataSourceToExtractedCSV)
-    : extractedCSVs
-
   // Handle bank CSV selection and load preview data
   const handleSelectBankCSV = async (csvId: number | null) => {
     if (csvId === null || selectedBankCSVId === csvId) {
@@ -1599,18 +1411,12 @@ export function SettingsPage() {
     setBankPreviewTotal(0)
 
     try {
-      if (source === 'experimental') {
-        // Find the data source by id to get its artifact_id
-        const ds = bankDataSourcesNew.find(d => d.id === csvId)
-        if (ds) {
-          const result = await previewDataSourceNew(ds.artifact_id, 20)
-          setBankPreviewData(result.data)
-          setBankPreviewTotal(result.total || result.data.length)
-        }
-      } else {
-        const result = await fetchBankExtractedCSVPreview(csvId, 20)
-        setBankPreviewData(result.data)
-        setBankPreviewTotal(result.total || 0)
+      // Find the data source by id to get its artifact_id
+      const ds = bankDataSources.find(d => d.id === csvId)
+      if (ds) {
+        const result = await previewDataSource(ds.artifact_id, 20)
+        setBankPreviewData(result.data as Record<string, string>[])
+        setBankPreviewTotal(result.total || result.data.length)
       }
     } catch (error) {
       console.error("Failed to load bank preview:", error)
@@ -1620,7 +1426,7 @@ export function SettingsPage() {
   }
 
   // Get selected bank CSV object (uses mapped data for consistent interface)
-  const selectedBankCSV = mappedBankDataSources.find(c => c.id === selectedBankCSVId) || null
+  const selectedBankDataSource = bankDataSources.find(ds => ds.id === selectedBankCSVId) || null
 
   // Handle artifact selection and load preview data
   const handleSelectArtifact = async (artifactId: string) => {
@@ -1638,15 +1444,9 @@ export function SettingsPage() {
     setPreviewTotal(0)
 
     try {
-      if (source === 'experimental') {
-        const result = await previewDataSourceNew(artifactId, 20)
-        setPreviewData(result.data as IngestableTransactionRow[])
-        setPreviewTotal(result.total || result.data.length)
-      } else {
-        const result = await fetchArtifactPreview(artifactId, 20)
-        setPreviewData(result.data as IngestableTransactionRow[])
-        setPreviewTotal(result.total || 0)
-      }
+      const result = await previewDataSource(artifactId, 20)
+      setPreviewData(result.data as unknown as IngestableTransactionRow[])
+      setPreviewTotal(result.total || result.data.length)
     } catch (error) {
       console.error("Failed to load preview:", error)
     } finally {
@@ -1655,7 +1455,7 @@ export function SettingsPage() {
   }
 
   // Get selected extraction object (uses mapped data for consistent interface)
-  const selectedExtraction = mappedCcDataSources.find(e => e.artifact_id === selectedArtifactId) || null
+  const selectedCcDataSource = ccDataSources.find(ds => ds.artifact_id === selectedArtifactId) || null
 
   useEffect(() => {
     document.title = "Console | FinAccs"
@@ -1667,7 +1467,6 @@ export function SettingsPage() {
       try {
         const bankData = await fetchBankAccounts()
         setBankAccounts(bankData.accounts)
-        setExtractedCSVs(bankData.extracted_csvs)
       } catch (error) {
         console.error("Failed to load bank accounts:", error)
       }
@@ -1675,49 +1474,35 @@ export function SettingsPage() {
       try {
         const creditData = await fetchCreditCards()
         setCreditCards(creditData.cards)
-        setCreditCardSourceFiles(creditData.source_files)
       } catch (error) {
         console.error("Failed to load credit cards:", error)
       }
 
-      if (source === 'experimental') {
-        // Load new data sources
-        try {
-          const [bankDsRes, ccDsRes] = await Promise.all([
-            fetchDataSourcesNew({ domain: 'bank_account_transactions', visibility: 'visible' }),
-            fetchDataSourcesNew({ domain: 'credit_card_transactions', visibility: 'visible' }),
-          ])
-          setBankDataSourcesNew(bankDsRes.data)
-          setCcDataSourcesNew(ccDsRes.data)
-        } catch (error) {
-          console.error("Failed to load experimental data sources:", error)
-        }
-      } else {
-        // Legacy: load PDF extractions
-        try {
-          const pdfExtractionsData = await fetchPDFExtractionDataSources()
-          setPdfExtractionDataSources(pdfExtractionsData.data)
-        } catch (error) {
-          console.error("Failed to load PDF extractions:", error)
-        }
+      // Load data sources
+      try {
+        const [bankDsRes, ccDsRes] = await Promise.all([
+          fetchDataSources({ domain: 'bank_account_transactions', visibility: 'visible' }),
+          fetchDataSources({ domain: 'credit_card_transactions', visibility: 'visible' }),
+        ])
+        setBankDataSources(bankDsRes.data)
+        setCcDataSources(ccDsRes.data)
+      } catch (error) {
+        console.error("Failed to load data sources:", error)
       }
 
       setLoading(false)
     }
     loadData()
-  }, [source])
+  }, [])
 
   const refreshBankData = async () => {
     const data = await fetchBankAccounts()
     setBankAccounts(data.accounts)
-    setExtractedCSVs(data.extracted_csvs)
-    if (source === 'experimental') {
-      try {
-        const bankDsRes = await fetchDataSourcesNew({ domain: 'bank_account_transactions', visibility: 'visible' })
-        setBankDataSourcesNew(bankDsRes.data)
-      } catch (error) {
-        console.error("Failed to refresh bank data sources:", error)
-      }
+    try {
+      const bankDsRes = await fetchDataSources({ domain: 'bank_account_transactions', visibility: 'visible' })
+      setBankDataSources(bankDsRes.data)
+    } catch (error) {
+      console.error("Failed to refresh bank data sources:", error)
     }
   }
 
@@ -1726,58 +1511,35 @@ export function SettingsPage() {
     try {
       const creditData = await fetchCreditCards()
       setCreditCards(creditData.cards)
-      setCreditCardSourceFiles(creditData.source_files)
     } catch (error) {
       console.error("Failed to refresh credit cards:", error)
     }
 
-    if (source === 'experimental') {
-      try {
-        const ccDsRes = await fetchDataSourcesNew({ domain: 'credit_card_transactions', visibility: 'visible' })
-        setCcDataSourcesNew(ccDsRes.data)
-      } catch (error) {
-        console.error("Failed to refresh CC data sources:", error)
-      }
-    } else {
-      try {
-        const pdfExtractionsData = await fetchPDFExtractionDataSources()
-        setPdfExtractionDataSources(pdfExtractionsData.data)
-      } catch (error) {
-        console.error("Failed to refresh PDF extractions:", error)
-      }
+    try {
+      const ccDsRes = await fetchDataSources({ domain: 'credit_card_transactions', visibility: 'visible' })
+      setCcDataSources(ccDsRes.data)
+    } catch (error) {
+      console.error("Failed to refresh CC data sources:", error)
     }
   }
 
   const handleLoadArtifacts = async (artifactIds: string[]) => {
-    if (source === 'experimental') {
-      // Load each artifact sequentially
-      for (const artifactId of artifactIds) {
-        await loadDataSourceNew(artifactId)
-      }
-    } else {
-      await loadArtifacts(artifactIds)
+    // Load each artifact sequentially
+    for (const artifactId of artifactIds) {
+      await loadDataSource(artifactId)
     }
     await refreshCreditData()
   }
 
   const handleUnloadArtifacts = async (artifactIds: string[]) => {
-    if (source === 'experimental') {
-      for (const artifactId of artifactIds) {
-        await unloadDataSourceNew(artifactId)
-      }
-    } else {
-      await unloadArtifacts(artifactIds)
+    for (const artifactId of artifactIds) {
+      await unloadDataSource(artifactId)
     }
     await refreshCreditData()
   }
 
   const handleDeleteArtifact = async (artifactId: string) => {
-    let result: { success: boolean; error?: string }
-    if (source === 'experimental') {
-      result = await deleteDataSourceNew(artifactId)
-    } else {
-      result = await deleteArtifact(artifactId)
-    }
+    const result = await deleteDataSource(artifactId)
     if (result.success) {
       await refreshCreditData()
     } else {
@@ -1882,7 +1644,6 @@ export function SettingsPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <AccountsSection
                 accounts={bankAccounts}
-                extractedCSVs={extractedCSVs}
                 onSave={handleBankAccountSave}
                 initialAddSourceFile={bankAddSourceFile}
                 onAddingStateChange={(isAdding) => {
@@ -1890,45 +1651,18 @@ export function SettingsPage() {
                 }}
               />
               <DataSources
-                extractedCSVs={mappedBankDataSources}
+                dataSources={bankDataSources}
                 accounts={bankAccounts}
                 onCreateAccount={(filename) => setBankAddSourceFile(filename)}
-                onCSVUpdated={(updatedCSV) => {
-                  if (source === 'experimental') {
-                    // Refresh data from API since we're using mapped data
-                    refreshBankData()
-                  } else {
-                    setExtractedCSVs((prev) => {
-                      const existing = prev.findIndex((csv) => csv.id === updatedCSV.id)
-                      if (existing >= 0) {
-                        const updated = [...prev]
-                        updated[existing] = updatedCSV
-                        return updated
-                      }
-                      return prev
-                    })
-                  }
-                }}
-                onAccountStatsUpdated={(affectedAccounts: Record<number, AccountStats>) => {
-                  setBankAccounts((prev) =>
-                    prev.map((account) => {
-                      const stats = affectedAccounts[account.id]
-                      if (stats) {
-                        return { ...account, ...stats }
-                      }
-                      return account
-                    })
-                  )
-                }}
+                onDataSourceUpdated={refreshBankData}
                 onRefresh={refreshBankData}
-                selectedCSVId={selectedBankCSVId}
-                onSelectCSV={handleSelectBankCSV}
-                source={source}
+                selectedId={selectedBankCSVId}
+                onSelect={handleSelectBankCSV}
               />
             </div>
             {/* Bank Data Source Preview */}
             <BankDataSourcePreviewSection
-              csv={selectedBankCSV}
+              dataSource={selectedBankDataSource}
               previewData={bankPreviewData}
               previewLoading={bankPreviewLoading}
               previewTotal={bankPreviewTotal}
@@ -1953,27 +1687,19 @@ export function SettingsPage() {
                 }}
               />
               <CreditCardDataSources
-                sourceFiles={creditCardSourceFiles}
-                pdfExtractions={mappedCcDataSources}
+                dataSources={ccDataSources}
                 cards={creditCards}
                 selectedArtifactId={selectedArtifactId}
                 onSelectArtifact={handleSelectArtifact}
-                onCreateCard={(filename) => setCreditAddSourceFile(filename)}
                 onCardUpdated={refreshCreditData}
-                onSourceFileUpdated={(sourceFile) => {
-                  setCreditCardSourceFiles((prev) =>
-                    prev.map((sf) => (sf.id === sourceFile.id ? sourceFile : sf))
-                  )
-                }}
                 onLoadArtifact={handleLoadArtifacts}
                 onUnloadArtifact={handleUnloadArtifacts}
                 onDeleteArtifact={handleDeleteArtifact}
                 onRefresh={refreshCreditData}
-                source={source}
               />
             </div>
             <DataSourcePreviewSection
-              extraction={selectedExtraction}
+              dataSource={selectedCcDataSource}
               previewData={previewData}
               previewLoading={previewLoading}
               previewTotal={previewTotal}

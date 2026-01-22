@@ -23,13 +23,10 @@ import {
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import {
-  updateExtractedCSV,
-  loadExtractedCSVs,
-  updateDataSourceNew,
-  loadDataSourceNew,
+  updateDataSource,
+  loadDataSource,
   type BankAccount,
-  type ExtractedCSV,
-  type AccountStats,
+  type DataSourceArtifact,
 } from "@/lib/api"
 import { useInconsistencyCache } from "@/lib/inconsistency-cache"
 import { useStoryCache } from "@/lib/story-cache"
@@ -43,18 +40,16 @@ function formatDate(dateStr: string): string {
 }
 
 interface DataSourcesProps {
-  extractedCSVs: ExtractedCSV[]
+  dataSources: DataSourceArtifact[]
   accounts: BankAccount[]
   onCreateAccount: (filename: string) => void
-  onCSVUpdated: (csv: ExtractedCSV) => void
-  onAccountStatsUpdated?: (affectedAccounts: Record<number, AccountStats>) => void
+  onDataSourceUpdated: () => void
   onRefresh?: () => void
-  selectedCSVId?: number | null
-  onSelectCSV?: (csvId: number | null) => void
-  source?: 'legacy' | 'experimental'
+  selectedId?: number | null
+  onSelect?: (id: number | null) => void
 }
 
-export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpdated, onAccountStatsUpdated, onRefresh, selectedCSVId, onSelectCSV, source = 'legacy' }: DataSourcesProps) {
+export function DataSources({ dataSources, accounts, onCreateAccount, onDataSourceUpdated, onRefresh, selectedId, onSelect }: DataSourcesProps) {
   const { invalidate: invalidateInconsistencyCache } = useInconsistencyCache()
   const { invalidate: invalidateStoryCache } = useStoryCache()
   const [isLinking, setIsLinking] = useState(false)
@@ -70,53 +65,33 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
     }
   }
 
-  // Helper to get artifact_id from csv (for experimental mode)
-  const getArtifactId = (csv: ExtractedCSV): string | null => {
-    return csv.artifacts?.[0]?.artifact_id || null
+  // Helper to get display name for data source
+  const getDisplayName = (ds: DataSourceArtifact): string => {
+    return ds.source_artifact_key
+      ? `${ds.source_artifact_type} (${ds.source_artifact_key})`
+      : ds.source_artifact_type
   }
 
-  const handleToggleDisabled = async (csv: ExtractedCSV) => {
-    setTogglingId(csv.id)
+  const handleToggleDisabled = async (ds: DataSourceArtifact) => {
+    setTogglingId(ds.id)
     try {
-      if (source === 'experimental') {
-        const artifactId = getArtifactId(csv)
-        if (artifactId) {
-          await updateDataSourceNew(artifactId, { enabled: csv.disabled }) // Toggle: disabled -> enabled
-          onCSVUpdated({ ...csv, disabled: !csv.disabled })
-        }
-      } else {
-        const updated = await updateExtractedCSV(csv.id, { disabled: !csv.disabled })
-        onCSVUpdated({ ...csv, ...updated })
-        if (updated.affected_accounts && onAccountStatsUpdated) {
-          onAccountStatsUpdated(updated.affected_accounts)
-        }
-      }
+      await updateDataSource(ds.artifact_id, { enabled: !ds.enabled })
+      onDataSourceUpdated()
       // Invalidate caches since transactions are now included/excluded
       invalidateInconsistencyCache()
       invalidateStoryCache()
     } catch (error) {
-      console.error("Failed to toggle CSV:", error)
+      console.error("Failed to toggle data source:", error)
     } finally {
       setTogglingId(null)
     }
   }
 
-  const handleLinkToAccount = async (csv: ExtractedCSV, accountId: number) => {
+  const handleLinkToAccount = async (ds: DataSourceArtifact, accountId: number) => {
     setIsLinking(true)
     try {
-      if (source === 'experimental') {
-        const artifactId = getArtifactId(csv)
-        if (artifactId) {
-          await updateDataSourceNew(artifactId, { bank_account_id: accountId })
-          onCSVUpdated({ ...csv, bank_account_id: accountId })
-        }
-      } else {
-        const updated = await updateExtractedCSV(csv.id, { bank_account_id: accountId })
-        onCSVUpdated({ ...csv, ...updated })
-        if (updated.affected_accounts && onAccountStatsUpdated) {
-          onAccountStatsUpdated(updated.affected_accounts)
-        }
-      }
+      await updateDataSource(ds.artifact_id, { bank_account_id: accountId })
+      onDataSourceUpdated()
     } catch (error) {
       console.error("Failed to link account:", error)
     } finally {
@@ -124,22 +99,11 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
     }
   }
 
-  const handleUnlinkFromAccount = async (csv: ExtractedCSV) => {
+  const handleUnlinkFromAccount = async (ds: DataSourceArtifact) => {
     setIsLinking(true)
     try {
-      if (source === 'experimental') {
-        const artifactId = getArtifactId(csv)
-        if (artifactId) {
-          await updateDataSourceNew(artifactId, { bank_account_id: null })
-          onCSVUpdated({ ...csv, bank_account_id: null })
-        }
-      } else {
-        const updated = await updateExtractedCSV(csv.id, { bank_account_id: null })
-        onCSVUpdated({ ...csv, ...updated })
-        if (updated.affected_accounts && onAccountStatsUpdated) {
-          onAccountStatsUpdated(updated.affected_accounts)
-        }
-      }
+      await updateDataSource(ds.artifact_id, { bank_account_id: null })
+      onDataSourceUpdated()
     } catch (error) {
       console.error("Failed to unlink account:", error)
     } finally {
@@ -147,22 +111,11 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
     }
   }
 
-  const handleChangeLinkToAccount = async (csv: ExtractedCSV, newAccountId: number) => {
+  const handleChangeLinkToAccount = async (ds: DataSourceArtifact, newAccountId: number) => {
     setIsLinking(true)
     try {
-      if (source === 'experimental') {
-        const artifactId = getArtifactId(csv)
-        if (artifactId) {
-          await updateDataSourceNew(artifactId, { bank_account_id: newAccountId })
-          onCSVUpdated({ ...csv, bank_account_id: newAccountId })
-        }
-      } else {
-        const updated = await updateExtractedCSV(csv.id, { bank_account_id: newAccountId })
-        onCSVUpdated({ ...csv, ...updated })
-        if (updated.affected_accounts && onAccountStatsUpdated) {
-          onAccountStatsUpdated(updated.affected_accounts)
-        }
-      }
+      await updateDataSource(ds.artifact_id, { bank_account_id: newAccountId })
+      onDataSourceUpdated()
     } catch (error) {
       console.error("Failed to change link:", error)
     } finally {
@@ -170,108 +123,72 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
     }
   }
 
-  const handleLoadCSV = async (csv: ExtractedCSV) => {
-    setLoadingIds(prev => new Set(prev).add(csv.id))
+  const handleLoadDataSource = async (ds: DataSourceArtifact) => {
+    setLoadingIds(prev => new Set(prev).add(ds.id))
     try {
-      // Set status to loading immediately for UI feedback
-      onCSVUpdated({ ...csv, status: 'loading' })
-
-      if (source === 'experimental') {
-        const artifactId = getArtifactId(csv)
-        if (artifactId) {
-          const result = await loadDataSourceNew(artifactId)
-          onCSVUpdated({
-            ...csv,
-            status: result.success ? 'loaded' : 'error',
-            error_message: result.error,
-            loaded_at: result.success ? new Date().toISOString() : csv.loaded_at,
-          })
-          if (result.success) {
-            invalidateInconsistencyCache()
-            invalidateStoryCache()
-          }
-        }
-      } else {
-        const result = await loadExtractedCSVs([csv.id])
-        if (result.results && result.results.length > 0) {
-          const loadResult = result.results[0]
-          onCSVUpdated({
-            ...csv,
-            status: loadResult.success ? 'loaded' : 'error',
-            error_message: loadResult.success ? '' : loadResult.message,
-          })
-        }
-        // Invalidate inconsistency cache - new data may create inconsistencies
+      const result = await loadDataSource(ds.artifact_id)
+      if (result.success) {
         invalidateInconsistencyCache()
-        // Refresh to get updated data
-        if (onRefresh) {
-          await onRefresh()
-        }
+        invalidateStoryCache()
       }
+      onDataSourceUpdated()
     } catch (error) {
-      console.error("Failed to load CSV:", error)
-      onCSVUpdated({
-        ...csv,
-        status: 'error',
-        error_message: error instanceof Error ? error.message : 'Unknown error',
-      })
+      console.error("Failed to load data source:", error)
     } finally {
       setLoadingIds(prev => {
         const next = new Set(prev)
-        next.delete(csv.id)
+        next.delete(ds.id)
         return next
       })
     }
   }
 
   const handleLoadAllPending = async () => {
-    const pendingCSVs = extractedCSVs.filter(csv => csv.status === 'extracted' || csv.status === 'transformed')
-    if (pendingCSVs.length === 0) return
+    const pendingSources = dataSources.filter(ds => ds.status === 'unloaded')
+    if (pendingSources.length === 0) return
 
-    const ids = pendingCSVs.map(csv => csv.id)
+    const ids = pendingSources.map(ds => ds.id)
     setLoadingIds(new Set(ids))
 
-    // Update UI immediately
-    pendingCSVs.forEach(csv => {
-      onCSVUpdated({ ...csv, status: 'loading' })
-    })
-
     try {
-      await loadExtractedCSVs(ids)
-      // Invalidate inconsistency cache - batch load may create inconsistencies
+      // Load each data source sequentially
+      for (const ds of pendingSources) {
+        await loadDataSource(ds.artifact_id)
+      }
+      // Invalidate caches after loading
       invalidateInconsistencyCache()
+      invalidateStoryCache()
       // Refresh to get updated data
       if (onRefresh) {
         await onRefresh()
       }
     } catch (error) {
-      console.error("Failed to load CSVs:", error)
+      console.error("Failed to load data sources:", error)
     } finally {
       setLoadingIds(new Set())
     }
   }
 
-  // Create a map of csv -> account using bank_account_id from ExtractedCSV
-  const csvToAccount = new Map<number, BankAccount>()
-  extractedCSVs.forEach((csv) => {
-    if (csv.bank_account_id) {
-      const account = accounts.find((acc) => acc.id === csv.bank_account_id)
+  // Create a map of data source -> account
+  const dsToAccount = new Map<number, BankAccount>()
+  dataSources.forEach((ds) => {
+    if (ds.bank_account_id) {
+      const account = accounts.find((acc) => acc.id === ds.bank_account_id)
       if (account) {
-        csvToAccount.set(csv.id, account)
+        dsToAccount.set(ds.id, account)
       }
     }
   })
 
-  // Separate by status (extracted and transformed are both "ready to load")
-  const extractedFiles = extractedCSVs.filter((f) => f.status === 'extracted' || f.status === 'transformed')
-  const loadingFiles = extractedCSVs.filter((f) => f.status === 'loading')
-  const loadedFiles = extractedCSVs.filter((f) => f.status === 'loaded')
-  const errorFiles = extractedCSVs.filter((f) => f.status === 'error')
+  // Separate by status
+  const unloadedSources = dataSources.filter((ds) => ds.status === 'unloaded')
+  const loadingSources = dataSources.filter((ds) => ds.status === 'loading')
+  const loadedSources = dataSources.filter((ds) => ds.status === 'loaded')
+  const errorSources = dataSources.filter((ds) => ds.status === 'error')
 
-  const getStatusBadge = (csv: ExtractedCSV) => {
-    switch (csv.status) {
-      case 'extracted':
-      case 'transformed':
+  const getStatusBadge = (ds: DataSourceArtifact) => {
+    switch (ds.status) {
+      case 'unloaded':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-violet-500/20 text-violet-600 dark:text-violet-400">
             <ClockIcon className="h-3 w-3" />
@@ -302,13 +219,13 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
                   Error
                 </span>
               </Tooltip.Trigger>
-              {csv.error_message && (
+              {ds.error_message && (
                 <Tooltip.Portal>
                   <Tooltip.Content
                     className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm max-w-xs"
                     sideOffset={4}
                   >
-                    {csv.error_message}
+                    {ds.error_message}
                     <Tooltip.Arrow className="fill-card" />
                   </Tooltip.Content>
                 </Tooltip.Portal>
@@ -321,35 +238,36 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
     }
   }
 
-  const renderCSVCard = (csv: ExtractedCSV) => {
-    const linkedAccount = csvToAccount.get(csv.id)
-    const isLoading = loadingIds.has(csv.id) || csv.status === 'loading'
-    const isSelected = selectedCSVId === csv.id
+  const renderDataSourceCard = (ds: DataSourceArtifact) => {
+    const linkedAccount = dsToAccount.get(ds.id)
+    const isLoading = loadingIds.has(ds.id) || ds.status === 'loading'
+    const isSelected = selectedId === ds.id
+    const isDisabled = !ds.enabled
 
     const handleCardClick = () => {
-      if (onSelectCSV) {
-        onSelectCSV(isSelected ? null : csv.id)
+      if (onSelect) {
+        onSelect(isSelected ? null : ds.id)
       }
     }
 
     return (
       <div
-        key={csv.id}
+        key={ds.id}
         onClick={handleCardClick}
-        className={`p-4 rounded-lg border transition-all hover:shadow-md ${isSelected ? 'border-primary bg-primary/5' : csv.disabled ? 'border-border/50 bg-muted/30 opacity-60' : 'border-border'} ${onSelectCSV ? 'cursor-pointer' : ''}`}
+        className={`p-4 rounded-lg border transition-all hover:shadow-md ${isSelected ? 'border-primary bg-primary/5' : isDisabled ? 'border-border/50 bg-muted/30 opacity-60' : 'border-border'} ${onSelect ? 'cursor-pointer' : ''}`}
       >
         <div className="flex items-start gap-3">
-          <div className={`p-2.5 rounded-xl ${csv.disabled ? 'bg-muted/50' : 'bg-muted'}`}>
-            <FileTextIcon className={`h-5 w-5 ${csv.disabled ? 'text-muted-foreground/50' : 'text-muted-foreground'}`} />
+          <div className={`p-2.5 rounded-xl ${isDisabled ? 'bg-muted/50' : 'bg-muted'}`}>
+            <FileTextIcon className={`h-5 w-5 ${isDisabled ? 'text-muted-foreground/50' : 'text-muted-foreground'}`} />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <p className={`font-mono text-sm truncate font-medium ${csv.disabled ? 'line-through text-muted-foreground' : ''}`}>{csv.name}</p>
-                <p className="text-xs text-muted-foreground truncate">{csv.source_filename}</p>
+                <p className={`font-mono text-sm truncate font-medium ${isDisabled ? 'line-through text-muted-foreground' : ''}`}>{getDisplayName(ds)}</p>
+                <p className="text-xs text-muted-foreground truncate">{ds.source_filename}</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {csv.disabled ? (
+                {isDisabled ? (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/20 text-red-600 dark:text-red-400">
                     <PowerIcon className="h-3 w-3" />
                     Disabled
@@ -360,14 +278,14 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
                     Not linked
                   </span>
                 )}
-                {getStatusBadge(csv)}
+                {getStatusBadge(ds)}
                 <Tooltip.Provider>
                   <Tooltip.Root>
                     <Tooltip.Trigger asChild>
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleToggleDisabled(csv) }}
-                        disabled={togglingId === csv.id}
-                        className={`p-1.5 rounded-lg transition-colors ${csv.disabled ? 'hover:bg-green-500/20 text-muted-foreground hover:text-green-600' : 'hover:bg-amber-500/20 text-muted-foreground hover:text-amber-600'} disabled:opacity-50`}
+                        onClick={(e) => { e.stopPropagation(); handleToggleDisabled(ds) }}
+                        disabled={togglingId === ds.id}
+                        className={`p-1.5 rounded-lg transition-colors ${isDisabled ? 'hover:bg-green-500/20 text-muted-foreground hover:text-green-600' : 'hover:bg-amber-500/20 text-muted-foreground hover:text-amber-600'} disabled:opacity-50`}
                       >
                         <PowerIcon className="h-4 w-4" />
                       </button>
@@ -377,7 +295,7 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
                         className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
                         sideOffset={4}
                       >
-                        {csv.disabled ? 'Enable this source' : 'Disable this source'}
+                        {isDisabled ? 'Enable this source' : 'Disable this source'}
                         <Tooltip.Arrow className="fill-card" />
                       </Tooltip.Content>
                     </Tooltip.Portal>
@@ -399,37 +317,31 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
                         className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm"
                         sideOffset={4}
                       >
-                        Delete source file
+                        Delete data source
                         <Tooltip.Arrow className="fill-card" />
                       </Tooltip.Content>
                     </Tooltip.Portal>
                   </Tooltip.Root>
                 </Tooltip.Provider>
                 {/* Selection indicator */}
-                {onSelectCSV && (
+                {onSelect && (
                   <ChevronRightIcon className={`h-4 w-4 text-muted-foreground transition-transform ${isSelected ? 'rotate-90' : ''}`} />
                 )}
               </div>
             </div>
 
-            {/* Date range, transaction count, and row count */}
+            {/* Row count and date */}
             <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-              {csv.first_transaction_date && csv.last_transaction_date && (
+              {ds.row_count > 0 && (
+                <span className="flex items-center gap-1">
+                  <HashIcon className="h-3 w-3" />
+                  {ds.row_count} rows
+                </span>
+              )}
+              {ds.transformed_at && (
                 <span className="flex items-center gap-1">
                   <CalendarIcon className="h-3 w-3" />
-                  {formatDate(csv.first_transaction_date)} — {formatDate(csv.last_transaction_date)}
-                </span>
-              )}
-              {csv.transaction_count > 0 && (
-                <span className="flex items-center gap-1">
-                  <HashIcon className="h-3 w-3" />
-                  {csv.transaction_count} transactions
-                </span>
-              )}
-              {(csv.status === 'extracted' || csv.status === 'transformed') && csv.row_count > 0 && (
-                <span className="flex items-center gap-1">
-                  <HashIcon className="h-3 w-3" />
-                  {csv.row_count} rows
+                  {formatDate(ds.transformed_at)}
                 </span>
               )}
             </div>
@@ -460,7 +372,7 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
                             <DropdownMenu.Item
                               key={acc.id}
                               disabled={isLinking}
-                              onSelect={() => handleChangeLinkToAccount(csv, acc.id)}
+                              onSelect={() => handleChangeLinkToAccount(ds, acc.id)}
                               className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none disabled:opacity-50"
                             >
                               <BuildingIcon className="h-4 w-4 text-muted-foreground" />
@@ -477,7 +389,7 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
                       )}
                       <DropdownMenu.Item
                         disabled={isLinking}
-                        onSelect={() => handleUnlinkFromAccount(csv)}
+                        onSelect={() => handleUnlinkFromAccount(ds)}
                         className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-red-500/10 text-red-600 dark:text-red-400 transition-colors cursor-pointer outline-none disabled:opacity-50"
                       >
                         <Link2OffIcon className="h-4 w-4" />
@@ -510,7 +422,7 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
                             <DropdownMenu.Item
                               key={acc.id}
                               disabled={isLinking}
-                              onSelect={() => handleLinkToAccount(csv, acc.id)}
+                              onSelect={() => handleLinkToAccount(ds, acc.id)}
                               className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none disabled:opacity-50"
                             >
                               <BuildingIcon className="h-4 w-4 text-muted-foreground" />
@@ -526,7 +438,7 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
                         </>
                       )}
                       <DropdownMenu.Item
-                        onSelect={() => onCreateAccount(csv.source_filename)}
+                        onSelect={() => onCreateAccount(ds.source_filename)}
                         className="flex items-center gap-2 px-2 py-2 text-sm rounded-md hover:bg-accent transition-colors cursor-pointer outline-none font-medium"
                       >
                         <PlusIcon className="h-4 w-4" />
@@ -544,9 +456,9 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
               )}
 
               {/* Load/Retry button */}
-              {(csv.status === 'extracted' || csv.status === 'transformed' || csv.status === 'error') && (
+              {(ds.status === 'unloaded' || ds.status === 'error') && (
                 <button
-                  onClick={(e) => { e.stopPropagation(); handleLoadCSV(csv) }}
+                  onClick={(e) => { e.stopPropagation(); handleLoadDataSource(ds) }}
                   disabled={isLoading}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-violet-500/20 text-violet-600 dark:text-violet-400 hover:bg-violet-500/30 transition-colors font-medium disabled:opacity-50 ml-auto"
                 >
@@ -555,7 +467,7 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
                   ) : (
                     <PlayIcon className="h-3.5 w-3.5" />
                   )}
-                  {csv.status === 'error' ? 'Retry' : 'Load'}
+                  {ds.status === 'error' ? 'Retry' : 'Load'}
                 </button>
               )}
             </div>
@@ -565,7 +477,7 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
     )
   }
 
-  const hasPendingCSVs = extractedFiles.length > 0
+  const hasPendingSources = unloadedSources.length > 0
 
   return (
     <section className="rounded-xl border border-border bg-card shadow-sm">
@@ -578,7 +490,7 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
             Data Sources
           </div>
           <div className="flex items-center gap-2">
-            {hasPendingCSVs && (
+            {hasPendingSources && (
               <button
                 onClick={handleLoadAllPending}
                 disabled={loadingIds.size > 0}
@@ -589,7 +501,7 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
                 ) : (
                   <PlayIcon className="h-3.5 w-3.5" />
                 )}
-                Load All ({extractedFiles.length})
+                Load All ({unloadedSources.length})
               </button>
             )}
             {onRefresh && (
@@ -607,49 +519,49 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
       </header>
       <div className="relative">
         <div className="p-6 pt-0 max-h-[512px] overflow-y-auto">
-          {extractedCSVs.length === 0 ? (
+          {dataSources.length === 0 ? (
             <div className="text-center py-8 rounded-xl bg-gradient-to-br from-muted/50 to-transparent border border-border">
               <div className="p-3 rounded-full bg-muted w-fit mx-auto mb-3">
                 <FolderOpenIcon className="h-6 w-6 text-muted-foreground" />
               </div>
-              <p className="font-medium">No extracted CSVs found</p>
+              <p className="font-medium">No data sources found</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Extract bank statement files to create CSVs
+                Transform extractions from the Extractions page
               </p>
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Error Files Section */}
-              {errorFiles.length > 0 && (
+              {/* Error Sources Section */}
+              {errorSources.length > 0 && (
                 <div className="space-y-3">
                   <p className="text-xs font-medium text-red-600 dark:text-red-400 uppercase tracking-wider">Failed to Load</p>
-                  {errorFiles.map(renderCSVCard)}
+                  {errorSources.map(renderDataSourceCard)}
                 </div>
               )}
 
-              {/* Extracted Files Section (Ready to Load) */}
-              {extractedFiles.length > 0 && (
+              {/* Unloaded Sources Section (Ready to Load) */}
+              {unloadedSources.length > 0 && (
                 <div className="space-y-3">
                   <p className="text-xs font-medium text-violet-600 dark:text-violet-400 uppercase tracking-wider">Ready to Load</p>
-                  {extractedFiles.map(renderCSVCard)}
+                  {unloadedSources.map(renderDataSourceCard)}
                 </div>
               )}
 
-              {/* Loading Files Section */}
-              {loadingFiles.length > 0 && (
+              {/* Loading Sources Section */}
+              {loadingSources.length > 0 && (
                 <div className="space-y-3">
                   <p className="text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wider">Loading</p>
-                  {loadingFiles.map(renderCSVCard)}
+                  {loadingSources.map(renderDataSourceCard)}
                 </div>
               )}
 
-              {/* Loaded Files Section */}
-              {loadedFiles.length > 0 && (
+              {/* Loaded Sources Section */}
+              {loadedSources.length > 0 && (
                 <div className="space-y-3">
-                  {(extractedFiles.length > 0 || errorFiles.length > 0 || loadingFiles.length > 0) && (
+                  {(unloadedSources.length > 0 || errorSources.length > 0 || loadingSources.length > 0) && (
                     <p className="text-xs font-medium text-green-600 dark:text-green-400 uppercase tracking-wider">Loaded</p>
                   )}
-                  {loadedFiles.map(renderCSVCard)}
+                  {loadedSources.map(renderDataSourceCard)}
                 </div>
               )}
             </div>

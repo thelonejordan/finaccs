@@ -19,12 +19,10 @@ import {
   updateBankAccount,
   type BankAccount,
   type BankAccountInput,
-  type ExtractedCSV,
 } from "@/lib/api"
 
 interface AccountsSectionProps {
   accounts: BankAccount[]
-  extractedCSVs: ExtractedCSV[]
   onSave: (account: BankAccount) => void
   initialAddSourceFile?: string | null
   onAddingStateChange?: (isAdding: boolean) => void
@@ -289,7 +287,7 @@ function AccountCard({
   )
 }
 
-export function AccountsSection({ accounts, extractedCSVs: _extractedCSVs, onSave, initialAddSourceFile, onAddingStateChange }: AccountsSectionProps) {
+export function AccountsSection({ accounts, onSave, initialAddSourceFile, onAddingStateChange }: AccountsSectionProps) {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [isAdding, setIsAdding] = useState(false)
   const [prefilledSourceFile, setPrefilledSourceFile] = useState<string | null>(null)

@@ -538,10 +538,10 @@ function UnmatchedTab() {
     async function loadTotalCount() {
       try {
         if (mode === "bank-first") {
-          const result = await fetchCCPaymentSuggestions({ offset_threshold: offsetThreshold, source: 'experimental' })
+          const result = await fetchCCPaymentSuggestions({ offset_threshold: offsetThreshold })
           setTotalCount(result.data.length)
         } else {
-          const result = await fetchCCPaymentSuggestionsReverse({ offset_threshold: offsetThreshold, source: 'experimental' })
+          const result = await fetchCCPaymentSuggestionsReverse({ offset_threshold: offsetThreshold })
           setTotalCount(result.data.length)
         }
       } catch (err) {
@@ -559,7 +559,6 @@ function UnmatchedTab() {
           const result = await fetchCCPaymentSuggestions({
             bank_account: selectedBankAccount || undefined,
             offset_threshold: offsetThreshold,
-            source: 'experimental',
           })
           setSuggestions(result.data)
           setReverseSuggestions([])
@@ -567,7 +566,6 @@ function UnmatchedTab() {
           const result = await fetchCCPaymentSuggestionsReverse({
             credit_card: selectedCreditCard || undefined,
             offset_threshold: offsetThreshold,
-            source: 'experimental',
           })
           setReverseSuggestions(result.data)
           setSuggestions([])
@@ -589,7 +587,6 @@ function UnmatchedTab() {
         offset: suggestion.offset,
         confidence_score: suggestion.confidence_score,
         match_reasons: suggestion.match_reasons,
-        source: 'experimental',
       })
       // Optimistically update: remove the confirmed bank transaction from the list
       setSuggestions((prev) => prev.filter((item) => item.bank_transaction.id !== bankTxnId))
@@ -608,7 +605,6 @@ function UnmatchedTab() {
         offset: suggestion.offset,
         confidence_score: suggestion.confidence_score,
         match_reasons: suggestion.match_reasons,
-        source: 'experimental',
       })
       // Optimistically update: remove the confirmed CC transaction from the list
       setReverseSuggestions((prev) => prev.filter((item) => item.credit_card_transaction.id !== ccTxnId))
@@ -885,7 +881,7 @@ function ConfirmedTab() {
   useEffect(() => {
     async function loadYears() {
       try {
-        const result = await fetchCCPaymentMatchYears({ source: 'experimental' })
+        const result = await fetchCCPaymentMatchYears()
         setYears(result.years)
         // Auto-select most recent year if available
         const yearKeys = Object.keys(result.years).sort((a, b) => parseInt(b) - parseInt(a))
@@ -911,7 +907,6 @@ function ConfirmedTab() {
       try {
         const result = await fetchCCPaymentMatches({
           year: parseInt(selectedYear),
-          source: 'experimental',
         })
         setMatches(result.data)
       } catch (err) {
