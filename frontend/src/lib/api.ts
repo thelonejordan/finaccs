@@ -144,6 +144,7 @@ export interface SourceFile {
 export interface BankExtractionArtifact {
   artifact_id: string
   artifact_type: string
+  artifact_key?: string  // Optional key for disambiguation (e.g., card number)
   content_type: string
   row_count: number
   data_hash: string
@@ -223,19 +224,35 @@ export async function loadExtractedCSVs(
   return res.json()
 }
 
-export async function fetchSummary(): Promise<Summary> {
-  const res = await fetch(`${API_BASE}/api/summary/`)
+export async function fetchSummary(params?: {
+  source?: 'legacy' | 'experimental'
+}): Promise<Summary> {
+  const searchParams = new URLSearchParams()
+  if (params?.source) searchParams.set("source", params.source)
+  const query = searchParams.toString()
+  const res = await fetch(`${API_BASE}/api/summary/${query ? `?${query}` : ''}`)
   return res.json()
 }
 
-export async function fetchMonthly(): Promise<{ data: MonthlyData[] }> {
-  const res = await fetch(`${API_BASE}/api/monthly/`)
+export async function fetchMonthly(params?: {
+  source?: 'legacy' | 'experimental'
+}): Promise<{ data: MonthlyData[] }> {
+  const searchParams = new URLSearchParams()
+  if (params?.source) searchParams.set("source", params.source)
+  const query = searchParams.toString()
+  const res = await fetch(`${API_BASE}/api/monthly/${query ? `?${query}` : ''}`)
   return res.json()
 }
 
-export async function fetchCategories(includeAll = false): Promise<{ data: CategoryData[] }> {
-  const params = includeAll ? '?include_all=true' : ''
-  const res = await fetch(`${API_BASE}/api/categories/${params}`)
+export async function fetchCategories(params?: {
+  source?: 'legacy' | 'experimental'
+  include_all?: boolean
+}): Promise<{ data: CategoryData[] }> {
+  const searchParams = new URLSearchParams()
+  if (params?.source) searchParams.set("source", params.source)
+  if (params?.include_all) searchParams.set("include_all", "true")
+  const query = searchParams.toString()
+  const res = await fetch(`${API_BASE}/api/categories/${query ? `?${query}` : ''}`)
   return res.json()
 }
 
@@ -267,10 +284,14 @@ export async function fetchTransactions(params?: {
   return res.json()
 }
 
-export async function fetchTopExpenses(
-  limit = 10
-): Promise<{ data: TopExpense[] }> {
-  const res = await fetch(`${API_BASE}/api/top-expenses/?limit=${limit}`)
+export async function fetchTopExpenses(params?: {
+  source?: 'legacy' | 'experimental'
+  limit?: number
+}): Promise<{ data: TopExpense[] }> {
+  const searchParams = new URLSearchParams()
+  if (params?.source) searchParams.set("source", params.source)
+  searchParams.set("limit", (params?.limit ?? 10).toString())
+  const res = await fetch(`${API_BASE}/api/top-expenses/?${searchParams}`)
   return res.json()
 }
 

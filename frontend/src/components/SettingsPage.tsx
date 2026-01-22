@@ -48,6 +48,13 @@ import {
   fetchArtifactPreview,
   fetchBankExtractedCSVPreview,
   updateArtifactCreditCard,
+  // New experimental APIs
+  fetchDataSourcesNew,
+  loadDataSourceNew,
+  unloadDataSourceNew,
+  deleteDataSourceNew,
+  previewDataSourceNew,
+  updateDataSourceNew,
   type CreditCard,
   type CreditCardInput,
   type CreditCardSourceFile,
@@ -56,6 +63,7 @@ import {
   type PDFExtractionDataSource,
   type IngestableTransactionRow,
   type AccountStats,
+  type DataSourceArtifactNew,
 } from "@/lib/api"
 
 function formatDate(dateStr: string): string {
@@ -443,6 +451,7 @@ function CreditCardDataSources({
   onUnloadArtifact,
   onDeleteArtifact,
   onRefresh,
+  source = 'legacy',
 }: {
   sourceFiles: CreditCardSourceFile[]
   pdfExtractions: PDFExtractionDataSource[]
@@ -456,6 +465,7 @@ function CreditCardDataSources({
   onUnloadArtifact: (artifactIds: string[]) => Promise<void>
   onDeleteArtifact: (artifactId: string) => Promise<void>
   onRefresh?: () => void
+  source?: 'legacy' | 'experimental'
 }) {
   void _onCreateCard // Suppress unused warning - kept for future use
   const [isLinking, setIsLinking] = useState(false)
@@ -494,7 +504,11 @@ function CreditCardDataSources({
   const handleUpdateArtifactCard = async (artifactId: string, cardId: number | null) => {
     setIsLinking(true)
     try {
-      await updateArtifactCreditCard(artifactId, cardId)
+      if (source === 'experimental') {
+        await updateDataSourceNew(artifactId, { credit_card_id: cardId })
+      } else {
+        await updateArtifactCreditCard(artifactId, cardId)
+      }
       onCardUpdated()
     } catch (error) {
       console.error("Failed to update artifact card:", error)
@@ -1417,9 +1431,12 @@ function BankDataSourcePreviewSection({
 
 type SettingsTab = "bank" | "credit"
 
-// Main Settings Page
+// Main Console Page
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("bank")
+
+  // Source toggle: 'legacy' uses old APIs, 'experimental' uses new extraction system
+  const [source, setSource] = useState<'legacy' | 'experimental'>('experimental')
 
   // Bank Accounts state
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
@@ -1441,6 +1458,10 @@ export function SettingsPage() {
   const [creditCardSourceFiles, setCreditCardSourceFiles] = useState<CreditCardSourceFile[]>([])
   const [creditAddSourceFile, setCreditAddSourceFile] = useState<string | null>(null)
   const [pdfExtractionDataSources, setPdfExtractionDataSources] = useState<PDFExtractionDataSource[]>([])
+
+  // Experimental data sources state
+  const [bankDataSourcesNew, setBankDataSourcesNew] = useState<DataSourceArtifactNew[]>([])
+  const [ccDataSourcesNew, setCcDataSourcesNew] = useState<DataSourceArtifactNew[]>([])
 
   // Data source preview state (lifted from CreditCardDataSources)
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
@@ -1492,6 +1513,76 @@ export function SettingsPage() {
     })
   }
 
+  // Map DataSourceArtifactNew to PDFExtractionDataSource format for UI compatibility
+  const mapDataSourceToPDFExtraction = (ds: DataSourceArtifactNew): PDFExtractionDataSource => {
+    const linkedCard = creditCards.find(c => c.id === ds.credit_card_id)
+    return {
+      artifact_id: ds.artifact_id,
+      name: ds.source_artifact_key
+        ? `${ds.source_artifact_type} (${ds.source_artifact_key})`
+        : ds.source_artifact_type,
+      source_file: ds.source_filename,
+      status: ds.status === 'loaded' ? 'loaded' : 'extracted',
+      statement_date: null,
+      statement_period_begin: null,
+      statement_period_end: null,
+      row_count: ds.row_count,
+      credit_card: linkedCard ? {
+        id: linkedCard.id,
+        nickname: linkedCard.nickname,
+      } : null,
+      loaded: ds.status === 'loaded',
+    }
+  }
+
+  // Get mapped data sources for UI (experimental or legacy)
+  const mappedCcDataSources: PDFExtractionDataSource[] = source === 'experimental'
+    ? ccDataSourcesNew.map(mapDataSourceToPDFExtraction)
+    : pdfExtractionDataSources
+
+  // Map DataSourceArtifactNew to ExtractedCSV format for bank data sources
+  const mapBankDataSourceToExtractedCSV = (ds: DataSourceArtifactNew): ExtractedCSV => {
+    const linkedAccount = bankAccounts.find(a => a.id === ds.bank_account_id)
+    return {
+      id: ds.id,
+      name: ds.source_artifact_key
+        ? `${ds.source_artifact_type} (${ds.source_artifact_key})`
+        : ds.source_filename,
+      source_filename: ds.source_filename,
+      source_file_id: ds.id, // Using id as source_file_id
+      status: ds.status === 'loaded' ? 'loaded' : 'extracted',
+      bank_account_id: ds.bank_account_id,
+      disabled: !ds.enabled,
+      hidden: ds.hidden,
+      row_count: ds.row_count,
+      extracted_at: ds.transformed_at,
+      loaded_at: ds.loaded_at,
+      first_transaction_date: null,
+      last_transaction_date: null,
+      transaction_count: ds.row_count,
+      error_message: ds.error_message,
+      artifacts: [{
+        artifact_id: ds.artifact_id,
+        artifact_type: ds.source_artifact_type,
+        artifact_key: ds.source_artifact_key,
+        content_type: 'csv',
+        row_count: ds.row_count,
+        data_hash: ds.content_hash,
+      }],
+      // Add linked account info for display
+      bank_account: linkedAccount ? {
+        id: linkedAccount.id,
+        name: linkedAccount.name,
+        nickname: linkedAccount.nickname,
+      } : undefined,
+    }
+  }
+
+  // Get mapped bank data sources (experimental or legacy)
+  const mappedBankDataSources: ExtractedCSV[] = source === 'experimental'
+    ? bankDataSourcesNew.map(mapBankDataSourceToExtractedCSV)
+    : extractedCSVs
+
   // Handle bank CSV selection and load preview data
   const handleSelectBankCSV = async (csvId: number | null) => {
     if (csvId === null || selectedBankCSVId === csvId) {
@@ -1508,9 +1599,19 @@ export function SettingsPage() {
     setBankPreviewTotal(0)
 
     try {
-      const result = await fetchBankExtractedCSVPreview(csvId, 20)
-      setBankPreviewData(result.data)
-      setBankPreviewTotal(result.total || 0)
+      if (source === 'experimental') {
+        // Find the data source by id to get its artifact_id
+        const ds = bankDataSourcesNew.find(d => d.id === csvId)
+        if (ds) {
+          const result = await previewDataSourceNew(ds.artifact_id, 20)
+          setBankPreviewData(result.data)
+          setBankPreviewTotal(result.total || result.data.length)
+        }
+      } else {
+        const result = await fetchBankExtractedCSVPreview(csvId, 20)
+        setBankPreviewData(result.data)
+        setBankPreviewTotal(result.total || 0)
+      }
     } catch (error) {
       console.error("Failed to load bank preview:", error)
     } finally {
@@ -1518,8 +1619,8 @@ export function SettingsPage() {
     }
   }
 
-  // Get selected bank CSV object
-  const selectedBankCSV = extractedCSVs.find(c => c.id === selectedBankCSVId) || null
+  // Get selected bank CSV object (uses mapped data for consistent interface)
+  const selectedBankCSV = mappedBankDataSources.find(c => c.id === selectedBankCSVId) || null
 
   // Handle artifact selection and load preview data
   const handleSelectArtifact = async (artifactId: string) => {
@@ -1537,9 +1638,15 @@ export function SettingsPage() {
     setPreviewTotal(0)
 
     try {
-      const result = await fetchArtifactPreview(artifactId, 20)
-      setPreviewData(result.data as IngestableTransactionRow[])
-      setPreviewTotal(result.total || 0)
+      if (source === 'experimental') {
+        const result = await previewDataSourceNew(artifactId, 20)
+        setPreviewData(result.data as IngestableTransactionRow[])
+        setPreviewTotal(result.total || result.data.length)
+      } else {
+        const result = await fetchArtifactPreview(artifactId, 20)
+        setPreviewData(result.data as IngestableTransactionRow[])
+        setPreviewTotal(result.total || 0)
+      }
     } catch (error) {
       console.error("Failed to load preview:", error)
     } finally {
@@ -1547,11 +1654,11 @@ export function SettingsPage() {
     }
   }
 
-  // Get selected extraction object
-  const selectedExtraction = pdfExtractionDataSources.find(e => e.artifact_id === selectedArtifactId) || null
+  // Get selected extraction object (uses mapped data for consistent interface)
+  const selectedExtraction = mappedCcDataSources.find(e => e.artifact_id === selectedArtifactId) || null
 
   useEffect(() => {
-    document.title = "Settings | FinAccs"
+    document.title = "Console | FinAccs"
   }, [])
 
   useEffect(() => {
@@ -1573,22 +1680,45 @@ export function SettingsPage() {
         console.error("Failed to load credit cards:", error)
       }
 
-      try {
-        const pdfExtractionsData = await fetchPDFExtractionDataSources()
-        setPdfExtractionDataSources(pdfExtractionsData.data)
-      } catch (error) {
-        console.error("Failed to load PDF extractions:", error)
+      if (source === 'experimental') {
+        // Load new data sources
+        try {
+          const [bankDsRes, ccDsRes] = await Promise.all([
+            fetchDataSourcesNew({ domain: 'bank_account_transactions', visibility: 'visible' }),
+            fetchDataSourcesNew({ domain: 'credit_card_transactions', visibility: 'visible' }),
+          ])
+          setBankDataSourcesNew(bankDsRes.data)
+          setCcDataSourcesNew(ccDsRes.data)
+        } catch (error) {
+          console.error("Failed to load experimental data sources:", error)
+        }
+      } else {
+        // Legacy: load PDF extractions
+        try {
+          const pdfExtractionsData = await fetchPDFExtractionDataSources()
+          setPdfExtractionDataSources(pdfExtractionsData.data)
+        } catch (error) {
+          console.error("Failed to load PDF extractions:", error)
+        }
       }
 
       setLoading(false)
     }
     loadData()
-  }, [])
+  }, [source])
 
   const refreshBankData = async () => {
     const data = await fetchBankAccounts()
     setBankAccounts(data.accounts)
     setExtractedCSVs(data.extracted_csvs)
+    if (source === 'experimental') {
+      try {
+        const bankDsRes = await fetchDataSourcesNew({ domain: 'bank_account_transactions', visibility: 'visible' })
+        setBankDataSourcesNew(bankDsRes.data)
+      } catch (error) {
+        console.error("Failed to refresh bank data sources:", error)
+      }
+    }
   }
 
   const refreshCreditData = async () => {
@@ -1601,26 +1731,53 @@ export function SettingsPage() {
       console.error("Failed to refresh credit cards:", error)
     }
 
-    try {
-      const pdfExtractionsData = await fetchPDFExtractionDataSources()
-      setPdfExtractionDataSources(pdfExtractionsData.data)
-    } catch (error) {
-      console.error("Failed to refresh PDF extractions:", error)
+    if (source === 'experimental') {
+      try {
+        const ccDsRes = await fetchDataSourcesNew({ domain: 'credit_card_transactions', visibility: 'visible' })
+        setCcDataSourcesNew(ccDsRes.data)
+      } catch (error) {
+        console.error("Failed to refresh CC data sources:", error)
+      }
+    } else {
+      try {
+        const pdfExtractionsData = await fetchPDFExtractionDataSources()
+        setPdfExtractionDataSources(pdfExtractionsData.data)
+      } catch (error) {
+        console.error("Failed to refresh PDF extractions:", error)
+      }
     }
   }
 
   const handleLoadArtifacts = async (artifactIds: string[]) => {
-    await loadArtifacts(artifactIds)
+    if (source === 'experimental') {
+      // Load each artifact sequentially
+      for (const artifactId of artifactIds) {
+        await loadDataSourceNew(artifactId)
+      }
+    } else {
+      await loadArtifacts(artifactIds)
+    }
     await refreshCreditData()
   }
 
   const handleUnloadArtifacts = async (artifactIds: string[]) => {
-    await unloadArtifacts(artifactIds)
+    if (source === 'experimental') {
+      for (const artifactId of artifactIds) {
+        await unloadDataSourceNew(artifactId)
+      }
+    } else {
+      await unloadArtifacts(artifactIds)
+    }
     await refreshCreditData()
   }
 
   const handleDeleteArtifact = async (artifactId: string) => {
-    const result = await deleteArtifact(artifactId)
+    let result: { success: boolean; error?: string }
+    if (source === 'experimental') {
+      result = await deleteDataSourceNew(artifactId)
+    } else {
+      result = await deleteArtifact(artifactId)
+    }
     if (result.success) {
       await refreshCreditData()
     } else {
@@ -1678,15 +1835,45 @@ export function SettingsPage() {
 
       <main className="max-w-7xl mx-auto px-4 py-8" onClick={handleCreditTabClick}>
         <header className="mb-8">
-          <h1 className="text-2xl font-bold flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <SettingsIcon className="h-6 w-6 text-primary" />
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <SettingsIcon className="h-6 w-6 text-primary" />
+                </div>
+                Console
+              </h1>
+              <p className="text-muted-foreground mt-1">
+                Manage your bank accounts, credit cards, and data sources
+              </p>
             </div>
-            Settings
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage your bank accounts, credit cards, and data sources
-          </p>
+            {/* Source Toggle */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Source:</span>
+              <div className="flex rounded-lg border border-border overflow-hidden">
+                <button
+                  onClick={() => setSource('experimental')}
+                  className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                    source === 'experimental'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted'
+                  }`}
+                >
+                  Experimental
+                </button>
+                <button
+                  onClick={() => setSource('legacy')}
+                  className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                    source === 'legacy'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted'
+                  }`}
+                >
+                  Legacy
+                </button>
+              </div>
+            </div>
+          </div>
         </header>
 
         {/* Tabs */}
@@ -1729,19 +1916,24 @@ export function SettingsPage() {
                 }}
               />
               <DataSources
-                extractedCSVs={extractedCSVs}
+                extractedCSVs={mappedBankDataSources}
                 accounts={bankAccounts}
                 onCreateAccount={(filename) => setBankAddSourceFile(filename)}
                 onCSVUpdated={(updatedCSV) => {
-                  setExtractedCSVs((prev) => {
-                    const existing = prev.findIndex((csv) => csv.id === updatedCSV.id)
-                    if (existing >= 0) {
-                      const updated = [...prev]
-                      updated[existing] = updatedCSV
-                      return updated
-                    }
-                    return prev
-                  })
+                  if (source === 'experimental') {
+                    // Refresh data from API since we're using mapped data
+                    refreshBankData()
+                  } else {
+                    setExtractedCSVs((prev) => {
+                      const existing = prev.findIndex((csv) => csv.id === updatedCSV.id)
+                      if (existing >= 0) {
+                        const updated = [...prev]
+                        updated[existing] = updatedCSV
+                        return updated
+                      }
+                      return prev
+                    })
+                  }
                 }}
                 onAccountStatsUpdated={(affectedAccounts: Record<number, AccountStats>) => {
                   setBankAccounts((prev) =>
@@ -1757,6 +1949,7 @@ export function SettingsPage() {
                 onRefresh={refreshBankData}
                 selectedCSVId={selectedBankCSVId}
                 onSelectCSV={handleSelectBankCSV}
+                source={source}
               />
             </div>
             {/* Bank Data Source Preview */}
@@ -1787,7 +1980,7 @@ export function SettingsPage() {
               />
               <CreditCardDataSources
                 sourceFiles={creditCardSourceFiles}
-                pdfExtractions={pdfExtractionDataSources}
+                pdfExtractions={mappedCcDataSources}
                 cards={creditCards}
                 selectedArtifactId={selectedArtifactId}
                 onSelectArtifact={handleSelectArtifact}
@@ -1802,6 +1995,7 @@ export function SettingsPage() {
                 onUnloadArtifact={handleUnloadArtifacts}
                 onDeleteArtifact={handleDeleteArtifact}
                 onRefresh={refreshCreditData}
+                source={source}
               />
             </div>
             <DataSourcePreviewSection

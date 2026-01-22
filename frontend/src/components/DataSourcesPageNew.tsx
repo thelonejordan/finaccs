@@ -378,12 +378,13 @@ export function DataSourcesPageNew() {
                     className="rounded border-border"
                   />
                   <span className="flex-1">Artifact</span>
-                  <span className="w-24">Type</span>
-                  <span className="w-40">Entity</span>
-                  <span className="w-20">Rows</span>
-                  <span className="w-24">Status</span>
-                  <span className="w-20">Enabled</span>
-                  <span className="w-32">Actions</span>
+                  <span className="w-20">Type</span>
+                  <span className="w-36">Entity</span>
+                  <span className="w-16 text-right">Rows</span>
+                  <span className="w-20">Status</span>
+                  <span className="w-16">Enabled</span>
+                  <span className="w-16">Actions</span>
+                  <span className="w-24">Loaded</span>
                 </div>
 
                 {dataSources.map(ds => (
@@ -424,7 +425,7 @@ export function DataSourcesPageNew() {
                         </div>
                       </div>
 
-                      <span className={`w-24 text-xs px-2 py-1 rounded ${
+                      <span className={`w-20 text-xs px-2 py-1 rounded ${
                         ds.data_source_target === 'bank_account_transactions'
                           ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
                           : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
@@ -432,7 +433,7 @@ export function DataSourcesPageNew() {
                         {ds.data_source_target === 'bank_account_transactions' ? 'Bank' : 'CC'}
                       </span>
 
-                      <div className="w-40" onClick={(e) => e.stopPropagation()}>
+                      <div className="w-36" onClick={(e) => e.stopPropagation()}>
                         <DomainEntitySelector
                           type={ds.data_source_target === 'bank_account_transactions' ? 'bank_account' : 'credit_card'}
                           value={ds.bank_account_id || ds.credit_card_id}
@@ -443,15 +444,15 @@ export function DataSourcesPageNew() {
                         />
                       </div>
 
-                      <span className="w-20 text-sm text-muted-foreground">
+                      <span className="w-16 text-sm text-muted-foreground text-right">
                         {ds.row_count}
                       </span>
 
-                      <div className="w-24">
+                      <div className="w-20">
                         <StatusBadge status={ds.status} />
                       </div>
 
-                      <div className="w-20" onClick={(e) => e.stopPropagation()}>
+                      <div className="w-16" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => handleToggleEnabled(ds)}
                           className={`p-1.5 rounded ${
@@ -469,7 +470,7 @@ export function DataSourcesPageNew() {
                         </button>
                       </div>
 
-                      <div className="w-32 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <div className="w-16" onClick={(e) => e.stopPropagation()}>
                         {ds.status === 'loaded' ? (
                           <button
                             onClick={() => handleUnload(ds)}
@@ -497,13 +498,11 @@ export function DataSourcesPageNew() {
                             )}
                           </button>
                         )}
-
-                        {ds.loaded_at && (
-                          <span className="text-xs text-muted-foreground" title={`Loaded: ${ds.loaded_at}`}>
-                            {formatDate(ds.loaded_at)}
-                          </span>
-                        )}
                       </div>
+
+                      <span className="w-24 text-xs text-muted-foreground" title={ds.loaded_at ? `Loaded: ${ds.loaded_at}` : ''}>
+                        {ds.loaded_at ? formatDate(ds.loaded_at) : '-'}
+                      </span>
                     </div>
 
                     {/* Preview Row */}

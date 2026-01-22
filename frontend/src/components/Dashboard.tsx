@@ -134,11 +134,11 @@ export function Dashboard() {
       try {
         const [summaryData, monthlyData, categoryData, transactionsData, topExpensesData] =
           await Promise.all([
-            fetchSummary(),
-            fetchMonthly(),
-            fetchCategories(),
+            fetchSummary({ source: 'experimental' }),
+            fetchMonthly({ source: 'experimental' }),
+            fetchCategories({ source: 'experimental' }),
             fetchTransactions({ source: 'experimental', limit: 10 }),
-            fetchTopExpenses(10),
+            fetchTopExpenses({ source: 'experimental', limit: 10 }),
           ])
 
         setSummary(summaryData)
@@ -250,8 +250,8 @@ export function Dashboard() {
           </PerAccountTooltip>
         </div>
 
-        {/* Balance Formula */}
-        {summary && (
+        {/* Balance Formula - hidden by default */}
+        {false && summary && (
           <div className="mb-8 p-4 rounded-xl border border-border bg-card/50">
             <div className="flex flex-wrap items-center justify-center gap-2 text-base">
               <span className="text-slate-600 dark:text-slate-400" style={{ fontFamily: "'Rock Salt', cursive" }}>Starting Balance</span>

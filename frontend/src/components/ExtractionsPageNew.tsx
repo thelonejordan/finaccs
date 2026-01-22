@@ -597,13 +597,13 @@ function ExtractionsSection({
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-foreground truncate">
-                          {extraction.source_filename}
+                          {extraction.extraction_id}
                         </span>
                         {extraction.hidden && (
                           <EyeOffIcon className="h-3 w-3 text-muted-foreground" />
                         )}
                       </div>
-                      <span className="text-xs text-muted-foreground">{extraction.extraction_id}</span>
+                      <span className="text-xs text-muted-foreground">{extraction.source_filename}</span>
                     </td>
 
                     <td className="px-4 py-3">

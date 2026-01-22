@@ -29,6 +29,7 @@ import * as Dialog from "@radix-ui/react-dialog"
 import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import {
+  // Legacy APIs
   fetchPDFSourceFiles,
   fetchPDFExtractions,
   getArtifactUrl,
@@ -45,6 +46,22 @@ import {
   type PDFSourceFile,
   type CreditCardPDFExtraction,
   type CSVSourceFile,
+  // New (experimental) APIs
+  fetchSourceFilesNew,
+  fetchExtractionsNew,
+  fetchExtractorsNew,
+  refreshSourceFilesNew,
+  extractSourceFileNew,
+  updateSourceFileNew,
+  validatePasswordNew,
+  bulkTransformArtifactsNew,
+  transformArtifactNew,
+  previewArtifactNew,
+  deleteExtractionNew,
+  updateExtractionNew,
+  type SourceFileNew,
+  type ExtractionNew,
+  type ExtractorInfo,
 } from "@/lib/api"
 
 function formatDate(dateStr: string): string {
@@ -92,8 +109,8 @@ function StatusBadge({ status }: { status: CreditCardPDFExtraction['status'] }) 
   )
 }
 
-// PDF Source Files Section
-function PDFSourceFilesSection({
+// Source Files Section
+function SourceFilesSection({
   files,
   onExtract,
   extractingId,
@@ -207,10 +224,10 @@ function PDFSourceFilesSection({
           <div className="p-1.5 rounded-lg bg-muted">
             <FileTextIcon className="h-5 w-5 text-muted-foreground" />
           </div>
-          PDF Source Files
+          Source Files
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Credit card PDF statements available for extraction
+          Credit card statements available for extraction
         </p>
       </header>
       <div className="relative">
@@ -220,9 +237,9 @@ function PDFSourceFilesSection({
               <div className="p-3 rounded-full bg-muted w-fit mx-auto mb-3">
                 <FileTextIcon className="h-6 w-6 text-muted-foreground" />
               </div>
-              <p className="font-medium">No PDF files found</p>
+              <p className="font-medium">No source files found</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Upload PDF statements to extract transactions
+                Add statement files to extract transactions
               </p>
             </div>
           ) : (
@@ -331,7 +348,7 @@ function PDFSourceFilesSection({
                       <div className="relative flex-1">
                         <input
                           type={showPassword ? "text" : "password"}
-                          placeholder={isUpdateMode ? "Enter new password (or leave empty to clear)" : "PDF Password"}
+                          placeholder={isUpdateMode ? "Enter new password (or leave empty to clear)" : "File Password"}
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           onKeyDown={(e) => {
@@ -573,7 +590,7 @@ function ExtractionsListSection({
               Extractions
             </h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Extracted data from PDF statements
+              Extracted data from statements
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -630,7 +647,7 @@ function ExtractionsListSection({
               </div>
               <p className="font-medium">No extractions yet</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Extract a PDF to see results here
+                Extract a file to see results here
               </p>
             </div>
           ) : (
@@ -999,23 +1016,31 @@ function JSONHighlight({ json }: { json: string }) {
 // Artifact Preview Section
 function ArtifactPreviewSection({
   extraction,
+  source,
 }: {
-  extraction: CreditCardPDFExtraction | null
+  extraction: MappedExtraction | CreditCardPDFExtraction | null
+  source: 'legacy' | 'experimental'
 }) {
-  const [activeTab, setActiveTab] = useState<string>('transactions')
+  const [activeArtifactId, setActiveArtifactId] = useState<string>('')
   const [rawContent, setRawContent] = useState<string>('')
   const [loading, setLoading] = useState(false)
 
   // Get available artifacts (safe for null extraction)
-  const artifacts = extraction?.artifacts || []
+  const artifacts = (extraction?.artifacts || []) as MappedArtifact[]
 
-  // Get current artifact
-  const currentArtifact = artifacts.find(a => a.artifact_type === activeTab)
+  // Get current artifact by artifact_id
+  const currentArtifact = artifacts.find(a => a.artifact_id === activeArtifactId)
+    || (artifacts.length > 0 && !activeArtifactId ? artifacts[0] : undefined)
 
-  // Auto-select first available tab if current tab has no artifact
+  // Auto-select first available artifact when extraction changes
   useEffect(() => {
-    if (artifacts.length > 0 && !artifacts.find(a => a.artifact_type === activeTab)) {
-      setActiveTab(artifacts[0].artifact_type)
+    if (artifacts.length > 0) {
+      const hasMatch = artifacts.some(a => a.artifact_id === activeArtifactId)
+      if (!hasMatch || !activeArtifactId) {
+        setActiveArtifactId(artifacts[0].artifact_id)
+      }
+    } else {
+      setActiveArtifactId('')
     }
   }, [extraction?.id, artifacts.length])
 
@@ -1031,13 +1056,43 @@ function ArtifactPreviewSection({
     async function loadRawArtifact() {
       setLoading(true)
       try {
-        const url = getArtifactUrl(artifactId)
-        const res = await fetch(url)
-        if (res.ok) {
-          const text = await res.text()
-          setRawContent(text)
+        if (source === 'experimental') {
+          // Use new API for experimental source
+          const result = await previewArtifactNew(artifactId, 100)
+          if (result.format === 'csv' && result.columns && Array.isArray(result.data)) {
+            // Convert preview data to CSV format for display
+            const header = result.columns.join(',')
+            const rows = (result.data as Record<string, unknown>[]).map((row) =>
+              result.columns!.map((col: string) => {
+                const val = row[col]
+                // Quote strings that contain commas
+                if (typeof val === 'string' && val.includes(',')) {
+                  return `"${val}"`
+                }
+                return val ?? ''
+              }).join(',')
+            )
+            setRawContent([header, ...rows].join('\n'))
+          } else if (result.format === 'json') {
+            // JSON format - stringify for display
+            setRawContent(JSON.stringify(result.data, null, 2))
+          } else if (result.format === 'text' || typeof result.data === 'string') {
+            // Text format
+            setRawContent(result.data as string)
+          } else {
+            // Fallback - try to stringify
+            setRawContent(JSON.stringify(result.data, null, 2))
+          }
         } else {
-          setRawContent('')
+          // Legacy API
+          const url = getArtifactUrl(artifactId)
+          const res = await fetch(url)
+          if (res.ok) {
+            const text = await res.text()
+            setRawContent(text)
+          } else {
+            setRawContent('')
+          }
         }
       } catch (error) {
         console.error("Failed to load artifact:", error)
@@ -1048,13 +1103,14 @@ function ArtifactPreviewSection({
     }
 
     loadRawArtifact()
-  }, [extraction?.id, activeTab, currentArtifact?.artifact_id])
+  }, [extraction?.id, activeArtifactId, currentArtifact?.artifact_id, source])
 
-  // Helper to extract short UUID from artifact_id (e.g., "artifact_abc12345" -> "abc12345")
-  const getShortId = (artifactId: string) => artifactId.replace('artifact_', '')
+  // Helper to extract short UUID from artifact_id (e.g., "ext_art_abc12345" -> "abc12345")
+  const getShortId = (artifactId: string) => artifactId.replace('ext_art_', '').replace('artifact_', '')
 
-  // Pretty-print JSON
-  const jsonContent = activeTab === 'metadata' && rawContent ? (() => {
+  // Pretty-print JSON for metadata artifacts
+  const isMetadata = currentArtifact?.artifact_type === 'metadata'
+  const jsonContent = isMetadata && rawContent ? (() => {
     try {
       return JSON.stringify(JSON.parse(rawContent), null, 2)
     } catch {
@@ -1111,41 +1167,54 @@ function ArtifactPreviewSection({
         {/* Artifact Type Tabs */}
         {artifacts.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
-            {artifacts.map((artifact) => (
-              <button
-                key={artifact.artifact_id}
-                onClick={() => setActiveTab(artifact.artifact_type)}
-                className={`group relative px-3 py-2 text-sm rounded-lg border transition-all flex items-center gap-2 ${
-                  activeTab === artifact.artifact_type
-                    ? "bg-primary/10 border-primary/50 text-foreground"
-                    : "bg-muted/50 border-border text-muted-foreground hover:text-foreground hover:border-border"
-                }`}
-              >
-                <span className={`font-mono text-xs px-1.5 py-0.5 rounded ${
-                  activeTab === artifact.artifact_type
-                    ? "bg-primary/20 text-primary"
-                    : "bg-muted text-muted-foreground group-hover:text-foreground"
-                }`}>
-                  {artifact.artifact_type}
-                </span>
-                <span className={`font-mono text-xs ${
-                  activeTab === artifact.artifact_type
-                    ? "text-foreground/70"
-                    : "text-muted-foreground/70"
-                }`}>
-                  {getShortId(artifact.artifact_id)}
-                </span>
-                {artifact.row_count > 0 && (
-                  <span className={`text-xs ${
-                    activeTab === artifact.artifact_type
-                      ? "text-primary"
-                      : "text-muted-foreground"
+            {artifacts.map((artifact) => {
+              // Use currentArtifact for highlighting since it handles fallback to first artifact
+              const isActive = currentArtifact?.artifact_id === artifact.artifact_id
+              return (
+                <button
+                  key={artifact.artifact_id}
+                  onClick={() => setActiveArtifactId(artifact.artifact_id)}
+                  className={`group relative px-3 py-2 text-sm rounded-lg border transition-all flex items-center gap-2 ${
+                    isActive
+                      ? "bg-primary/10 border-primary/50 text-foreground"
+                      : "bg-muted/50 border-border text-muted-foreground hover:text-foreground hover:border-border"
+                  }`}
+                >
+                  <span className={`font-mono text-xs px-1.5 py-0.5 rounded ${
+                    isActive
+                      ? "bg-primary/20 text-primary"
+                      : "bg-muted text-muted-foreground group-hover:text-foreground"
                   }`}>
-                    ({artifact.row_count})
+                    {artifact.artifact_type}
                   </span>
-                )}
-              </button>
-            ))}
+                  {artifact.artifact_key && (
+                    <span className={`font-mono text-xs ${
+                      isActive
+                        ? "text-foreground/70"
+                        : "text-muted-foreground/70"
+                    }`}>
+                      {artifact.artifact_key}
+                    </span>
+                  )}
+                  <span className={`font-mono text-xs ${
+                    isActive
+                      ? "text-foreground/50"
+                      : "text-muted-foreground/50"
+                  }`}>
+                    {getShortId(artifact.artifact_id)}
+                  </span>
+                  {artifact.row_count > 0 && (
+                    <span className={`text-xs ${
+                      isActive
+                        ? "text-primary"
+                        : "text-muted-foreground"
+                    }`}>
+                      ({artifact.row_count})
+                    </span>
+                  )}
+                </button>
+              )
+            })}
           </div>
         )}
       </header>
@@ -1157,9 +1226,9 @@ function ArtifactPreviewSection({
           </div>
         ) : !rawContent ? (
           <p className="text-center py-8 text-muted-foreground">
-            No {activeTab === 'metadata' ? 'metadata' : activeTab === 'emi' ? 'EMI/loan data' : 'transactions'} found
+            No {isMetadata ? 'metadata' : currentArtifact?.artifact_type === 'emi' ? 'EMI/loan data' : 'data'} found
           </p>
-        ) : activeTab === 'metadata' ? (
+        ) : isMetadata ? (
           <JSONHighlight json={jsonContent} />
         ) : (
           <CSVTable csvText={rawContent} />
@@ -1174,18 +1243,97 @@ type DeleteTarget =
   | { type: 'extraction'; item: CreditCardPDFExtraction }
   | { type: 'source_file'; item: PDFSourceFile }
 
+// Mapping functions for experimental API data
+function mapSourceFileNew(sf: SourceFileNew): PDFSourceFile {
+  return {
+    id: sf.id,
+    filename: sf.filename,
+    credit_card: null,
+    extractions_count: sf.extractions?.length ?? 0,
+    last_extracted: sf.extractions?.[0]?.extracted_at ?? null,
+    has_password: !!sf.password,
+    pdf_password: sf.password || '',
+    has_data: true, // New system always has data
+    extractor: sf.extractor,
+    // Extra fields for new system
+    source_file_id: sf.source_file_id,
+    domain: sf.domain,
+    auto_detected_extractor: sf.auto_detected_extractor,
+  } as PDFSourceFile & { source_file_id: string; domain: string; auto_detected_extractor?: string }
+}
+
+// Extended artifact interface with artifact_key
+interface MappedArtifact {
+  artifact_id: string
+  artifact_type: string
+  artifact_key?: string
+  is_transformed: boolean
+  row_count: number
+}
+
+// Extended extraction interface
+interface MappedExtraction extends Omit<CreditCardPDFExtraction, 'artifacts'> {
+  artifacts: MappedArtifact[]
+  extraction_id?: string
+  source_file_id?: string
+  error_message?: string
+}
+
+function mapExtractionNew(ext: ExtractionNew, sourceFiles: SourceFileNew[]): MappedExtraction {
+  // Check transformation status
+  const transformableArtifacts = ext.artifacts?.filter(a => a.transformer) ?? []
+  const transformedArtifacts = ext.artifacts?.filter(a => a.transformation_status === 'transformed') ?? []
+  // Find the matching source file by its string ID to get the numeric ID for highlighting
+  const matchingSourceFile = sourceFiles.find(sf => sf.source_file_id === ext.source_file_id)
+
+  return {
+    id: ext.id,
+    name: ext.extraction_id,
+    status: ext.status === 'completed'
+      ? (transformedArtifacts.length > 0 ? 'transformed' : 'extracted')
+      : ext.status === 'error' ? 'error' : 'extracted',
+    hidden: ext.hidden,
+    statement_date: null,
+    source_file: {
+      id: matchingSourceFile?.id ?? ext.id,
+      filename: ext.source_filename,
+    },
+    artifacts: ext.artifacts?.map(a => ({
+      artifact_id: a.artifact_id,
+      artifact_type: a.artifact_type,
+      artifact_key: a.artifact_key || undefined,
+      is_transformed: a.transformation_status === 'transformed',
+      row_count: a.row_count,
+    })) ?? [],
+    transformable_count: transformableArtifacts.length,
+    transformed_count: transformedArtifacts.length,
+    all_transformed: transformableArtifacts.length > 0 && transformedArtifacts.length === transformableArtifacts.length,
+    // Extra fields for new system
+    extraction_id: ext.extraction_id,
+    source_file_id: ext.source_file_id,
+    error_message: ext.error_message,
+  }
+}
+
 // Main Extractions Page
-type SourceType = 'pdf' | 'csv'
 
 export function ExtractionsPage() {
+  // Source toggle: 'legacy' uses old APIs, 'experimental' uses new extraction system
+  const [source, setSource] = useState<'legacy' | 'experimental'>('experimental')
+
+  // Legacy state
   const [sourceFiles, setSourceFiles] = useState<PDFSourceFile[]>([])
   const [csvSourceFiles, setCsvSourceFiles] = useState<CSVSourceFile[]>([])
-  const [sourceType, setSourceType] = useState<SourceType>('pdf')
   const [extractions, setExtractions] = useState<CreditCardPDFExtraction[]>([])
+
+  // Experimental raw data (for lookups)
+  const [sourceFilesNewRaw, setSourceFilesNewRaw] = useState<SourceFileNew[]>([])
+  const [extractionsNewRaw, setExtractionsNewRaw] = useState<ExtractionNew[]>([])
+  const [extractors, setExtractors] = useState<ExtractorInfo[]>([])
+
   const [selectedExtractionId, setSelectedExtractionId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [extractingId, setExtractingId] = useState<number | null>(null)
-  const [csvExtractingId, setCsvExtractingId] = useState<number | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [passwordNeededFileId, setPasswordNeededFileId] = useState<number | null>(null)
   const [showHidden, setShowHidden] = useState(false)
@@ -1203,26 +1351,49 @@ export function ExtractionsPage() {
   }, [])
 
   const loadData = async () => {
-    // Load each data source independently to avoid one failure blocking all
-    try {
-      const filesRes = await fetchPDFSourceFiles()
-      setSourceFiles(filesRes.data)
-    } catch (error) {
-      console.error("Failed to load PDF source files:", error)
-    }
+    if (source === 'experimental') {
+      // Load from new extraction system APIs
+      try {
+        const [filesRes, extractionsRes, extractorsRes] = await Promise.all([
+          fetchSourceFilesNew({ domain: 'credit_card', visibility: showHidden ? 'all' : 'visible' }),
+          fetchExtractionsNew({ domain: 'credit_card', visibility: showHidden ? 'all' : 'visible' }),
+          fetchExtractorsNew(),
+        ])
 
-    try {
-      const csvFilesRes = await fetchCSVSourceFiles()
-      setCsvSourceFiles(csvFilesRes.data)
-    } catch (error) {
-      console.error("Failed to load CSV source files:", error)
-    }
+        // Store raw data for lookups
+        setSourceFilesNewRaw(filesRes.data || [])
+        setExtractionsNewRaw(extractionsRes.data || [])
+        setExtractors(extractorsRes.data || [])
 
-    try {
-      const extractionsRes = await fetchPDFExtractions(true) // Always fetch all, filter in UI
-      setExtractions(extractionsRes.data)
-    } catch (error) {
-      console.error("Failed to load extractions:", error)
+        // Map to legacy interfaces for UI compatibility
+        setSourceFiles((filesRes.data || []).map(mapSourceFileNew))
+        setExtractions((extractionsRes.data || []).map(ext => mapExtractionNew(ext, filesRes.data || [])))
+        setCsvSourceFiles([]) // Not needed for experimental
+      } catch (error) {
+        console.error("Failed to load experimental data:", error)
+      }
+    } else {
+      // Legacy: Load each data source independently to avoid one failure blocking all
+      try {
+        const filesRes = await fetchPDFSourceFiles()
+        setSourceFiles(filesRes.data)
+      } catch (error) {
+        console.error("Failed to load source files:", error)
+      }
+
+      try {
+        const csvFilesRes = await fetchCSVSourceFiles()
+        setCsvSourceFiles(csvFilesRes.data)
+      } catch (error) {
+        console.error("Failed to load CSV source files:", error)
+      }
+
+      try {
+        const extractionsRes = await fetchPDFExtractions(true) // Always fetch all, filter in UI
+        setExtractions(extractionsRes.data)
+      } catch (error) {
+        console.error("Failed to load extractions:", error)
+      }
     }
 
     setLoading(false)
@@ -1230,11 +1401,15 @@ export function ExtractionsPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [source, showHidden])
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
-    await syncCCSourceFiles()
+    if (source === 'experimental') {
+      await refreshSourceFilesNew()
+    } else {
+      await syncCCSourceFiles()
+    }
     await loadData()
     setIsRefreshing(false)
   }
@@ -1242,24 +1417,41 @@ export function ExtractionsPage() {
   const handleExtract = async (fileId: number, password?: string) => {
     setExtractingId(fileId)
     try {
-      const result = await triggerPDFExtraction(fileId, password)
-      if (result.success && result.extraction) {
-        // Update has_password if password was saved
-        if (result.password_saved) {
-          setSourceFiles((prev) =>
-            prev.map((sf) =>
-              sf.id === fileId ? { ...sf, has_password: true } : sf
-            )
-          )
+      if (source === 'experimental') {
+        // Find the source file to get the source_file_id
+        const file = sourceFilesNewRaw.find(sf => sf.id === fileId)
+        if (!file) {
+          alert("Source file not found")
+          return
         }
-        await loadData()
-        setSelectedExtractionId(result.extraction.id)
-      } else {
-        // Check if it's a password error - show password input instead of alert
-        if (result.error?.toLowerCase().includes('password')) {
+        const result = await extractSourceFileNew(file.source_file_id, { password })
+        if (result.success) {
+          await loadData()
+        } else if (result.needs_password) {
           setPasswordNeededFileId(fileId)
         } else {
           alert(result.error || "Extraction failed")
+        }
+      } else {
+        const result = await triggerPDFExtraction(fileId, password)
+        if (result.success && result.extraction) {
+          // Update has_password if password was saved
+          if (result.password_saved) {
+            setSourceFiles((prev) =>
+              prev.map((sf) =>
+                sf.id === fileId ? { ...sf, has_password: true } : sf
+              )
+            )
+          }
+          await loadData()
+          setSelectedExtractionId(result.extraction.id)
+        } else {
+          // Check if it's a password error - show password input instead of alert
+          if (result.error?.toLowerCase().includes('password')) {
+            setPasswordNeededFileId(fileId)
+          } else {
+            alert(result.error || "Extraction failed")
+          }
         }
       }
     } catch (error) {
@@ -1270,36 +1462,34 @@ export function ExtractionsPage() {
     }
   }
 
-  const handleCSVExtract = async (fileId: number) => {
-    setCsvExtractingId(fileId)
-    try {
-      const result = await triggerCSVExtraction(fileId)
-      if (result.success && result.extraction) {
-        await loadData()
-        setSelectedExtractionId(result.extraction.id)
-      } else {
-        alert(result.error || "CSV extraction failed")
-      }
-    } catch (error) {
-      console.error("CSV extraction failed:", error)
-      alert("CSV extraction failed")
-    } finally {
-      setCsvExtractingId(null)
-    }
-  }
-
   const handleToggleHidden = async (extractionId: number, hidden: boolean) => {
     try {
-      const result = await toggleExtractionHidden(extractionId, hidden)
-      if (result.success) {
+      if (source === 'experimental') {
+        // Find the extraction to get the extraction_id
+        const extraction = extractionsNewRaw.find(e => e.id === extractionId)
+        if (!extraction) {
+          alert("Extraction not found")
+          return
+        }
+        await updateExtractionNew(extraction.extraction_id, { hidden })
         // Update local state immediately
         setExtractions((prev) =>
           prev.map((ext) =>
-            ext.id === extractionId ? { ...ext, hidden: result.hidden } : ext
+            ext.id === extractionId ? { ...ext, hidden } : ext
           )
         )
       } else {
-        alert(result.error || "Failed to update")
+        const result = await toggleExtractionHidden(extractionId, hidden)
+        if (result.success) {
+          // Update local state immediately
+          setExtractions((prev) =>
+            prev.map((ext) =>
+              ext.id === extractionId ? { ...ext, hidden: result.hidden } : ext
+            )
+          )
+        } else {
+          alert(result.error || "Failed to update")
+        }
       }
     } catch (error) {
       console.error("Toggle hidden failed:", error)
@@ -1317,28 +1507,50 @@ export function ExtractionsPage() {
   }
 
   const handleTransformPending = async () => {
-    // Get IDs of extractions that need transformation
-    const pendingIds = extractions
-      .filter(e => !e.hidden && e.status === 'extracted' && e.transformable_count > 0 && !e.all_transformed)
-      .map(e => e.id)
-
-    if (pendingIds.length === 0) return
-
     setIsTransforming(true)
     try {
-      const result = await transformPDFExtractions(pendingIds)
-      const successCount = result.results.filter(r => r.success).length
-      const failCount = result.results.filter(r => !r.success).length
+      if (source === 'experimental') {
+        // Get all transformable artifact IDs from pending extractions
+        const artifactIds: string[] = []
+        extractionsNewRaw.forEach(ext => {
+          if (!ext.hidden && ext.artifacts) {
+            ext.artifacts.forEach(a => {
+              if (a.transformer && a.transformation_status === 'not_transformed') {
+                artifactIds.push(a.artifact_id)
+              }
+            })
+          }
+        })
 
-      // Reload data to get updated statuses
-      await loadData()
+        if (artifactIds.length === 0) {
+          alert('No artifacts to transform')
+          return
+        }
 
-      if (failCount > 0) {
-        const failures = result.results
-          .filter(r => !r.success)
-          .map(r => r.message)
-          .join('\n')
-        alert(`Transformed ${successCount} extraction(s). ${failCount} failed:\n${failures}`)
+        await bulkTransformArtifactsNew(artifactIds)
+        await loadData()
+      } else {
+        // Get IDs of extractions that need transformation
+        const pendingIds = extractions
+          .filter(e => !e.hidden && e.status === 'extracted' && e.transformable_count > 0 && !e.all_transformed)
+          .map(e => e.id)
+
+        if (pendingIds.length === 0) return
+
+        const result = await transformPDFExtractions(pendingIds)
+        const successCount = result.results.filter(r => r.success).length
+        const failCount = result.results.filter(r => !r.success).length
+
+        // Reload data to get updated statuses
+        await loadData()
+
+        if (failCount > 0) {
+          const failures = result.results
+            .filter(r => !r.success)
+            .map(r => r.message)
+            .join('\n')
+          alert(`Transformed ${successCount} extraction(s). ${failCount} failed:\n${failures}`)
+        }
       }
     } catch (error) {
       console.error("Transform failed:", error)
@@ -1363,12 +1575,21 @@ export function ExtractionsPage() {
   const confirmDeleteAll = async () => {
     setIsDeletingAll(true)
     try {
-      const result = await deleteAllPDFExtractions()
-      if (result.success) {
+      if (source === 'experimental') {
+        // Delete all extractions in the new system
+        for (const ext of extractionsNewRaw) {
+          await deleteExtractionNew(ext.extraction_id)
+        }
         setSelectedExtractionId(null)
         await loadData()
       } else {
-        alert(result.error || "Failed to delete all extractions")
+        const result = await deleteAllPDFExtractions()
+        if (result.success) {
+          setSelectedExtractionId(null)
+          await loadData()
+        } else {
+          alert(result.error || "Failed to delete all extractions")
+        }
       }
     } catch (error) {
       console.error("Delete all extractions failed:", error)
@@ -1386,15 +1607,30 @@ export function ExtractionsPage() {
       const extraction = deleteTarget.item
       setDeletingExtractionId(extraction.id)
       try {
-        const result = await deletePDFExtraction(extraction.id)
-        if (result.success) {
-          // If deleted extraction was selected, clear selection
-          if (selectedExtractionId === extraction.id) {
-            setSelectedExtractionId(null)
+        if (source === 'experimental') {
+          // Find the extraction_id from raw data
+          const extNew = extractionsNewRaw.find(e => e.id === extraction.id)
+          if (extNew) {
+            await deleteExtractionNew(extNew.extraction_id)
+            // If deleted extraction was selected, clear selection
+            if (selectedExtractionId === extraction.id) {
+              setSelectedExtractionId(null)
+            }
+            await loadData()
+          } else {
+            alert("Extraction not found")
           }
-          await loadData()
         } else {
-          alert(result.error || "Failed to delete extraction")
+          const result = await deletePDFExtraction(extraction.id)
+          if (result.success) {
+            // If deleted extraction was selected, clear selection
+            if (selectedExtractionId === extraction.id) {
+              setSelectedExtractionId(null)
+            }
+            await loadData()
+          } else {
+            alert(result.error || "Failed to delete extraction")
+          }
         }
       } catch (error) {
         console.error("Delete extraction failed:", error)
@@ -1406,18 +1642,23 @@ export function ExtractionsPage() {
       const file = deleteTarget.item
       setDeletingSourceFileId(file.id)
       try {
-        const result = await deletePDFSourceFile(file.id)
-        if (result.success) {
-          // Clear selection if any extraction from this file was selected
-          if (selectedExtractionId) {
-            const selectedExtraction = extractions.find(e => e.id === selectedExtractionId)
-            if (selectedExtraction?.source_file.id === file.id) {
-              setSelectedExtractionId(null)
-            }
-          }
-          await loadData()
+        if (source === 'experimental') {
+          // Source file deletion not supported in experimental mode yet
+          alert("Source file deletion is not supported in experimental mode")
         } else {
-          alert(result.error || "Failed to delete source file")
+          const result = await deletePDFSourceFile(file.id)
+          if (result.success) {
+            // Clear selection if any extraction from this file was selected
+            if (selectedExtractionId) {
+              const selectedExtraction = extractions.find(e => e.id === selectedExtractionId)
+              if (selectedExtraction?.source_file.id === file.id) {
+                setSelectedExtractionId(null)
+              }
+            }
+            await loadData()
+          } else {
+            alert(result.error || "Failed to delete source file")
+          }
         }
       } catch (error) {
         console.error("Delete source file failed:", error)
@@ -1436,7 +1677,7 @@ export function ExtractionsPage() {
   const highlightedSourceFileId = selectedExtraction?.source_file?.id ?? null
 
   // Find source files with "ready to load" (transformed) extractions
-  const pdfFilesWithTransformed = new Set(
+  const filesWithTransformed = new Set(
     extractions
       .filter(e => e.status === 'transformed')
       .map(e => e.source_file?.id)
@@ -1444,15 +1685,15 @@ export function ExtractionsPage() {
   )
 
   // Sort source files: unextracted first, then ready to load, then by last extracted date
-  const sortedPdfSourceFiles = [...sourceFiles].sort((a, b) => {
+  const sortedSourceFiles = [...sourceFiles].sort((a, b) => {
     const aUnextracted = a.extractions_count === 0
     const bUnextracted = b.extractions_count === 0
     // Unextracted files first
     if (aUnextracted && !bUnextracted) return -1
     if (!aUnextracted && bUnextracted) return 1
     // Then ready to load (transformed)
-    const aReady = pdfFilesWithTransformed.has(a.id)
-    const bReady = pdfFilesWithTransformed.has(b.id)
+    const aReady = filesWithTransformed.has(a.id)
+    const bReady = filesWithTransformed.has(b.id)
     if (aReady && !bReady) return -1
     if (!aReady && bReady) return 1
     // Secondary sort by last extracted (most recent first)
@@ -1464,31 +1705,8 @@ export function ExtractionsPage() {
     return 0
   })
 
-  // Sort CSV source files: ready to load (transformed) first
-  const sortedCsvSourceFiles = [...csvSourceFiles].sort((a, b) => {
-    const aReady = a.last_extraction_status === 'transformed'
-    const bReady = b.last_extraction_status === 'transformed'
-    if (aReady && !bReady) return -1
-    if (!aReady && bReady) return 1
-    return 0
-  })
-
-  // Filter extractions based on source type
-  const pdfSourceFileIds = new Set(sourceFiles.map(f => f.id))
-  const csvSourceFileIds = new Set(csvSourceFiles.map(f => f.id))
-  const filteredExtractions = extractions.filter(e => {
-    const sourceId = e.source_file?.id
-    if (!sourceId) return false
-    if (sourceType === 'pdf') return pdfSourceFileIds.has(sourceId)
-    return csvSourceFileIds.has(sourceId)
-  })
-
-  // Clear selection when source type changes and selected extraction is not in filtered list
-  useEffect(() => {
-    if (selectedExtractionId && !filteredExtractions.find(e => e.id === selectedExtractionId)) {
-      setSelectedExtractionId(null)
-    }
-  }, [sourceType])
+  // All extractions (no filtering by source type since we removed PDF/CSV toggle)
+  const filteredExtractions = extractions
 
   // Clear selection when clicking outside the cards
   const handleMainClick = (e: React.MouseEvent) => {
@@ -1529,27 +1747,27 @@ export function ExtractionsPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {/* Source type toggle */}
+            {/* Source toggle (legacy/experimental) */}
             <div className="flex items-center bg-muted rounded-lg p-1">
               <button
-                onClick={() => setSourceType('pdf')}
+                onClick={() => setSource('experimental')}
                 className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                  sourceType === 'pdf'
+                  source === 'experimental'
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                PDF
+                Experimental
               </button>
               <button
-                onClick={() => setSourceType('csv')}
+                onClick={() => setSource('legacy')}
                 className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                  sourceType === 'csv'
+                  source === 'legacy'
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                CSV
+                Legacy
               </button>
             </div>
             <button
@@ -1565,25 +1783,17 @@ export function ExtractionsPage() {
 
         {/* Top Row: Source Files & Extractions List side by side */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6" onClick={handleMainClick}>
-          {sourceType === 'pdf' ? (
-            <PDFSourceFilesSection
-              files={sortedPdfSourceFiles}
-              onExtract={handleExtract}
-              extractingId={extractingId}
-              onPasswordNeeded={setPasswordNeededFileId}
-              passwordNeededFileId={passwordNeededFileId}
-              onPasswordSaved={handlePasswordSaved}
-              highlightedFileId={highlightedSourceFileId}
-              onDeleteSourceFile={handleDeleteSourceFile}
-              deletingSourceFileId={deletingSourceFileId}
-            />
-          ) : (
-            <CSVSourceFilesSection
-              files={sortedCsvSourceFiles}
-              onExtract={handleCSVExtract}
-              extractingId={csvExtractingId}
-            />
-          )}
+          <SourceFilesSection
+            files={sortedSourceFiles}
+            onExtract={handleExtract}
+            extractingId={extractingId}
+            onPasswordNeeded={setPasswordNeededFileId}
+            passwordNeededFileId={passwordNeededFileId}
+            onPasswordSaved={handlePasswordSaved}
+            highlightedFileId={highlightedSourceFileId}
+            onDeleteSourceFile={handleDeleteSourceFile}
+            deletingSourceFileId={deletingSourceFileId}
+          />
           <ExtractionsListSection
             extractions={filteredExtractions}
             selectedId={selectedExtractionId}
@@ -1601,7 +1811,7 @@ export function ExtractionsPage() {
         </div>
 
         {/* Full Width: Artifact Preview */}
-        <ArtifactPreviewSection extraction={selectedExtraction} />
+        <ArtifactPreviewSection extraction={selectedExtraction} source={source} />
       </main>
 
       {/* Delete Confirmation Dialog */}

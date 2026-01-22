@@ -80,7 +80,11 @@ def get_active_transactions_experimental():
 @api_view(['GET'])
 def api_summary(request):
     # Get active transactions (excludes disabled source files and superseded CSVs)
-    all_transactions = get_active_transactions()
+    source = request.GET.get('source', 'legacy')
+    if source == 'experimental':
+        all_transactions = get_active_transactions_experimental()
+    else:
+        all_transactions = get_active_transactions()
     from django.db.models import Q
     from bank_accs.models import BankAccount
 
@@ -216,7 +220,11 @@ def api_summary(request):
 @api_view(['GET'])
 def api_monthly(request):
     # Exclude self transfers from monthly breakdown
-    transactions = get_active_transactions().exclude(category__in=EXCLUDED_CATEGORIES)
+    source = request.GET.get('source', 'legacy')
+    if source == 'experimental':
+        transactions = get_active_transactions_experimental().exclude(category__in=EXCLUDED_CATEGORIES)
+    else:
+        transactions = get_active_transactions().exclude(category__in=EXCLUDED_CATEGORIES)
 
     monthly_data = (
         transactions
@@ -258,9 +266,13 @@ def api_monthly(request):
 def api_categories(request):
     # Check if we should include all categories (for filtering purposes)
     include_all = request.GET.get('include_all', 'false').lower() == 'true'
+    source = request.GET.get('source', 'legacy')
 
     # Get active transactions with debits
-    queryset = get_active_transactions().filter(debit_amount__gt=0)
+    if source == 'experimental':
+        queryset = get_active_transactions_experimental().filter(debit_amount__gt=0)
+    else:
+        queryset = get_active_transactions().filter(debit_amount__gt=0)
 
     # Exclude self transfers from category breakdown unless include_all is set
     if not include_all:
@@ -534,10 +546,16 @@ def api_transactions(request):
 @api_view(['GET'])
 def api_top_expenses(request):
     limit = int(request.GET.get('limit', 10))
+    source = request.GET.get('source', 'legacy')
 
     # Exclude self transfers from top expenses
+    if source == 'experimental':
+        base_queryset = get_active_transactions_experimental()
+    else:
+        base_queryset = get_active_transactions()
+
     top_expenses = (
-        get_active_transactions()
+        base_queryset
         .select_related('bank_account')
         .filter(debit_amount__gt=0)
         .exclude(category__in=EXCLUDED_CATEGORIES)

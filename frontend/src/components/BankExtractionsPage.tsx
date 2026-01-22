@@ -25,6 +25,7 @@ import * as Dialog from "@radix-ui/react-dialog"
 import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import {
+  // Legacy APIs
   fetchBankSourceFiles,
   fetchBankAccounts,
   triggerBankExtraction,
@@ -33,6 +34,20 @@ import {
   toggleBankExtractionHidden,
   deleteBankExtraction,
   syncBankSourceFiles,
+  // New (experimental) APIs
+  fetchSourceFilesNew,
+  fetchExtractionsNew,
+  fetchDataSourcesNew,
+  extractSourceFileNew,
+  loadDataSourceNew,
+  deleteExtractionNew,
+  refreshSourceFilesNew,
+  previewArtifactNew,
+  previewDataSourceNew,
+  updateExtractionNew,
+  type SourceFileNew,
+  type ExtractionNew,
+  type DataSourceArtifactNew,
   type BankSourceFile,
   type ExtractedCSV,
 } from "@/lib/api"
@@ -460,9 +475,18 @@ function ExtractionsListSection({
                           {ext.row_count} rows
                         </span>
                         {ext.artifacts && ext.artifacts.length > 0 && (
-                          <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 font-medium">
-                            {ext.artifacts.map(a => a.artifact_type.replace('_', ' ')).join(', ')}
-                          </span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {ext.artifacts.map(a => (
+                              <span
+                                key={a.artifact_id}
+                                className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 text-xs"
+                                title={`${a.artifact_id} (${a.row_count} rows)`}
+                              >
+                                {a.artifact_type.replace(/_/g, ' ')}
+                                {a.artifact_key && <span className="ml-1 opacity-70">({a.artifact_key})</span>}
+                              </span>
+                            ))}
+                          </div>
                         )}
                       </div>
                       {ext.status === 'error' && ext.error_message && (
@@ -572,11 +596,15 @@ function ColumnSelector({
   )
 }
 
-// CSV Preview Panel
-function CSVPreviewSection({
+// Artifact Preview Panel
+function ArtifactPreviewSection({
   extraction,
+  source = 'legacy',
+  dataSourcesNewRaw = [],
 }: {
   extraction: ExtractedCSV | null
+  source?: 'legacy' | 'experimental'
+  dataSourcesNewRaw?: DataSourceArtifactNew[]
 }) {
   const [previewData, setPreviewData] = useState<{
     data: Record<string, string>[]
@@ -586,13 +614,14 @@ function CSVPreviewSection({
   const [loading, setLoading] = useState(false)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set())
   const [activeArtifact, setActiveArtifact] = useState<string | null>(null)
+  const [previewLimit] = useState<number>(50) // Limit rows shown in preview
 
   // Get available artifacts
   const artifacts = extraction?.artifacts || []
 
-  // Get current artifact (may be used for displaying artifact details in the future)
-  const _currentArtifact = artifacts.find(a => a.artifact_id === activeArtifact)
-  void _currentArtifact  // Suppress unused warning
+  // Get current artifact - handles fallback to first artifact
+  const currentArtifact = artifacts.find(a => a.artifact_id === activeArtifact)
+    || (artifacts.length > 0 && !activeArtifact ? artifacts[0] : undefined)
 
   // Auto-select first artifact when extraction changes
   useEffect(() => {
@@ -614,18 +643,49 @@ function CSVPreviewSection({
     }
 
     const extractionId = extraction.id
+    const limit = previewLimit
 
     async function loadPreview() {
       setLoading(true)
       try {
-        // Pass artifact_id to the API if we have one selected
-        const url = activeArtifact
-          ? `${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/bank-extracted-csvs/${extractionId}/preview/?artifact_id=${activeArtifact}`
-          : `${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/bank-extracted-csvs/${extractionId}/preview/`
-        const res = await fetch(url)
-        const data = await res.json()
-        setPreviewData(data)
-        setVisibleColumns(new Set(data.columns))
+        if (source === 'experimental') {
+          // For experimental, need an active artifact to preview
+          if (!activeArtifact) {
+            setPreviewData(null)
+            setLoading(false)
+            return
+          }
+          // Find the data source artifact for this extraction artifact
+          const dsArtifact = dataSourcesNewRaw.find(ds => ds.source_artifact_id === activeArtifact)
+          if (dsArtifact) {
+            // Preview the data source artifact (uses /api/extractions/data-sources/{id}/preview/)
+            const result = await previewDataSourceNew(dsArtifact.artifact_id, limit)
+            setPreviewData({
+              data: result.data as Record<string, string>[],
+              total: result.total,
+              columns: result.columns || Object.keys(result.data[0] || {}),
+            })
+            setVisibleColumns(new Set(result.columns || Object.keys(result.data[0] || {})))
+          } else {
+            // Fall back to previewing the extraction artifact directly (uses /api/extractions/artifacts/{id}/preview/)
+            const result = await previewArtifactNew(activeArtifact, limit)
+            setPreviewData({
+              data: result.data as Record<string, string>[],
+              total: result.total ?? 0,
+              columns: result.columns || Object.keys((result.data as Record<string, string>[])[0] || {}),
+            })
+            setVisibleColumns(new Set(result.columns || Object.keys((result.data as Record<string, string>[])[0] || {})))
+          }
+        } else {
+          // Legacy: Pass artifact_id to the API if we have one selected
+          const url = activeArtifact
+            ? `${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/bank-extracted-csvs/${extractionId}/preview/?artifact_id=${activeArtifact}&limit=${limit}`
+            : `${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/bank-extracted-csvs/${extractionId}/preview/?limit=${limit}`
+          const res = await fetch(url)
+          const data = await res.json()
+          setPreviewData(data)
+          setVisibleColumns(new Set(data.columns))
+        }
       } catch (error) {
         console.error("Failed to load preview:", error)
         setPreviewData(null)
@@ -635,7 +695,7 @@ function CSVPreviewSection({
     }
 
     loadPreview()
-  }, [extraction?.id, activeArtifact])
+  }, [extraction?.id, activeArtifact, source, dataSourcesNewRaw, previewLimit])
 
   const toggleColumn = (column: string) => {
     setVisibleColumns((prev) => {
@@ -649,8 +709,8 @@ function CSVPreviewSection({
     })
   }
 
-  // Helper to get short ID from artifact_id
-  const getShortId = (artifactId: string) => artifactId.replace('artifact_', '')
+  // Helper to get short ID from artifact_id (e.g., "ext_art_abc12345" -> "abc12345")
+  const getShortId = (artifactId: string) => artifactId.replace('ext_art_', '').replace('artifact_', '')
 
   // Get download URL (with artifact_id if selected)
   const getDownloadUrl = () => {
@@ -685,7 +745,7 @@ function CSVPreviewSection({
               <div className="p-1.5 rounded-lg bg-muted">
                 <TableIcon className="h-5 w-5 text-muted-foreground" />
               </div>
-              CSV Preview
+              Artifact Preview
             </h3>
             <p className="text-sm text-muted-foreground mt-1 font-mono truncate">
               {extraction.name}
@@ -713,41 +773,54 @@ function CSVPreviewSection({
         {/* Artifact Type Tabs */}
         {artifacts.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
-            {artifacts.map((artifact) => (
-              <button
-                key={artifact.artifact_id}
-                onClick={() => setActiveArtifact(artifact.artifact_id)}
-                className={`group relative px-3 py-2 text-sm rounded-lg border transition-all flex items-center gap-2 ${
-                  activeArtifact === artifact.artifact_id
-                    ? "bg-primary/10 border-primary/50 text-foreground"
-                    : "bg-muted/50 border-border text-muted-foreground hover:text-foreground hover:border-border"
-                }`}
-              >
-                <span className={`font-mono text-xs px-1.5 py-0.5 rounded ${
-                  activeArtifact === artifact.artifact_id
-                    ? "bg-primary/20 text-primary"
-                    : "bg-muted text-muted-foreground group-hover:text-foreground"
-                }`}>
-                  {artifact.artifact_type.replace(/_/g, ' ')}
-                </span>
-                <span className={`font-mono text-xs ${
-                  activeArtifact === artifact.artifact_id
-                    ? "text-foreground/70"
-                    : "text-muted-foreground/70"
-                }`}>
-                  {getShortId(artifact.artifact_id)}
-                </span>
-                {artifact.row_count > 0 && (
-                  <span className={`text-xs ${
-                    activeArtifact === artifact.artifact_id
-                      ? "text-primary"
-                      : "text-muted-foreground"
+            {artifacts.map((artifact) => {
+              // Use currentArtifact for highlighting since it handles fallback to first artifact
+              const isActive = currentArtifact?.artifact_id === artifact.artifact_id
+              return (
+                <button
+                  key={artifact.artifact_id}
+                  onClick={() => setActiveArtifact(artifact.artifact_id)}
+                  className={`group relative px-3 py-2 text-sm rounded-lg border transition-all flex items-center gap-2 ${
+                    isActive
+                      ? "bg-primary/10 border-primary/50 text-foreground"
+                      : "bg-muted/50 border-border text-muted-foreground hover:text-foreground hover:border-border"
+                  }`}
+                >
+                  <span className={`font-mono text-xs px-1.5 py-0.5 rounded ${
+                    isActive
+                      ? "bg-primary/20 text-primary"
+                      : "bg-muted text-muted-foreground group-hover:text-foreground"
                   }`}>
-                    ({artifact.row_count})
+                    {artifact.artifact_type.replace(/_/g, ' ')}
                   </span>
-                )}
-              </button>
-            ))}
+                  {artifact.artifact_key && (
+                    <span className={`font-mono text-xs ${
+                      isActive
+                        ? "text-foreground/70"
+                        : "text-muted-foreground/70"
+                    }`}>
+                      {artifact.artifact_key}
+                    </span>
+                  )}
+                  <span className={`font-mono text-xs ${
+                    isActive
+                      ? "text-foreground/50"
+                      : "text-muted-foreground/50"
+                  }`}>
+                    {getShortId(artifact.artifact_id)}
+                  </span>
+                  {artifact.row_count > 0 && (
+                    <span className={`text-xs ${
+                      isActive
+                        ? "text-primary"
+                        : "text-muted-foreground"
+                    }`}>
+                      ({artifact.row_count})
+                    </span>
+                  )}
+                </button>
+              )
+            })}
           </div>
         )}
       </header>
@@ -807,8 +880,62 @@ function CSVPreviewSection({
   )
 }
 
+// Mapping functions for experimental source
+function mapSourceFileNew(sf: SourceFileNew): BankSourceFile {
+  return {
+    id: sf.id,
+    filename: sf.filename,
+    pipeline: null,
+    bank_account: null,
+    extractions_count: sf.extractions?.length ?? 0,
+    last_extracted: sf.extractions?.[0]?.extracted_at ?? null,
+    has_password: !!sf.password,
+    pipeline_password: sf.password,
+    file_size: sf.file_size,
+    has_data: sf.extraction_status === 'extracted',
+    extractor: sf.extractor,
+    disabled: false,
+  }
+}
+
+function mapExtractionNew(ext: ExtractionNew, dataSources: DataSourceArtifactNew[], sourceFiles: SourceFileNew[]): ExtractedCSV {
+  const dsArtifacts = dataSources.filter(ds => ds.source_extraction_id === ext.extraction_id)
+  const loadedDs = dsArtifacts.find(ds => ds.status === 'loaded')
+  const anyDs = dsArtifacts[0]
+  // Find the matching source file by its string ID to get the numeric ID for highlighting
+  const matchingSourceFile = sourceFiles.find(sf => sf.source_file_id === ext.source_file_id)
+  return {
+    id: ext.id,
+    name: ext.extraction_id,
+    source_filename: ext.source_filename,
+    source_file_id: matchingSourceFile?.id ?? ext.id,
+    status: loadedDs ? 'loaded' : dsArtifacts.length > 0 ? 'transformed' : 'extracted',
+    bank_account_id: loadedDs?.bank_account_id ?? anyDs?.bank_account_id ?? null,
+    disabled: false,
+    hidden: ext.hidden,
+    row_count: ext.artifacts?.reduce((sum, a) => sum + a.row_count, 0) ?? 0,
+    extracted_at: ext.extracted_at,
+    loaded_at: loadedDs?.loaded_at ?? null,
+    first_transaction_date: null,
+    last_transaction_date: null,
+    transaction_count: loadedDs?.row_count ?? 0,
+    error_message: ext.error_message,
+    artifacts: ext.artifacts?.map(a => ({
+      artifact_id: a.artifact_id,
+      artifact_type: a.artifact_type,
+      artifact_key: a.artifact_key,
+      content_type: a.content_format,
+      row_count: a.row_count,
+      data_hash: a.content_hash,
+    })) ?? [],
+  }
+}
+
 // Main Bank Extractions Page
 export function BankExtractionsPage() {
+  // Source toggle: 'legacy' or 'experimental'
+  const [source, setSource] = useState<'legacy' | 'experimental'>('experimental')
+
   const [sourceFiles, setSourceFiles] = useState<BankSourceFile[]>([])
   const [extractions, setExtractions] = useState<ExtractedCSV[]>([])
   const [selectedExtractionId, setSelectedExtractionId] = useState<number | null>(null)
@@ -821,6 +948,11 @@ export function BankExtractionsPage() {
   const [deleteTarget, setDeleteTarget] = useState<ExtractedCSV | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
+  // Raw data from new APIs (for lookups in handlers)
+  const [sourceFilesNewRaw, setSourceFilesNewRaw] = useState<SourceFileNew[]>([])
+  const [extractionsNewRaw, setExtractionsNewRaw] = useState<ExtractionNew[]>([])
+  const [dataSourcesNewRaw, setDataSourcesNewRaw] = useState<DataSourceArtifactNew[]>([])
+
   const { invalidate: invalidateInconsistencyCache } = useInconsistencyCache()
   const { invalidate: invalidateStoryCache } = useStoryCache()
 
@@ -830,12 +962,28 @@ export function BankExtractionsPage() {
 
   const loadData = async () => {
     try {
-      const [filesRes, accountsRes] = await Promise.all([
-        fetchBankSourceFiles(),
-        fetchBankAccounts(),
-      ])
-      setSourceFiles(filesRes.data)
-      setExtractions(accountsRes.extracted_csvs)
+      if (source === 'experimental') {
+        const visibility = showHidden ? 'all' : 'visible'
+        const [filesRes, extractionsRes, dataSourcesRes] = await Promise.all([
+          fetchSourceFilesNew({ domain: 'bank_account', visibility }),
+          fetchExtractionsNew({ domain: 'bank_account', visibility }),
+          fetchDataSourcesNew({ domain: 'bank_account_transactions', visibility }),
+        ])
+        // Store raw data for lookups
+        setSourceFilesNewRaw(filesRes.data)
+        setExtractionsNewRaw(extractionsRes.data)
+        setDataSourcesNewRaw(dataSourcesRes.data)
+        // Map to legacy interfaces for UI
+        setSourceFiles(filesRes.data.map(mapSourceFileNew))
+        setExtractions(extractionsRes.data.map(ext => mapExtractionNew(ext, dataSourcesRes.data, filesRes.data)))
+      } else {
+        const [filesRes, accountsRes] = await Promise.all([
+          fetchBankSourceFiles(),
+          fetchBankAccounts(),
+        ])
+        setSourceFiles(filesRes.data)
+        setExtractions(accountsRes.extracted_csvs)
+      }
     } catch (error) {
       console.error("Failed to load data:", error)
     } finally {
@@ -845,11 +993,15 @@ export function BankExtractionsPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [source])
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
-    await syncBankSourceFiles()
+    if (source === 'experimental') {
+      await refreshSourceFilesNew()
+    } else {
+      await syncBankSourceFiles()
+    }
     await loadData()
     setIsRefreshing(false)
   }
@@ -857,19 +1009,40 @@ export function BankExtractionsPage() {
   const handleExtract = async (fileId: number, password?: string) => {
     setExtractingId(fileId)
     try {
-      const result = await triggerBankExtraction(fileId, password)
-      if (result.success && result.extraction) {
-        await loadData()
-        // Find the new extraction and select it
-        const newExt = extractions.find(e => e.name === result.extraction?.name)
-        if (newExt) {
-          setSelectedExtractionId(newExt.id)
+      if (source === 'experimental') {
+        // Find the source file to get its source_file_id (UUID)
+        const sf = sourceFilesNewRaw.find(f => f.id === fileId)
+        if (!sf) {
+          alert("Source file not found")
+          return
+        }
+        const result = await extractSourceFileNew(sf.source_file_id, { password })
+        if (result.success && result.extraction) {
+          await loadData()
+          // Select the new extraction
+          setSelectedExtractionId(result.extraction.id)
+        } else {
+          if (result.needs_password) {
+            setPasswordNeededFileId(fileId)
+          } else {
+            alert(result.error || "Extraction failed")
+          }
         }
       } else {
-        if (result.needs_password) {
-          setPasswordNeededFileId(fileId)
+        const result = await triggerBankExtraction(fileId, password)
+        if (result.success && result.extraction) {
+          await loadData()
+          // Find the new extraction and select it
+          const newExt = extractions.find(e => e.name === result.extraction?.name)
+          if (newExt) {
+            setSelectedExtractionId(newExt.id)
+          }
         } else {
-          alert(result.error || "Extraction failed")
+          if (result.needs_password) {
+            setPasswordNeededFileId(fileId)
+          } else {
+            alert(result.error || "Extraction failed")
+          }
         }
       }
     } catch (error) {
@@ -883,12 +1056,43 @@ export function BankExtractionsPage() {
   const handleLoad = async (ids: number[]) => {
     setLoadingIds(new Set(ids))
     try {
-      const result = await loadExtractedCSVs(ids)
-      const failures = result.results.filter(r => !r.success)
-      if (failures.length > 0) {
-        alert(`Some loads failed:\n${failures.map(f => f.message).join('\n')}`)
+      if (source === 'experimental') {
+        // For experimental, find data source artifacts for these extraction IDs and load them
+        const failures: string[] = []
+        for (const extId of ids) {
+          const ext = extractionsNewRaw.find(e => e.id === extId)
+          if (!ext) {
+            failures.push(`Extraction ${extId} not found`)
+            continue
+          }
+          // Find data source artifacts for this extraction
+          const dsArtifacts = dataSourcesNewRaw.filter(ds => ds.source_extraction_id === ext.extraction_id)
+          if (dsArtifacts.length === 0) {
+            failures.push(`No data sources found for extraction ${ext.extraction_id}`)
+            continue
+          }
+          // Load each data source artifact
+          for (const ds of dsArtifacts) {
+            if (ds.status !== 'loaded') {
+              const result = await loadDataSourceNew(ds.artifact_id)
+              if (!result.success) {
+                failures.push(result.error || `Failed to load ${ds.artifact_id}`)
+              }
+            }
+          }
+        }
+        if (failures.length > 0) {
+          alert(`Some loads failed:\n${failures.join('\n')}`)
+        }
+        await loadData()
+      } else {
+        const result = await loadExtractedCSVs(ids)
+        const failures = result.results.filter(r => !r.success)
+        if (failures.length > 0) {
+          alert(`Some loads failed:\n${failures.map(f => f.message).join('\n')}`)
+        }
+        await loadData()
       }
-      await loadData()
     } catch (error) {
       console.error("Load failed:", error)
       alert("Load failed")
@@ -899,14 +1103,29 @@ export function BankExtractionsPage() {
 
   const handleHide = async (id: number, hidden: boolean) => {
     try {
-      const result = await toggleBankExtractionHidden(id, hidden)
-      if (result.success) {
+      if (source === 'experimental') {
+        // Find the extraction to get its extraction_id (UUID)
+        const ext = extractionsNewRaw.find(e => e.id === id)
+        if (!ext) {
+          console.error("Extraction not found")
+          return
+        }
+        await updateExtractionNew(ext.extraction_id, { hidden })
         setExtractions(prev => prev.map(e =>
-          e.id === id ? { ...e, hidden: result.hidden } : e
+          e.id === id ? { ...e, hidden } : e
         ))
-        // Invalidate caches since transactions are now included/excluded
         invalidateInconsistencyCache()
         invalidateStoryCache()
+      } else {
+        const result = await toggleBankExtractionHidden(id, hidden)
+        if (result.success) {
+          setExtractions(prev => prev.map(e =>
+            e.id === id ? { ...e, hidden: result.hidden } : e
+          ))
+          // Invalidate caches since transactions are now included/excluded
+          invalidateInconsistencyCache()
+          invalidateStoryCache()
+        }
       }
     } catch (error) {
       console.error("Toggle hidden failed:", error)
@@ -918,18 +1137,39 @@ export function BankExtractionsPage() {
 
     setIsDeleting(true)
     try {
-      const result = await deleteBankExtraction(deleteTarget.id)
-      if (result.success) {
-        setExtractions(prev => prev.filter(e => e.id !== deleteTarget.id))
-        if (selectedExtractionId === deleteTarget.id) {
-          setSelectedExtractionId(null)
+      if (source === 'experimental') {
+        // Find the extraction to get its extraction_id (UUID)
+        const ext = extractionsNewRaw.find(e => e.id === deleteTarget.id)
+        if (!ext) {
+          alert("Extraction not found")
+          return
         }
-        setDeleteTarget(null)
-        // Invalidate caches since transactions are now removed
-        invalidateInconsistencyCache()
-        invalidateStoryCache()
+        const result = await deleteExtractionNew(ext.extraction_id)
+        if (result.success) {
+          setExtractions(prev => prev.filter(e => e.id !== deleteTarget.id))
+          if (selectedExtractionId === deleteTarget.id) {
+            setSelectedExtractionId(null)
+          }
+          setDeleteTarget(null)
+          invalidateInconsistencyCache()
+          invalidateStoryCache()
+        } else {
+          alert("Delete failed")
+        }
       } else {
-        alert(result.error || "Delete failed")
+        const result = await deleteBankExtraction(deleteTarget.id)
+        if (result.success) {
+          setExtractions(prev => prev.filter(e => e.id !== deleteTarget.id))
+          if (selectedExtractionId === deleteTarget.id) {
+            setSelectedExtractionId(null)
+          }
+          setDeleteTarget(null)
+          // Invalidate caches since transactions are now removed
+          invalidateInconsistencyCache()
+          invalidateStoryCache()
+        } else {
+          alert(result.error || "Delete failed")
+        }
       }
     } catch (error) {
       console.error("Delete failed:", error)
@@ -1013,8 +1253,12 @@ export function BankExtractionsPage() {
           />
         </div>
 
-        {/* Full Width: CSV Preview */}
-        <CSVPreviewSection extraction={selectedExtraction} />
+        {/* Full Width: Artifact Preview */}
+        <ArtifactPreviewSection
+          extraction={selectedExtraction}
+          source={source}
+          dataSourcesNewRaw={dataSourcesNewRaw}
+        />
       </main>
 
       {/* Delete Confirmation Dialog */}

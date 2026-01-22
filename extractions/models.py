@@ -264,10 +264,10 @@ class DataSourceArtifact(models.Model):
     transformer = models.CharField(max_length=50)
 
     # Status
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='unloaded')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='unloaded', db_index=True)
     error_message = models.TextField(blank=True)
-    enabled = models.BooleanField(default=True)
-    hidden = models.BooleanField(default=False)
+    enabled = models.BooleanField(default=True, db_index=True)
+    hidden = models.BooleanField(default=False, db_index=True)
 
     # Timestamps
     transformed_at = models.DateTimeField(auto_now_add=True)
@@ -275,6 +275,9 @@ class DataSourceArtifact(models.Model):
 
     class Meta:
         ordering = ['-transformed_at']
+        indexes = [
+            models.Index(fields=['status', 'enabled', 'hidden'], name='ds_art_status_enabled_hidden'),
+        ]
 
     @classmethod
     def generate_artifact_id(cls):

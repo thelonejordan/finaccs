@@ -22,7 +22,15 @@ import {
 } from "lucide-react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import * as Tooltip from "@radix-ui/react-tooltip"
-import { updateExtractedCSV, loadExtractedCSVs, type BankAccount, type ExtractedCSV, type AccountStats } from "@/lib/api"
+import {
+  updateExtractedCSV,
+  loadExtractedCSVs,
+  updateDataSourceNew,
+  loadDataSourceNew,
+  type BankAccount,
+  type ExtractedCSV,
+  type AccountStats,
+} from "@/lib/api"
 import { useInconsistencyCache } from "@/lib/inconsistency-cache"
 import { useStoryCache } from "@/lib/story-cache"
 
@@ -43,9 +51,10 @@ interface DataSourcesProps {
   onRefresh?: () => void
   selectedCSVId?: number | null
   onSelectCSV?: (csvId: number | null) => void
+  source?: 'legacy' | 'experimental'
 }
 
-export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpdated, onAccountStatsUpdated, onRefresh, selectedCSVId, onSelectCSV }: DataSourcesProps) {
+export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpdated, onAccountStatsUpdated, onRefresh, selectedCSVId, onSelectCSV, source = 'legacy' }: DataSourcesProps) {
   const { invalidate: invalidateInconsistencyCache } = useInconsistencyCache()
   const { invalidate: invalidateStoryCache } = useStoryCache()
   const [isLinking, setIsLinking] = useState(false)
@@ -61,13 +70,26 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
     }
   }
 
+  // Helper to get artifact_id from csv (for experimental mode)
+  const getArtifactId = (csv: ExtractedCSV): string | null => {
+    return csv.artifacts?.[0]?.artifact_id || null
+  }
+
   const handleToggleDisabled = async (csv: ExtractedCSV) => {
     setTogglingId(csv.id)
     try {
-      const updated = await updateExtractedCSV(csv.id, { disabled: !csv.disabled })
-      onCSVUpdated({ ...csv, ...updated })
-      if (updated.affected_accounts && onAccountStatsUpdated) {
-        onAccountStatsUpdated(updated.affected_accounts)
+      if (source === 'experimental') {
+        const artifactId = getArtifactId(csv)
+        if (artifactId) {
+          await updateDataSourceNew(artifactId, { enabled: csv.disabled }) // Toggle: disabled -> enabled
+          onCSVUpdated({ ...csv, disabled: !csv.disabled })
+        }
+      } else {
+        const updated = await updateExtractedCSV(csv.id, { disabled: !csv.disabled })
+        onCSVUpdated({ ...csv, ...updated })
+        if (updated.affected_accounts && onAccountStatsUpdated) {
+          onAccountStatsUpdated(updated.affected_accounts)
+        }
       }
       // Invalidate caches since transactions are now included/excluded
       invalidateInconsistencyCache()
@@ -82,10 +104,18 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
   const handleLinkToAccount = async (csv: ExtractedCSV, accountId: number) => {
     setIsLinking(true)
     try {
-      const updated = await updateExtractedCSV(csv.id, { bank_account_id: accountId })
-      onCSVUpdated({ ...csv, ...updated })
-      if (updated.affected_accounts && onAccountStatsUpdated) {
-        onAccountStatsUpdated(updated.affected_accounts)
+      if (source === 'experimental') {
+        const artifactId = getArtifactId(csv)
+        if (artifactId) {
+          await updateDataSourceNew(artifactId, { bank_account_id: accountId })
+          onCSVUpdated({ ...csv, bank_account_id: accountId })
+        }
+      } else {
+        const updated = await updateExtractedCSV(csv.id, { bank_account_id: accountId })
+        onCSVUpdated({ ...csv, ...updated })
+        if (updated.affected_accounts && onAccountStatsUpdated) {
+          onAccountStatsUpdated(updated.affected_accounts)
+        }
       }
     } catch (error) {
       console.error("Failed to link account:", error)
@@ -97,10 +127,18 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
   const handleUnlinkFromAccount = async (csv: ExtractedCSV) => {
     setIsLinking(true)
     try {
-      const updated = await updateExtractedCSV(csv.id, { bank_account_id: null })
-      onCSVUpdated({ ...csv, ...updated })
-      if (updated.affected_accounts && onAccountStatsUpdated) {
-        onAccountStatsUpdated(updated.affected_accounts)
+      if (source === 'experimental') {
+        const artifactId = getArtifactId(csv)
+        if (artifactId) {
+          await updateDataSourceNew(artifactId, { bank_account_id: null })
+          onCSVUpdated({ ...csv, bank_account_id: null })
+        }
+      } else {
+        const updated = await updateExtractedCSV(csv.id, { bank_account_id: null })
+        onCSVUpdated({ ...csv, ...updated })
+        if (updated.affected_accounts && onAccountStatsUpdated) {
+          onAccountStatsUpdated(updated.affected_accounts)
+        }
       }
     } catch (error) {
       console.error("Failed to unlink account:", error)
@@ -112,10 +150,18 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
   const handleChangeLinkToAccount = async (csv: ExtractedCSV, newAccountId: number) => {
     setIsLinking(true)
     try {
-      const updated = await updateExtractedCSV(csv.id, { bank_account_id: newAccountId })
-      onCSVUpdated({ ...csv, ...updated })
-      if (updated.affected_accounts && onAccountStatsUpdated) {
-        onAccountStatsUpdated(updated.affected_accounts)
+      if (source === 'experimental') {
+        const artifactId = getArtifactId(csv)
+        if (artifactId) {
+          await updateDataSourceNew(artifactId, { bank_account_id: newAccountId })
+          onCSVUpdated({ ...csv, bank_account_id: newAccountId })
+        }
+      } else {
+        const updated = await updateExtractedCSV(csv.id, { bank_account_id: newAccountId })
+        onCSVUpdated({ ...csv, ...updated })
+        if (updated.affected_accounts && onAccountStatsUpdated) {
+          onAccountStatsUpdated(updated.affected_accounts)
+        }
       }
     } catch (error) {
       console.error("Failed to change link:", error)
@@ -130,20 +176,37 @@ export function DataSources({ extractedCSVs, accounts, onCreateAccount, onCSVUpd
       // Set status to loading immediately for UI feedback
       onCSVUpdated({ ...csv, status: 'loading' })
 
-      const result = await loadExtractedCSVs([csv.id])
-      if (result.results && result.results.length > 0) {
-        const loadResult = result.results[0]
-        onCSVUpdated({
-          ...csv,
-          status: loadResult.success ? 'loaded' : 'error',
-          error_message: loadResult.success ? '' : loadResult.message,
-        })
-      }
-      // Invalidate inconsistency cache - new data may create inconsistencies
-      invalidateInconsistencyCache()
-      // Refresh to get updated data
-      if (onRefresh) {
-        await onRefresh()
+      if (source === 'experimental') {
+        const artifactId = getArtifactId(csv)
+        if (artifactId) {
+          const result = await loadDataSourceNew(artifactId)
+          onCSVUpdated({
+            ...csv,
+            status: result.success ? 'loaded' : 'error',
+            error_message: result.error,
+            loaded_at: result.success ? new Date().toISOString() : csv.loaded_at,
+          })
+          if (result.success) {
+            invalidateInconsistencyCache()
+            invalidateStoryCache()
+          }
+        }
+      } else {
+        const result = await loadExtractedCSVs([csv.id])
+        if (result.results && result.results.length > 0) {
+          const loadResult = result.results[0]
+          onCSVUpdated({
+            ...csv,
+            status: loadResult.success ? 'loaded' : 'error',
+            error_message: loadResult.success ? '' : loadResult.message,
+          })
+        }
+        // Invalidate inconsistency cache - new data may create inconsistencies
+        invalidateInconsistencyCache()
+        // Refresh to get updated data
+        if (onRefresh) {
+          await onRefresh()
+        }
       }
     } catch (error) {
       console.error("Failed to load CSV:", error)

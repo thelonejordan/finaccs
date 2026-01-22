@@ -32,7 +32,7 @@ const NAV_ITEMS = [
   { path: "/bank-extractions", label: "Bank Extractions", icon: LandmarkIcon },
   { path: "/extractions-new", label: "Extractions v2", icon: SparklesIcon },
   { path: "/data-sources-new", label: "Data Sources", icon: DatabaseIcon },
-  { path: "/settings", label: "Console", icon: SettingsIcon },
+  { path: "/console", label: "Console", icon: SettingsIcon },
   { path: "/story", label: "Payments", icon: BookOpenIcon },
   { path: "/inconsistencies", label: "Inconsistencies", icon: AlertTriangleIcon },
   { path: "/logs", label: "Activity Log", icon: ScrollTextIcon },

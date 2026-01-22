@@ -30,7 +30,7 @@ function App() {
           <Route path="/extractions-new" element={<ExtractionsPageNew />} />
           <Route path="/data-sources-new" element={<DataSourcesPageNew />} />
           <Route path="/story" element={<StoryPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/console" element={<SettingsPage />} />
           <Route path="/inconsistencies" element={<InconsistenciesPage />} />
           <Route path="/logs" element={<LogsPage />} />
         </Routes>

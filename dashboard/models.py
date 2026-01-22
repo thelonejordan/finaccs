@@ -44,7 +44,8 @@ class Transaction(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='bank_transactions'
+        related_name='bank_transactions',
+        db_index=True
     )
     artifact_row_id = models.CharField(max_length=50, blank=True)  # For link snapshot matching
     linked_transaction = models.OneToOneField(
