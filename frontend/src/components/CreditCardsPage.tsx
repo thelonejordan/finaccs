@@ -576,7 +576,7 @@ export function CreditCardsPage() {
   useEffect(() => {
     async function loadDateRange() {
       try {
-        const data = await fetchCreditCardDateRange()
+        const data = await fetchCreditCardDateRange({ source: 'experimental' })
         setDateRange(data)
 
         const years = Object.keys(data.years).map(Number).sort((a, b) => b - a)
@@ -635,7 +635,7 @@ export function CreditCardsPage() {
   useEffect(() => {
     async function loadCategories() {
       try {
-        const data = await fetchCreditCardCategories({ include_all: true })
+        const data = await fetchCreditCardCategories({ source: 'experimental', include_all: true })
         setCategories(data.data)
       } catch (error) {
         console.error("Failed to load categories:", error)
@@ -669,6 +669,7 @@ export function CreditCardsPage() {
 
       try {
         const data = await fetchCreditCardTransactions({
+          source: 'experimental',
           category: selectedCategory || undefined,
           type: selectedType || undefined,
           credit_card: selectedCreditCard || undefined,

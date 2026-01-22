@@ -289,13 +289,10 @@ function AccountCard({
   )
 }
 
-export function AccountsSection({ accounts, extractedCSVs, onSave, initialAddSourceFile, onAddingStateChange }: AccountsSectionProps) {
+export function AccountsSection({ accounts, extractedCSVs: _extractedCSVs, onSave, initialAddSourceFile, onAddingStateChange }: AccountsSectionProps) {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [isAdding, setIsAdding] = useState(false)
   const [prefilledSourceFile, setPrefilledSourceFile] = useState<string | null>(null)
-
-  // Get unique source filenames from ExtractedCSVs (loaded ones are already associated)
-  const availableFileNames = [...new Set(extractedCSVs.map((csv) => csv.source_filename))]
 
   // Handle external trigger to add account with pre-filled source file
   useEffect(() => {

@@ -46,6 +46,24 @@ def get_active_cc_transactions():
     )
 
 
+def get_active_cc_transactions_experimental():
+    """
+    Get CC transactions from the new extraction system (DataSourceArtifact).
+
+    Uses the revamped extraction pipeline (MODELLING-REVAMP.MD) where:
+    - data_source_artifact links transactions to DataSourceArtifact
+    - status='loaded' means the artifact data is loaded into transactions
+    - enabled=True means the artifact is shown in views (not disabled)
+    - hidden=False means the artifact is visible in UI lists
+    """
+    return CreditCardTransaction.objects.filter(
+        data_source_artifact__isnull=False,
+        data_source_artifact__status='loaded',
+        data_source_artifact__enabled=True,
+        data_source_artifact__hidden=False,
+    )
+
+
 def get_credit_card_source_files_with_stats():
     """Get list of credit card statement files with transaction date ranges.
 
@@ -346,6 +364,7 @@ def credit_card_source_file_toggle(request, source_file_id):
     summary="List credit card transactions",
     description="List credit card transactions with filtering and pagination.",
     parameters=[
+        OpenApiParameter(name='source', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description="Data source: 'legacy' (default) or 'experimental' (new extraction system)"),
         OpenApiParameter(name='credit_card', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by credit card ID'),
         OpenApiParameter(name='category', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Filter by category'),
         OpenApiParameter(name='type', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Filter by type: charge or payment'),
@@ -362,7 +381,14 @@ def credit_card_source_file_toggle(request, source_file_id):
 @api_view(['GET'])
 def credit_card_transactions(request):
     """List credit card transactions with filters."""
-    transactions = get_active_cc_transactions().select_related(
+    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
+    source = request.GET.get('source', 'legacy')
+    if source == 'experimental':
+        transactions = get_active_cc_transactions_experimental()
+    else:
+        transactions = get_active_cc_transactions()
+
+    transactions = transactions.select_related(
         'credit_card',
         'source_file',
         'bank_payment_match',
@@ -426,8 +452,12 @@ def credit_card_transactions(request):
             bank_match = t.bank_payment_match
             if bank_match and bank_match.is_active:
                 bank_txn = bank_match.bank_transaction
-                # Skip orphaned transactions (no extracted_csv)
-                if not bank_txn.extracted_csv_id:
+                # Skip orphaned transactions (no source - check both legacy and experimental)
+                if source == 'experimental':
+                    is_orphaned = not bank_txn.data_source_artifact_id
+                else:
+                    is_orphaned = not bank_txn.extracted_csv_id
+                if is_orphaned:
                     raise AttributeError("Orphaned transaction")
                 bank_match_data = {
                     'id': bank_match.id,
@@ -482,13 +512,23 @@ def credit_card_transactions(request):
 @extend_schema(
     summary="Get credit card date range",
     description="Get available years and months with credit card transaction data.",
+    parameters=[
+        OpenApiParameter(name='source', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description="Data source: 'legacy' (default) or 'experimental' (new extraction system)"),
+    ],
     responses={200: OpenApiTypes.OBJECT},
     tags=['Credit Card Transactions'],
 )
 @api_view(['GET'])
 def credit_card_date_range(request):
     """Get available years and months with credit card transaction data."""
-    dates = get_active_cc_transactions().dates('date', 'month', order='ASC')
+    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
+    source = request.GET.get('source', 'legacy')
+    if source == 'experimental':
+        transactions = get_active_cc_transactions_experimental()
+    else:
+        transactions = get_active_cc_transactions()
+
+    dates = transactions.dates('date', 'month', order='ASC')
 
     years = {}
     for d in dates:
@@ -523,6 +563,7 @@ PREDEFINED_CC_CATEGORIES = [
     summary="Get credit card categories",
     description="Get credit card categories with transaction counts and totals.",
     parameters=[
+        OpenApiParameter(name='source', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description="Data source: 'legacy' (default) or 'experimental' (new extraction system)"),
         OpenApiParameter(name='credit_card', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by credit card ID'),
         OpenApiParameter(name='include_all', type=OpenApiTypes.BOOL, location=OpenApiParameter.QUERY, description='Include uncategorized (default: false)'),
     ],
@@ -534,7 +575,12 @@ def credit_card_categories(request):
     """Get credit card categories with counts."""
     from django.db.models import Count
 
-    transactions = get_active_cc_transactions()
+    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
+    source = request.GET.get('source', 'legacy')
+    if source == 'experimental':
+        transactions = get_active_cc_transactions_experimental()
+    else:
+        transactions = get_active_cc_transactions()
 
     # Filter by credit card if specified
     card_id = request.GET.get('credit_card')
@@ -633,6 +679,7 @@ def credit_card_transaction_category(request, transaction_id):
     summary="Get credit card inconsistencies",
     description="Detect inconsistencies: same-card duplicates, cross-card matches, missing descriptions.",
     parameters=[
+        OpenApiParameter(name='source', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description="Data source: 'legacy' (default) or 'experimental' (new extraction system)"),
         OpenApiParameter(name='credit_card', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by credit card ID'),
         OpenApiParameter(name='include_dismissed', type=OpenApiTypes.BOOL, location=OpenApiParameter.QUERY, description='Include dismissed inconsistencies (default: false)'),
     ],
@@ -649,23 +696,31 @@ def credit_card_inconsistencies(request):
     - Missing descriptions: Transactions with empty description field
 
     Query params:
+    - source: Data source ('legacy' or 'experimental')
     - credit_card: Filter by credit card ID
     - include_dismissed: Include dismissed inconsistencies (default: false)
     """
     from django.db.models import Count
     from .models import DismissedCreditCardInconsistency
 
-    # Filter by credit card if specified
+    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
+    source = request.GET.get('source', 'legacy')
     card_id = request.GET.get('credit_card')
     include_dismissed = request.GET.get('include_dismissed', 'false').lower() == 'true'
 
-    # Check cache first
-    cache_key = get_cc_inconsistencies_key(card_id, include_dismissed)
+    # Check cache first (include source in cache key)
+    cache_key = get_cc_inconsistencies_key(card_id, include_dismissed) + f'_{source}'
     cached = cache.get(cache_key)
     if cached is not None:
         return JsonResponse(cached)
 
-    transactions = get_active_cc_transactions().select_related(
+    # Get transactions based on source
+    if source == 'experimental':
+        base_transactions = get_active_cc_transactions_experimental()
+    else:
+        base_transactions = get_active_cc_transactions()
+
+    transactions = base_transactions.select_related(
         'credit_card',
         'source_file',
     )

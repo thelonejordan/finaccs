@@ -108,6 +108,7 @@ function BankAccountInconsistencies() {
       setLoading(true)
       try {
         const result = await fetchBankInconsistencies({
+          source: 'experimental',
           bank_account: selectedBankAccount || undefined,
           type: selectedType === "all" ? undefined : selectedType as 'duplicate' | 'cross_account' | 'balance_gap',
           show_dismissed: showDismissed,
@@ -631,6 +632,7 @@ function CreditCardInconsistencies() {
       setLoading(true)
       try {
         const result = await fetchCreditCardInconsistencies({
+          source: 'experimental',
           credit_card: selectedCreditCard || undefined,
           include_dismissed: showDismissed,
         })

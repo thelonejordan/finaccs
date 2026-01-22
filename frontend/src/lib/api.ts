@@ -240,6 +240,7 @@ export async function fetchCategories(includeAll = false): Promise<{ data: Categ
 }
 
 export async function fetchTransactions(params?: {
+  source?: 'legacy' | 'experimental'
   category?: string
   type?: string
   bank_account?: number
@@ -251,6 +252,7 @@ export async function fetchTransactions(params?: {
   offset?: number
 }): Promise<{ data: Transaction[]; total: number; stats: TransactionStats }> {
   const searchParams = new URLSearchParams()
+  if (params?.source) searchParams.set("source", params.source)
   if (params?.category) searchParams.set("category", params.category)
   if (params?.type) searchParams.set("type", params.type)
   if (params?.bank_account) searchParams.set("bank_account", params.bank_account.toString())
@@ -495,6 +497,7 @@ export interface BankInconsistency {
 }
 
 export async function fetchBankInconsistencies(params?: {
+  source?: 'legacy' | 'experimental'
   bank_account?: number
   type?: 'duplicate' | 'cross_account' | 'balance_gap'
   show_dismissed?: boolean
@@ -510,6 +513,7 @@ export async function fetchBankInconsistencies(params?: {
   }
 }> {
   const searchParams = new URLSearchParams()
+  if (params?.source) searchParams.set("source", params.source)
   if (params?.bank_account) searchParams.set("bank_account", params.bank_account.toString())
   if (params?.type) searchParams.set("type", params.type)
   if (params?.show_dismissed) searchParams.set("show_dismissed", "true")
@@ -550,6 +554,7 @@ export interface DateRange {
 }
 
 export interface DateRangeFilters {
+  source?: 'legacy' | 'experimental'
   bank_account?: number
   category?: string
   type?: string
@@ -559,6 +564,7 @@ export interface DateRangeFilters {
 
 export async function fetchDateRange(filters?: DateRangeFilters): Promise<DateRange> {
   const searchParams = new URLSearchParams()
+  if (filters?.source) searchParams.set('source', filters.source)
   if (filters?.bank_account) searchParams.set('bank_account', filters.bank_account.toString())
   if (filters?.category) searchParams.set('category', filters.category)
   if (filters?.type) searchParams.set('type', filters.type)
@@ -707,6 +713,7 @@ export async function toggleCreditCardSourceFileDisabled(
 }
 
 export async function fetchCreditCardTransactions(params?: {
+  source?: 'legacy' | 'experimental'
   credit_card?: number
   category?: string
   type?: string  // 'charge' | 'payment'
@@ -718,6 +725,7 @@ export async function fetchCreditCardTransactions(params?: {
   offset?: number
 }): Promise<{ data: CreditCardTransaction[]; total: number; stats: CreditCardTransactionStats }> {
   const searchParams = new URLSearchParams()
+  if (params?.source) searchParams.set("source", params.source)
   if (params?.credit_card) searchParams.set("credit_card", params.credit_card.toString())
   if (params?.category) searchParams.set("category", params.category)
   if (params?.type) searchParams.set("type", params.type)
@@ -732,16 +740,24 @@ export async function fetchCreditCardTransactions(params?: {
   return res.json()
 }
 
-export async function fetchCreditCardDateRange(): Promise<DateRange> {
-  const res = await fetch(`${API_BASE}/api/credit-card-date-range/`)
+export async function fetchCreditCardDateRange(params?: {
+  source?: 'legacy' | 'experimental'
+}): Promise<DateRange> {
+  const searchParams = new URLSearchParams()
+  if (params?.source) searchParams.set("source", params.source)
+  const queryString = searchParams.toString()
+  const url = queryString ? `${API_BASE}/api/credit-card-date-range/?${queryString}` : `${API_BASE}/api/credit-card-date-range/`
+  const res = await fetch(url)
   return res.json()
 }
 
 export async function fetchCreditCardCategories(params?: {
+  source?: 'legacy' | 'experimental'
   credit_card?: number
   include_all?: boolean
 }): Promise<{ data: CreditCardCategoryData[] }> {
   const searchParams = new URLSearchParams()
+  if (params?.source) searchParams.set("source", params.source)
   if (params?.credit_card) searchParams.set("credit_card", params.credit_card.toString())
   if (params?.include_all) searchParams.set("include_all", "true")
 
@@ -782,6 +798,7 @@ export interface CreditCardInconsistency {
 }
 
 export async function fetchCreditCardInconsistencies(params?: {
+  source?: 'legacy' | 'experimental'
   credit_card?: number
   include_dismissed?: boolean
 }): Promise<{
@@ -794,6 +811,7 @@ export async function fetchCreditCardInconsistencies(params?: {
   }
 }> {
   const searchParams = new URLSearchParams()
+  if (params?.source) searchParams.set("source", params.source)
   if (params?.credit_card) searchParams.set("credit_card", params.credit_card.toString())
   if (params?.include_dismissed) searchParams.set("include_dismissed", "true")
 
@@ -890,11 +908,13 @@ export async function fetchCCPaymentSuggestions(params?: {
   bank_account?: number
   year?: number
   offset_threshold?: number
+  source?: 'legacy' | 'experimental'
 }): Promise<{ data: CCPaymentSuggestionItem[]; total: number }> {
   const searchParams = new URLSearchParams()
   if (params?.bank_account) searchParams.set("bank_account", params.bank_account.toString())
   if (params?.year) searchParams.set("year", params.year.toString())
   if (params?.offset_threshold !== undefined) searchParams.set("offset_threshold", params.offset_threshold.toString())
+  if (params?.source) searchParams.set("source", params.source)
 
   const queryString = searchParams.toString()
   const url = queryString
@@ -908,11 +928,13 @@ export async function fetchCCPaymentSuggestionsReverse(params?: {
   credit_card?: number
   year?: number
   offset_threshold?: number
+  source?: 'legacy' | 'experimental'
 }): Promise<{ data: CCPaymentSuggestionReverseItem[]; total: number }> {
   const searchParams = new URLSearchParams()
   if (params?.credit_card) searchParams.set("credit_card", params.credit_card.toString())
   if (params?.year) searchParams.set("year", params.year.toString())
   if (params?.offset_threshold !== undefined) searchParams.set("offset_threshold", params.offset_threshold.toString())
+  if (params?.source) searchParams.set("source", params.source)
 
   const queryString = searchParams.toString()
   const url = queryString
@@ -924,9 +946,11 @@ export async function fetchCCPaymentSuggestionsReverse(params?: {
 
 export async function fetchCCPaymentMatches(params?: {
   year?: number
+  source?: 'legacy' | 'experimental'
 }): Promise<{ data: CCPaymentMatch[]; total: number }> {
   const searchParams = new URLSearchParams()
   if (params?.year) searchParams.set("year", params.year.toString())
+  if (params?.source) searchParams.set("source", params.source)
 
   const queryString = searchParams.toString()
   const url = queryString
@@ -942,6 +966,7 @@ export async function createCCPaymentMatch(data: {
   offset: number
   confidence_score: number
   match_reasons: string[]
+  source?: 'legacy' | 'experimental'
 }): Promise<{
   id: number
   bank_transaction_id: number

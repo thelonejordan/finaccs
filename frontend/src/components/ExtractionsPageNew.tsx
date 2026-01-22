@@ -522,8 +522,6 @@ function ExtractionsSection({
     return artifactIds
   }
 
-  const expandedExtraction = extractions.find(e => e.id === expandedExtractionId)
-
   return (
     <div className="bg-card rounded-xl border border-border shadow-sm">
       <div className="px-4 py-3 border-b border-border flex items-center justify-between">

@@ -33,6 +33,7 @@ from .loader import load_artifact, unload_artifact, delete_artifact, reload_arti
 
 from bank_accs.models import BankAccount
 from credit_cards.models import CreditCard
+from project.cache_utils import invalidate_all_inconsistencies
 
 
 # Supported file extensions
@@ -596,6 +597,8 @@ def extraction_detail(request, extraction_id):
         return JsonResponse(_serialize_extraction(extraction))
 
     elif request.method == 'DELETE':
+        # Invalidate inconsistency caches since transactions may be affected
+        invalidate_all_inconsistencies()
         extraction.delete()
         return JsonResponse({'success': True})
 

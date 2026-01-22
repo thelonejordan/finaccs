@@ -137,7 +137,7 @@ export function Dashboard() {
             fetchSummary(),
             fetchMonthly(),
             fetchCategories(),
-            fetchTransactions({ limit: 10 }),
+            fetchTransactions({ source: 'experimental', limit: 10 }),
             fetchTopExpenses(10),
           ])
 

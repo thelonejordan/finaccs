@@ -16,6 +16,7 @@ from django.db import transaction as db_transaction
 
 from .transformers import decompress_data
 from .models import DataSourceArtifact, TransactionLinkSnapshot
+from project.cache_utils import invalidate_bank_inconsistencies, invalidate_cc_inconsistencies
 
 
 def load_artifact(artifact: DataSourceArtifact) -> Tuple[int, Optional[str]]:
@@ -174,9 +175,11 @@ def unload_artifact(artifact: DataSourceArtifact) -> Tuple[int, Optional[str]]:
         if artifact.data_source_target == 'bank_account_transactions':
             from dashboard.models import Transaction
             count, _ = Transaction.objects.filter(data_source_artifact=artifact).delete()
+            invalidate_bank_inconsistencies()
         elif artifact.data_source_target == 'credit_card_transactions':
             from credit_cards.models import CreditCardTransaction
             count, _ = CreditCardTransaction.objects.filter(data_source_artifact=artifact).delete()
+            invalidate_cc_inconsistencies()
         else:
             return 0, f"Unknown data source target: {artifact.data_source_target}"
 

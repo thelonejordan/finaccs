@@ -787,7 +787,7 @@ export function TransactionsModernPage() {
   useEffect(() => {
     async function loadFullDateRange() {
       try {
-        const data = await fetchDateRange({})
+        const data = await fetchDateRange({ source: 'experimental' })
         setFullDateRange(data)
       } catch (error) {
         console.error("Failed to load full date range:", error)
@@ -800,7 +800,7 @@ export function TransactionsModernPage() {
   useEffect(() => {
     async function loadDateRange() {
       try {
-        const filters: DateRangeFilters = {}
+        const filters: DateRangeFilters = { source: 'experimental' }
         if (selectedBankAccount) filters.bank_account = selectedBankAccount
         if (selectedCategory) filters.category = selectedCategory
         if (selectedType) filters.type = selectedType
@@ -941,6 +941,7 @@ export function TransactionsModernPage() {
 
       try {
         const data = await fetchTransactions({
+          source: 'experimental',
           category: selectedCategory || undefined,
           type: selectedType || undefined,
           bank_account: selectedBankAccount || undefined,
