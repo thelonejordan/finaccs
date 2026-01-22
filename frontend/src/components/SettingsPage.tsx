@@ -1847,32 +1847,6 @@ export function SettingsPage() {
                 Manage your bank accounts, credit cards, and data sources
               </p>
             </div>
-            {/* Source Toggle */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Source:</span>
-              <div className="flex rounded-lg border border-border overflow-hidden">
-                <button
-                  onClick={() => setSource('experimental')}
-                  className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                    source === 'experimental'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
-                >
-                  Experimental
-                </button>
-                <button
-                  onClick={() => setSource('legacy')}
-                  className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                    source === 'legacy'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
-                >
-                  Legacy
-                </button>
-              </div>
-            </div>
           </div>
         </header>
 

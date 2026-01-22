@@ -9,14 +9,12 @@ import {
   CheckIcon,
   LayoutDashboardIcon,
   ListIcon,
-  CreditCardIcon,
   SettingsIcon,
   AlertTriangleIcon,
   ScrollTextIcon,
   FocusIcon,
   BookOpenIcon,
   FileArchiveIcon,
-  LandmarkIcon,
   SparklesIcon,
 } from "lucide-react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
@@ -26,9 +24,7 @@ import { useTheme } from "@/lib/theme"
 const NAV_ITEMS = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboardIcon },
   { path: "/transactions", label: "Transactions", icon: ListIcon },
-  { path: "/credit-cards", label: "Credit Cards", icon: CreditCardIcon },
   { path: "/extractions", label: "Extractions", icon: FileArchiveIcon },
-  { path: "/bank-extractions", label: "Bank Extractions", icon: LandmarkIcon },
   { path: "/extractions-new", label: "Extractions v2", icon: SparklesIcon },
   { path: "/console", label: "Console", icon: SettingsIcon },
   { path: "/story", label: "Payments", icon: BookOpenIcon },
@@ -64,7 +60,7 @@ export function Header() {
         <div className="flex items-center justify-between h-14">
           <nav className="flex items-center gap-1 overflow-x-auto scrollbar-hide flex-1 min-w-0 py-1">
             {NAV_ITEMS.map(({ path, label, icon: Icon }) => {
-              const isActive = location.pathname === path
+              const isActive = location.pathname === path || (path === "/transactions" && location.pathname === "/credit-cards")
               return (
                 <Link
                   key={path}

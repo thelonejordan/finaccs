@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react"
-import { useSearchParams } from "react-router-dom"
+import { useSearchParams, useNavigate } from "react-router-dom"
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -22,6 +22,7 @@ import {
   Link2OffIcon,
   XIcon,
   BuildingIcon,
+  LandmarkIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
@@ -429,6 +430,7 @@ function Pagination({
 
 export function CreditCardsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
 
   // Helper to get initial values from URL
   const getInitialYear = () => {
@@ -767,6 +769,37 @@ export function CreditCardsPage() {
       <Header />
 
       <main className="max-w-7xl mx-auto px-4 py-8">
+        {/* Page Header */}
+        <header className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <CreditCardIcon className="h-6 w-6 text-primary" />
+              </div>
+              Transactions
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Credit card transactions
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Domain toggle */}
+            <div className="flex items-center bg-muted rounded-lg p-1">
+              <button
+                onClick={() => navigate('/transactions')}
+                className="px-3 py-1.5 text-sm rounded-md transition-colors text-muted-foreground hover:text-foreground"
+              >
+                Bank Account
+              </button>
+              <button
+                className="px-3 py-1.5 text-sm rounded-md transition-colors bg-background text-foreground shadow-sm"
+              >
+                Credit Card
+              </button>
+            </div>
+          </div>
+        </header>
+
         {/* Year Tabs */}
         <section className="mb-4">
           <div className="flex items-center gap-2 mb-2">
