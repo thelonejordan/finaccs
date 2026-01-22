@@ -31,26 +31,10 @@ from .models import CreditCard, CreditCardSourceFile, CreditCardTransaction, Cre
 
 
 def get_active_cc_transactions():
-    """Get transactions from loaded extractions only.
-
-    Only includes transactions that:
-    - Have a source_artifact (loaded via artifact system)
-    - Come from non-hidden, non-superseded extractions
     """
-    return CreditCardTransaction.objects.filter(
-        source_artifact__isnull=False,
-        pdf_extraction__isnull=False,
-        pdf_extraction__hidden=False,
-    ).exclude(
-        pdf_extraction__status='superseded'
-    )
+    Get CC transactions from the extraction system (DataSourceArtifact).
 
-
-def get_active_cc_transactions_experimental():
-    """
-    Get CC transactions from the new extraction system (DataSourceArtifact).
-
-    Uses the revamped extraction pipeline (MODELLING-REVAMP.MD) where:
+    Uses the extraction pipeline where:
     - data_source_artifact links transactions to DataSourceArtifact
     - status='loaded' means the artifact data is loaded into transactions
     - enabled=True means the artifact is shown in views (not disabled)
@@ -381,14 +365,7 @@ def credit_card_source_file_toggle(request, source_file_id):
 @api_view(['GET'])
 def credit_card_transactions(request):
     """List credit card transactions with filters."""
-    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'experimental')
-    if source == 'experimental':
-        transactions = get_active_cc_transactions_experimental()
-    else:
-        transactions = get_active_cc_transactions()
-
-    transactions = transactions.select_related(
+    transactions = get_active_cc_transactions().select_related(
         'credit_card',
         'source_file',
         'bank_payment_match',
@@ -521,14 +498,7 @@ def credit_card_transactions(request):
 @api_view(['GET'])
 def credit_card_date_range(request):
     """Get available years and months with credit card transaction data."""
-    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'experimental')
-    if source == 'experimental':
-        transactions = get_active_cc_transactions_experimental()
-    else:
-        transactions = get_active_cc_transactions()
-
-    dates = transactions.dates('date', 'month', order='ASC')
+    dates = get_active_cc_transactions().dates('date', 'month', order='ASC')
 
     years = {}
     for d in dates:
@@ -575,12 +545,7 @@ def credit_card_categories(request):
     """Get credit card categories with counts."""
     from django.db.models import Count
 
-    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'experimental')
-    if source == 'experimental':
-        transactions = get_active_cc_transactions_experimental()
-    else:
-        transactions = get_active_cc_transactions()
+    transactions = get_active_cc_transactions()
 
     # Filter by credit card if specified
     card_id = request.GET.get('credit_card')
@@ -703,24 +668,16 @@ def credit_card_inconsistencies(request):
     from django.db.models import Count
     from .models import DismissedCreditCardInconsistency
 
-    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'experimental')
     card_id = request.GET.get('credit_card')
     include_dismissed = request.GET.get('include_dismissed', 'false').lower() == 'true'
 
-    # Check cache first (include source in cache key)
-    cache_key = get_cc_inconsistencies_key(card_id, include_dismissed) + f'_{source}'
+    # Check cache first
+    cache_key = get_cc_inconsistencies_key(card_id, include_dismissed)
     cached = cache.get(cache_key)
     if cached is not None:
         return JsonResponse(cached)
 
-    # Get transactions based on source
-    if source == 'experimental':
-        base_transactions = get_active_cc_transactions_experimental()
-    else:
-        base_transactions = get_active_cc_transactions()
-
-    transactions = base_transactions.select_related(
+    transactions = get_active_cc_transactions().select_related(
         'credit_card',
         'source_file',
     )

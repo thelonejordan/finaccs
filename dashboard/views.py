@@ -37,27 +37,9 @@ EXCLUDED_CATEGORIES = ['Self Transfer']
 
 def get_active_transactions():
     """
-    Get transactions that are active (from enabled, non-hidden ExtractedCSVs).
+    Get transactions from the extraction system (DataSourceArtifact).
 
-    Requires extracted_csv to be set and excludes:
-    - Transactions without an extracted_csv link
-    - Transactions from disabled ExtractedCSVs
-    - Transactions from hidden ExtractedCSVs
-    - Transactions from superseded ExtractedCSVs (archived data)
-    """
-    return Transaction.objects.filter(
-        extracted_csv__isnull=False,
-        extracted_csv__status__in=['extracted', 'transformed', 'loaded'],
-        extracted_csv__disabled=False,
-        extracted_csv__hidden=False,
-    )
-
-
-def get_active_transactions_experimental():
-    """
-    Get transactions from the new extraction system (DataSourceArtifact).
-
-    Uses the revamped extraction pipeline (MODELLING-REVAMP.MD) where:
+    Uses the extraction pipeline where:
     - data_source_artifact links transactions to DataSourceArtifact
     - status='loaded' means the artifact data is loaded into transactions
     - enabled=True means the artifact is shown in views (not disabled)
@@ -79,12 +61,8 @@ def get_active_transactions_experimental():
 )
 @api_view(['GET'])
 def api_summary(request):
-    # Get active transactions (excludes disabled source files and superseded CSVs)
-    source = request.GET.get('source', 'experimental')
-    if source == 'experimental':
-        all_transactions = get_active_transactions_experimental()
-    else:
-        all_transactions = get_active_transactions()
+    # Get active transactions (excludes disabled source files)
+    all_transactions = get_active_transactions()
     from django.db.models import Q
     from bank_accs.models import BankAccount
 
@@ -220,11 +198,7 @@ def api_summary(request):
 @api_view(['GET'])
 def api_monthly(request):
     # Exclude self transfers from monthly breakdown
-    source = request.GET.get('source', 'experimental')
-    if source == 'experimental':
-        transactions = get_active_transactions_experimental().exclude(category__in=EXCLUDED_CATEGORIES)
-    else:
-        transactions = get_active_transactions().exclude(category__in=EXCLUDED_CATEGORIES)
+    transactions = get_active_transactions().exclude(category__in=EXCLUDED_CATEGORIES)
 
     monthly_data = (
         transactions
@@ -266,13 +240,9 @@ def api_monthly(request):
 def api_categories(request):
     # Check if we should include all categories (for filtering purposes)
     include_all = request.GET.get('include_all', 'false').lower() == 'true'
-    source = request.GET.get('source', 'experimental')
 
     # Get active transactions with debits
-    if source == 'experimental':
-        queryset = get_active_transactions_experimental().filter(debit_amount__gt=0)
-    else:
-        queryset = get_active_transactions().filter(debit_amount__gt=0)
+    queryset = get_active_transactions().filter(debit_amount__gt=0)
 
     # Exclude self transfers from category breakdown unless include_all is set
     if not include_all:
@@ -329,14 +299,7 @@ def api_categories(request):
 def api_transactions(request):
     from django.db.models import Q
 
-    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'experimental')
-    if source == 'experimental':
-        transactions = get_active_transactions_experimental()
-    else:
-        transactions = get_active_transactions()
-
-    transactions = transactions.select_related(
+    transactions = get_active_transactions().select_related(
         'bank_account',
         'source_file',
         'linked_transaction',
@@ -546,16 +509,10 @@ def api_transactions(request):
 @api_view(['GET'])
 def api_top_expenses(request):
     limit = int(request.GET.get('limit', 10))
-    source = request.GET.get('source', 'experimental')
 
     # Exclude self transfers from top expenses
-    if source == 'experimental':
-        base_queryset = get_active_transactions_experimental()
-    else:
-        base_queryset = get_active_transactions()
-
     top_expenses = (
-        base_queryset
+        get_active_transactions()
         .select_related('bank_account')
         .filter(debit_amount__gt=0)
         .exclude(category__in=EXCLUDED_CATEGORIES)
@@ -993,12 +950,7 @@ def api_date_range(request):
     """Get available years and months with transaction data, optionally filtered."""
     from django.db.models import Q
 
-    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'experimental')
-    if source == 'experimental':
-        transactions = get_active_transactions_experimental()
-    else:
-        transactions = get_active_transactions()
+    transactions = get_active_transactions()
 
     # Apply filters
     bank_account_id = request.GET.get('bank_account')
@@ -1172,8 +1124,6 @@ def bank_inconsistencies(request):
     from bank_accs.models import BankAccount
     from .models import DismissedBankInconsistency
 
-    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'experimental')
     bank_account_id = request.GET.get('bank_account')
     type_filter = request.GET.get('type')
     show_dismissed = request.GET.get('show_dismissed', 'false').lower() == 'true'
@@ -1188,11 +1138,8 @@ def bank_inconsistencies(request):
 
     inconsistencies = []
 
-    # Get all active transactions based on source
-    if source == 'experimental':
-        base_transactions = get_active_transactions_experimental()
-    else:
-        base_transactions = get_active_transactions()
+    # Get all active transactions
+    base_transactions = get_active_transactions()
 
     all_transactions = list(
         base_transactions
@@ -1570,25 +1517,15 @@ def api_cc_payment_suggestions(request):
     """Get unmatched bank CC payments with match suggestions."""
     from datetime import timedelta
     from credit_cards.models import CreditCardTransaction
-    from credit_cards.views import get_active_cc_transactions_experimental
-
-    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'experimental')
+    from credit_cards.views import get_active_cc_transactions
 
     # Get unlinked bank transactions tagged as "Credit Card Payment"
     # No amount filter - show all tagged transactions so incorrectly tagged ones can be re-categorized
-    if source == 'experimental':
-        bank_txns = get_active_transactions_experimental().filter(
-            category='Credit Card Payment',
-        ).exclude(
-            cc_payment_match__is_active=True
-        ).select_related('bank_account')
-    else:
-        bank_txns = get_active_transactions().filter(
-            category='Credit Card Payment',
-        ).exclude(
-            cc_payment_match__is_active=True
-        ).select_related('bank_account')
+    bank_txns = get_active_transactions().filter(
+        category='Credit Card Payment',
+    ).exclude(
+        cc_payment_match__is_active=True
+    ).select_related('bank_account')
 
     # Apply filters
     bank_account_id = request.GET.get('bank_account')
@@ -1606,7 +1543,7 @@ def api_cc_payment_suggestions(request):
     # Exclude CC transactions that have an active match (is_active=True) pointing to an active bank transaction
     # CC transactions with inactive matches or orphaned bank transactions will appear here
     if source == 'experimental':
-        unmatched_cc_payments = get_active_cc_transactions_experimental().filter(
+        unmatched_cc_payments = get_active_cc_transactions().filter(
             amount__lt=0
         ).exclude(
             bank_payment_match__is_active=True,
@@ -1701,35 +1638,16 @@ def api_cc_payment_suggestions_reverse(request):
     """Get unmatched CC payments with match suggestions from bank transactions."""
     from datetime import timedelta
     from credit_cards.models import CreditCardTransaction
-    from credit_cards.views import get_active_cc_transactions_experimental
-
-    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'experimental')
-
-    # Get the appropriate transaction query functions based on source
-    if source == 'experimental':
-        get_bank_txns = get_active_transactions_experimental
-        get_cc_txns = get_active_cc_transactions_experimental
-    else:
-        get_bank_txns = get_active_transactions
-        get_cc_txns = get_active_cc_transactions
+    from credit_cards.views import get_active_cc_transactions
 
     # Get unlinked CC transactions tagged as "Credit Card Payment"
     # No amount filter - show all tagged transactions so incorrectly tagged ones can be re-categorized
-    if source == 'experimental':
-        cc_payments = get_cc_txns().filter(
-            category='Credit Card Payment',
-        ).exclude(
-            bank_payment_match__is_active=True,
-            bank_payment_match__bank_transaction__data_source_artifact__isnull=False
-        ).select_related('credit_card', 'source_file')
-    else:
-        cc_payments = get_cc_txns().filter(
-            category='Credit Card Payment',
-        ).exclude(
-            bank_payment_match__is_active=True,
-            bank_payment_match__bank_transaction__extracted_csv__isnull=False
-        ).select_related('credit_card', 'source_file')
+    cc_payments = get_active_cc_transactions().filter(
+        category='Credit Card Payment',
+    ).exclude(
+        bank_payment_match__is_active=True,
+        bank_payment_match__bank_transaction__data_source_artifact__isnull=False
+    ).select_related('credit_card', 'source_file')
 
     # Apply filters
     credit_card_id = request.GET.get('credit_card')
@@ -1745,10 +1663,10 @@ def api_cc_payment_suggestions_reverse(request):
 
     # Get unmatched bank transactions (any category, debit > 0)
     # Similar to bank-first mode which doesn't filter CC suggestions by category
-    unmatched_bank_payments = get_bank_txns().filter(
+    unmatched_bank_payments = get_active_transactions().filter(
         debit_amount__gt=0,
     ).exclude(
-        cc_payment_match__credit_card_transaction_id__in=get_cc_txns().values_list('id', flat=True)
+        cc_payment_match__credit_card_transaction_id__in=get_active_cc_transactions().values_list('id', flat=True)
     ).select_related('bank_account')
 
     # Get offset threshold from query params (default 20%)
@@ -1852,18 +1770,11 @@ def api_cc_payment_suggestions_reverse(request):
 def api_cc_payment_matches(request):
     """Get or create credit card payment matches."""
     if request.method == 'GET':
-        from credit_cards.views import get_active_cc_transactions_experimental
-
-        # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-        source = request.GET.get('source', 'experimental')
+        from credit_cards.views import get_active_cc_transactions
 
         # Get IDs of active transactions (bank and CC)
-        if source == 'experimental':
-            active_bank_txn_ids = get_active_transactions_experimental().values_list('id', flat=True)
-            active_cc_txn_ids = get_active_cc_transactions_experimental().values_list('id', flat=True)
-        else:
-            active_bank_txn_ids = get_active_transactions().values_list('id', flat=True)
-            active_cc_txn_ids = get_active_cc_transactions().values_list('id', flat=True)
+        active_bank_txn_ids = get_active_transactions().values_list('id', flat=True)
+        active_cc_txn_ids = get_active_cc_transactions().values_list('id', flat=True)
 
         # Get confirmed matches (only active matches where both bank and CC transactions are from active sources)
         matches = CreditCardPaymentMatch.objects.filter(
@@ -1922,7 +1833,7 @@ def api_cc_payment_matches(request):
 
     # POST - Create a match
     from credit_cards.models import CreditCardTransaction
-    from credit_cards.views import get_active_cc_transactions_experimental
+    from credit_cards.views import get_active_cc_transactions
 
     try:
         body = json.loads(request.body)
@@ -1931,21 +1842,12 @@ def api_cc_payment_matches(request):
 
     bank_txn_id = body.get('bank_transaction_id')
     cc_txn_id = body.get('credit_card_transaction_id')
-    source = body.get('source', 'experimental')
 
     if not bank_txn_id or not cc_txn_id:
         return JsonResponse({'error': 'bank_transaction_id and credit_card_transaction_id are required'}, status=400)
 
-    # Get the appropriate transaction query functions based on source
-    if source == 'experimental':
-        get_bank_txns = get_active_transactions_experimental
-        get_cc_txns = get_active_cc_transactions_experimental
-    else:
-        get_bank_txns = get_active_transactions
-        get_cc_txns = get_active_cc_transactions
-
     try:
-        bank_txn = get_bank_txns().get(id=bank_txn_id)
+        bank_txn = get_active_transactions().get(id=bank_txn_id)
     except Transaction.DoesNotExist:
         return JsonResponse({'error': 'Bank transaction not found or not active'}, status=404)
 
@@ -1957,7 +1859,7 @@ def api_cc_payment_matches(request):
     # Check if already matched
     if hasattr(bank_txn, 'cc_payment_match'):
         # Check if the existing match is to an inactive CC source
-        active_cc_txn_ids = set(get_cc_txns().values_list('id', flat=True))
+        active_cc_txn_ids = set(get_active_cc_transactions().values_list('id', flat=True))
         if bank_txn.cc_payment_match.credit_card_transaction_id in active_cc_txn_ids:
             return JsonResponse({'error': 'Bank transaction is already matched'}, status=400)
         # Delete the orphaned match so we can re-match
@@ -2032,18 +1934,11 @@ def api_cc_payment_match_years(request):
     """Get available years with match counts."""
     from django.db.models import Count
     from django.db.models.functions import ExtractYear
-    from credit_cards.views import get_active_cc_transactions_experimental
-
-    # Choose data source: 'legacy' (default) or 'experimental' (new extraction system)
-    source = request.GET.get('source', 'experimental')
+    from credit_cards.views import get_active_cc_transactions
 
     # Get IDs of active transactions (consistent with matches endpoint)
-    if source == 'experimental':
-        active_bank_txn_ids = get_active_transactions_experimental().values_list('id', flat=True)
-        active_cc_txn_ids = get_active_cc_transactions_experimental().values_list('id', flat=True)
-    else:
-        active_bank_txn_ids = get_active_transactions().values_list('id', flat=True)
-        active_cc_txn_ids = get_active_cc_transactions().values_list('id', flat=True)
+    active_bank_txn_ids = get_active_transactions().values_list('id', flat=True)
+    active_cc_txn_ids = get_active_cc_transactions().values_list('id', flat=True)
 
     # Count matches by year (only active matches where both bank and CC transactions are from active sources)
     year_counts = (
