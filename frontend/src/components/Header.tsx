@@ -20,7 +20,7 @@ const NAV_ITEMS = [
   { path: "/extractions-v2", label: "Extractions v2" },
   { path: "/console", label: "Console" },
   { path: "/payments", label: "Payments" },
-  { path: "/inconsistencies", label: "Inconsistencies" },
+  { path: "/inconsistencies", label: "Anomalies" },
   { path: "/activity", label: "Activity" },
 ]
 

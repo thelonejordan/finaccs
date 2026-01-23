@@ -113,6 +113,7 @@ function SourceFilesSection({
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [isValidating, setIsValidating] = useState(false)
   const [editingExtractorId, setEditingExtractorId] = useState<number | null>(null)
+  const lastSelectedIndexRef = useRef<number | null>(null)
 
   const handleSelectAll = () => {
     if (selectedIds.size === files.length) {
@@ -120,16 +121,32 @@ function SourceFilesSection({
     } else {
       onSelectionChange(new Set(files.map(f => f.id)))
     }
+    lastSelectedIndexRef.current = null
   }
 
-  const handleSelect = (id: number) => {
-    const newSet = new Set(selectedIds)
-    if (newSet.has(id)) {
-      newSet.delete(id)
+  const handleSelect = (id: number, event: React.MouseEvent) => {
+    const currentIndex = files.findIndex(f => f.id === id)
+
+    if (event.shiftKey && lastSelectedIndexRef.current !== null) {
+      // Shift-click: select range
+      const start = Math.min(lastSelectedIndexRef.current, currentIndex)
+      const end = Math.max(lastSelectedIndexRef.current, currentIndex)
+      const newSet = new Set(selectedIds)
+      for (let i = start; i <= end; i++) {
+        newSet.add(files[i].id)
+      }
+      onSelectionChange(newSet)
     } else {
-      newSet.add(id)
+      // Normal click: toggle single item
+      const newSet = new Set(selectedIds)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      onSelectionChange(newSet)
+      lastSelectedIndexRef.current = currentIndex
     }
-    onSelectionChange(newSet)
   }
 
   const handleExtract = (file: SourceFile) => {
@@ -246,7 +263,8 @@ function SourceFilesSection({
                     <input
                       type="checkbox"
                       checked={selectedIds.has(file.id)}
-                      onChange={() => handleSelect(file.id)}
+                      onClick={(e) => handleSelect(file.id, e)}
+                      onChange={() => {}}
                       className="rounded border-border"
                     />
                   </td>
@@ -416,6 +434,7 @@ function ExtractionsSection({
     total: number
   } | null>(null)
   const [isLoadingPreview, setIsLoadingPreview] = useState(false)
+  const lastSelectedIndexRef = useRef<number | null>(null)
 
   const handleSelectAll = () => {
     if (selectedIds.size === extractions.length) {
@@ -423,16 +442,32 @@ function ExtractionsSection({
     } else {
       onSelectionChange(new Set(extractions.map(e => e.id)))
     }
+    lastSelectedIndexRef.current = null
   }
 
-  const handleSelect = (id: number) => {
-    const newSet = new Set(selectedIds)
-    if (newSet.has(id)) {
-      newSet.delete(id)
+  const handleSelect = (id: number, event: React.MouseEvent) => {
+    const currentIndex = extractions.findIndex(e => e.id === id)
+
+    if (event.shiftKey && lastSelectedIndexRef.current !== null) {
+      // Shift-click: select range
+      const start = Math.min(lastSelectedIndexRef.current, currentIndex)
+      const end = Math.max(lastSelectedIndexRef.current, currentIndex)
+      const newSet = new Set(selectedIds)
+      for (let i = start; i <= end; i++) {
+        newSet.add(extractions[i].id)
+      }
+      onSelectionChange(newSet)
     } else {
-      newSet.add(id)
+      // Normal click: toggle single item
+      const newSet = new Set(selectedIds)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      onSelectionChange(newSet)
+      lastSelectedIndexRef.current = currentIndex
     }
-    onSelectionChange(newSet)
   }
 
   const handleRowClick = (extraction: Extraction, e: React.MouseEvent) => {
@@ -602,7 +637,8 @@ function ExtractionsSection({
                       <input
                         type="checkbox"
                         checked={selectedIds.has(extraction.id)}
-                        onChange={() => handleSelect(extraction.id)}
+                        onClick={(e) => handleSelect(extraction.id, e)}
+                        onChange={() => {}}
                         className="rounded border-border"
                       />
                     </td>
@@ -858,6 +894,7 @@ function DataSourcesSection({
   } | null>(null)
   const [isLoadingPreview, setIsLoadingPreview] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
+  const lastSelectedIndexRef = useRef<number | null>(null)
 
   // Click outside to close preview
   useEffect(() => {
@@ -878,16 +915,32 @@ function DataSourcesSection({
     } else {
       onSelectionChange(new Set(dataSources.map(ds => ds.id)))
     }
+    lastSelectedIndexRef.current = null
   }
 
-  const handleSelect = (id: number) => {
-    const newSet = new Set(selectedIds)
-    if (newSet.has(id)) {
-      newSet.delete(id)
+  const handleSelect = (id: number, event: React.MouseEvent) => {
+    const currentIndex = dataSources.findIndex(ds => ds.id === id)
+
+    if (event.shiftKey && lastSelectedIndexRef.current !== null) {
+      // Shift-click: select range
+      const start = Math.min(lastSelectedIndexRef.current, currentIndex)
+      const end = Math.max(lastSelectedIndexRef.current, currentIndex)
+      const newSet = new Set(selectedIds)
+      for (let i = start; i <= end; i++) {
+        newSet.add(dataSources[i].id)
+      }
+      onSelectionChange(newSet)
     } else {
-      newSet.add(id)
+      // Normal click: toggle single item
+      const newSet = new Set(selectedIds)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      onSelectionChange(newSet)
+      lastSelectedIndexRef.current = currentIndex
     }
-    onSelectionChange(newSet)
   }
 
   const handlePreviewArtifact = async (artifactId: string) => {
@@ -1014,8 +1067,11 @@ function DataSourcesSection({
                   <input
                     type="checkbox"
                     checked={selectedIds.has(ds.id)}
-                    onChange={() => handleSelect(ds.id)}
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleSelect(ds.id, e)
+                    }}
+                    onChange={() => {}}
                     className="rounded border-border"
                   />
 
@@ -1215,7 +1271,7 @@ export function ExtractionsV2Page() {
   }>({ open: false, title: '', description: '', action: () => {} })
 
   // Bulk action dialogs
-  const [bulkPasswordDialog, setBulkPasswordDialog] = useState<{ open: boolean; password: string }>({ open: false, password: '' })
+  const [bulkPasswordDialog, setBulkPasswordDialog] = useState<{ open: boolean; password: string; isLoading: boolean }>({ open: false, password: '', isLoading: false })
   const [bulkExtractorDialog, setBulkExtractorDialog] = useState<{ open: boolean; extractor: string }>({ open: false, extractor: '' })
   const [bulkDomainDialog, setBulkDomainDialog] = useState<{ open: boolean; domain: 'bank_account' | 'credit_card' }>({ open: false, domain: 'bank_account' })
   const [isBulkExtracting, setIsBulkExtracting] = useState(false)
@@ -1303,7 +1359,7 @@ export function ExtractionsV2Page() {
       await loadData()
       setSelectedSourceFiles(new Set())
     } else if (action === 'set_password') {
-      setBulkPasswordDialog({ open: true, password: '' })
+      setBulkPasswordDialog({ open: true, password: '', isLoading: false })
     } else if (action === 'set_extractor') {
       setBulkExtractorDialog({ open: true, extractor: '' })
     } else if (action === 'set_domain') {
@@ -1366,10 +1422,55 @@ export function ExtractionsV2Page() {
 
   const handleBulkPasswordSubmit = async () => {
     const ids = Array.from(selectedSourceFiles)
-    await bulkUpdateSourceFiles(ids, 'set_password', bulkPasswordDialog.password)
+    const selectedFiles = sourceFiles.filter(f => selectedSourceFiles.has(f.id))
+    const password = bulkPasswordDialog.password
+
+    // If clearing password, just update all
+    if (!password) {
+      await bulkUpdateSourceFiles(ids, 'set_password', '')
+      await loadData()
+      setSelectedSourceFiles(new Set())
+      setBulkPasswordDialog({ open: false, password: '', isLoading: false })
+      return
+    }
+
+    setBulkPasswordDialog(prev => ({ ...prev, isLoading: true }))
+
+    // Validate password for each file before saving
+    let successCount = 0
+    let skipCount = 0
+    let failCount = 0
+
+    for (const file of selectedFiles) {
+      try {
+        const result = await validatePassword(file.source_file_id, password)
+        if (result.valid) {
+          await updateSourceFile(file.source_file_id, { password })
+          successCount++
+        } else if (result.error?.includes('not password protected') || result.error?.includes('not encrypted')) {
+          // File doesn't need a password
+          skipCount++
+        } else {
+          // Wrong password
+          failCount++
+        }
+      } catch {
+        failCount++
+      }
+    }
+
     await loadData()
     setSelectedSourceFiles(new Set())
-    setBulkPasswordDialog({ open: false, password: '' })
+    setBulkPasswordDialog({ open: false, password: '', isLoading: false })
+
+    // Show summary
+    const messages = []
+    if (successCount > 0) messages.push(`${successCount} file(s) updated`)
+    if (skipCount > 0) messages.push(`${skipCount} file(s) skipped (not password protected)`)
+    if (failCount > 0) messages.push(`${failCount} file(s) failed (wrong password)`)
+    if (messages.length > 0) {
+      alert(messages.join('\n'))
+    }
   }
 
   const handleBulkExtractorSubmit = async () => {
@@ -1672,7 +1773,7 @@ export function ExtractionsV2Page() {
       {/* Bulk Password Dialog */}
       {bulkPasswordDialog.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setBulkPasswordDialog({ open: false, password: '' })} />
+          <div className="fixed inset-0 bg-black/50" onClick={() => !bulkPasswordDialog.isLoading && setBulkPasswordDialog({ open: false, password: '', isLoading: false })} />
           <div className="relative bg-card rounded-xl border border-border shadow-sm-xl p-6 w-full max-w-md mx-4">
             <h3 className="text-lg font-semibold text-foreground mb-4">
               Set Password for {selectedSourceFiles.size} File(s)
@@ -1685,24 +1786,32 @@ export function ExtractionsV2Page() {
                 type="password"
                 value={bulkPasswordDialog.password}
                 onChange={(e) => setBulkPasswordDialog(prev => ({ ...prev, password: e.target.value }))}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-blue-500"
+                disabled={bulkPasswordDialog.isLoading}
+                className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 placeholder="Enter password for selected files"
                 autoFocus
               />
-              <p className="mt-1 text-xs text-muted-foreground">Leave empty to clear password</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {bulkPasswordDialog.isLoading
+                  ? 'Validating password for each file...'
+                  : 'Leave empty to clear password. Only files that need the password will be updated.'}
+              </p>
             </div>
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => setBulkPasswordDialog({ open: false, password: '' })}
-                className="px-4 py-2 text-sm font-medium text-foreground hover:bg-accent rounded-md"
+                onClick={() => setBulkPasswordDialog({ open: false, password: '', isLoading: false })}
+                disabled={bulkPasswordDialog.isLoading}
+                className="px-4 py-2 text-sm font-medium text-foreground hover:bg-accent rounded-md disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleBulkPasswordSubmit}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+                disabled={bulkPasswordDialog.isLoading}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50 inline-flex items-center gap-2"
               >
-                Apply to {selectedSourceFiles.size} File(s)
+                {bulkPasswordDialog.isLoading && <Loader2Icon className="h-4 w-4 animate-spin" />}
+                {bulkPasswordDialog.isLoading ? 'Validating...' : `Apply to ${selectedSourceFiles.size} File(s)`}
               </button>
             </div>
           </div>
