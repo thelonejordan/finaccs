@@ -29,7 +29,7 @@ except ImportError:
     OpenApiTypes = type('OpenApiTypes', (), {'OBJECT': object, 'INT': int, 'STR': str, 'BOOL': bool})()
 
 from bank_accounts.models import BankTransaction, TransactionLog, AccountLog, FileLoadLog, DismissedBankInconsistency
-from credit_cards.models import CreditCardPaymentMatch
+from credit_cards.models import CreditCardPaymentMatch, CreditCardTransaction
 from credit_cards.views import get_active_cc_transactions
 
 # Categories to exclude from income/expense calculations (internal transfers)
@@ -1827,8 +1827,8 @@ def api_cc_payment_matches(request):
         return JsonResponse({'error': 'Bank transaction not found or not active'}, status=404)
 
     try:
-        cc_txn = CreditCardBankTransaction.objects.get(id=cc_txn_id)
-    except CreditCardBankTransaction.DoesNotExist:
+        cc_txn = CreditCardTransaction.objects.get(id=cc_txn_id)
+    except CreditCardTransaction.DoesNotExist:
         return JsonResponse({'error': 'Credit card transaction not found'}, status=404)
 
     # Check if already matched
