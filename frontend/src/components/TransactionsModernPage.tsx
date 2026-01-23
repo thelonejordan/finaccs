@@ -34,6 +34,7 @@ import {
   fetchCategories,
   fetchBankAccounts,
   fetchDateRange,
+  fetchDataSources,
   updateTransactionCategory,
   fetchPotentialLinks,
   linkTransaction,
@@ -42,7 +43,7 @@ import {
   type Transaction,
   type CategoryData,
   type BankAccount,
-  type ExtractedCSV,
+  type DataSourceArtifact,
   type TransactionStats,
   type PotentialLinkTransaction,
   type DateRange,
@@ -655,7 +656,11 @@ export function TransactionsModernPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [categories, setCategories] = useState<CategoryData[]>([])
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
-  const [extractedCSVs, setExtractedCSVs] = useState<ExtractedCSV[]>([])
+  const [dataSources, setDataSources] = useState<DataSourceArtifact[]>([])
+  const [selectedDataSource, setSelectedDataSource] = useState<number | null>(() => {
+    const val = searchParams.get('data_source')
+    return val ? parseInt(val, 10) : null
+  })
   const [stats, setStats] = useState<TransactionStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [total, setTotal] = useState(0)
@@ -675,10 +680,6 @@ export function TransactionsModernPage() {
   const [selectedType, setSelectedType] = useState<string>(searchParams.get('type') || "")
   const [selectedBankAccount, setSelectedBankAccount] = useState<number | null>(() => {
     const val = searchParams.get('bank_account')
-    return val ? parseInt(val, 10) : null
-  })
-  const [selectedSourceFile, setSelectedSourceFile] = useState<number | null>(() => {
-    const val = searchParams.get('source_file')
     return val ? parseInt(val, 10) : null
   })
   const [page, setPageState] = useState(() => {
@@ -771,10 +772,10 @@ export function TransactionsModernPage() {
       category: selectedCategory || null,
       type: selectedType || null,
       bank_account: selectedBankAccount,
-      source_file: selectedSourceFile,
+      data_source: selectedDataSource,
       page: page,
     })
-  }, [selectedYear, selectedMonth, debouncedSearch, selectedCategory, selectedType, selectedBankAccount, selectedSourceFile, page, updateURL])
+  }, [selectedYear, selectedMonth, debouncedSearch, selectedCategory, selectedType, selectedBankAccount, selectedDataSource, page, updateURL])
 
   // Debounce search
   useEffect(() => {
@@ -806,7 +807,6 @@ export function TransactionsModernPage() {
         if (selectedBankAccount) filters.bank_account = selectedBankAccount
         if (selectedCategory) filters.category = selectedCategory
         if (selectedType) filters.type = selectedType
-        if (selectedSourceFile) filters.source_file = selectedSourceFile
         if (debouncedSearch) filters.search = debouncedSearch
 
         const data = await fetchDateRange(filters)
@@ -848,7 +848,7 @@ export function TransactionsModernPage() {
       }
     }
     loadDateRange()
-  }, [selectedBankAccount, selectedCategory, selectedType, selectedSourceFile, debouncedSearch])
+  }, [selectedBankAccount, selectedCategory, selectedType, debouncedSearch])
 
   // Scroll pagination slider to show current page
   useEffect(() => {
@@ -920,12 +920,27 @@ export function TransactionsModernPage() {
       try {
         const data = await fetchBankAccounts()
         setBankAccounts(data.accounts)
-        setExtractedCSVs(data.extracted_csvs)
       } catch (error) {
         console.error("Failed to load bank accounts:", error)
       }
     }
     loadBankAccounts()
+  }, [])
+
+  useEffect(() => {
+    async function loadDataSources() {
+      try {
+        // Only fetch loaded bank account data sources
+        const data = await fetchDataSources({
+          domain: 'bank_account_transactions',
+          status: 'loaded',
+        })
+        setDataSources(data.data)
+      } catch (error) {
+        console.error("Failed to load data sources:", error)
+      }
+    }
+    loadDataSources()
   }, [])
 
   useEffect(() => {
@@ -946,7 +961,7 @@ export function TransactionsModernPage() {
           category: selectedCategory || undefined,
           type: selectedType || undefined,
           bank_account: selectedBankAccount || undefined,
-          source_file: selectedSourceFile || undefined,
+          data_source_artifact: selectedDataSource || undefined,
           year: selectedYear,
           month: selectedMonth,
           search: debouncedSearch || undefined,
@@ -992,12 +1007,7 @@ export function TransactionsModernPage() {
       }
     }
     loadTransactions()
-  }, [selectedCategory, selectedType, selectedBankAccount, selectedSourceFile, selectedYear, selectedMonth, debouncedSearch, page, refreshKey])
-
-  // Filter extracted CSVs by selected bank account
-  const filteredExtractedCSVs = selectedBankAccount
-    ? extractedCSVs.filter((csv) => csv.bank_account_id === selectedBankAccount)
-    : extractedCSVs
+  }, [selectedCategory, selectedType, selectedBankAccount, selectedDataSource, selectedYear, selectedMonth, debouncedSearch, page, refreshKey])
 
   const totalPages = Math.ceil(total / pageSize)
 
@@ -1252,10 +1262,11 @@ export function TransactionsModernPage() {
                   onValueChange={(value) => {
                     const newBankAccount = value === "all" ? null : parseInt(value, 10)
                     setSelectedBankAccount(newBankAccount)
-                    if (selectedSourceFile && newBankAccount) {
-                      const csv = extractedCSVs.find((csv) => csv.source_file_id === selectedSourceFile)
-                      if (csv && csv.bank_account_id !== newBankAccount) {
-                        setSelectedSourceFile(null)
+                    // Clear data source filter if it doesn't belong to the new bank account
+                    if (selectedDataSource && newBankAccount) {
+                      const ds = dataSources.find(d => d.id === selectedDataSource)
+                      if (ds && ds.bank_account_id !== newBankAccount) {
+                        setSelectedDataSource(null)
                       }
                     }
                     setPage(1)
@@ -1306,52 +1317,58 @@ export function TransactionsModernPage() {
               )}
 
               {/* Source File Filter */}
-              {filteredExtractedCSVs.length > 0 && (
-                <Select.Root
-                  value={selectedSourceFile?.toString() || "all"}
-                  onValueChange={(value) => {
-                    setSelectedSourceFile(value === "all" ? null : parseInt(value, 10))
-                    setPage(1)
-                  }}
-                >
-                  <Select.Trigger className="inline-flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-w-[160px]">
-                    <div className="flex items-center gap-2">
-                      <FileIcon className="h-4 w-4 text-muted-foreground" />
-                      <Select.Value placeholder="All Sources" />
-                    </div>
-                    <Select.Icon>
-                      <ChevronDownIcon className="h-4 w-4 text-muted-foreground" />
-                    </Select.Icon>
-                  </Select.Trigger>
-                  <Select.Portal>
-                    <Select.Content className="bg-card rounded-lg shadow-lg border border-border z-50 overflow-hidden" position="popper" sideOffset={4}>
-                      <Select.Viewport className="p-1 max-h-60 overflow-y-auto">
-                        <Select.Item
-                          value="all"
-                          className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
-                        >
-                          <Select.ItemText>All Sources</Select.ItemText>
-                          <Select.ItemIndicator>
-                            <CheckIcon className="h-4 w-4" />
-                          </Select.ItemIndicator>
-                        </Select.Item>
-                        {filteredExtractedCSVs.map((csv) => (
+              {(() => {
+                // Filter data sources by selected bank account
+                const filteredDataSources = selectedBankAccount
+                  ? dataSources.filter(ds => ds.bank_account_id === selectedBankAccount)
+                  : dataSources
+                return filteredDataSources.length > 0 && (
+                  <Select.Root
+                    value={selectedDataSource?.toString() || "all"}
+                    onValueChange={(value) => {
+                      setSelectedDataSource(value === "all" ? null : parseInt(value, 10))
+                      setPage(1)
+                    }}
+                  >
+                    <Select.Trigger className="inline-flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-w-[160px]">
+                      <div className="flex items-center gap-2">
+                        <FileIcon className="h-4 w-4 text-muted-foreground" />
+                        <Select.Value placeholder="All Sources" />
+                      </div>
+                      <Select.Icon>
+                        <ChevronDownIcon className="h-4 w-4 text-muted-foreground" />
+                      </Select.Icon>
+                    </Select.Trigger>
+                    <Select.Portal>
+                      <Select.Content className="bg-card rounded-lg shadow-lg border border-border z-50 overflow-hidden" position="popper" sideOffset={4}>
+                        <Select.Viewport className="p-1 max-h-60 overflow-y-auto">
                           <Select.Item
-                            key={csv.id}
-                            value={csv.source_file_id.toString()}
+                            value="all"
                             className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
                           >
-                            <Select.ItemText>{csv.source_filename}</Select.ItemText>
+                            <Select.ItemText>All Sources</Select.ItemText>
                             <Select.ItemIndicator>
                               <CheckIcon className="h-4 w-4" />
                             </Select.ItemIndicator>
                           </Select.Item>
-                        ))}
-                      </Select.Viewport>
-                    </Select.Content>
-                  </Select.Portal>
-                </Select.Root>
-              )}
+                          {filteredDataSources.map((ds) => (
+                            <Select.Item
+                              key={ds.id}
+                              value={ds.id.toString()}
+                              className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
+                            >
+                              <Select.ItemText>{ds.source_filename}</Select.ItemText>
+                              <Select.ItemIndicator>
+                                <CheckIcon className="h-4 w-4" />
+                              </Select.ItemIndicator>
+                            </Select.Item>
+                          ))}
+                        </Select.Viewport>
+                      </Select.Content>
+                    </Select.Portal>
+                  </Select.Root>
+                )
+              })()}
             </div>
           </div>
         </section>

@@ -17,28 +17,6 @@ class Transaction(models.Model):
         blank=True,
         related_name='transactions'
     )
-    source_file = models.ForeignKey(
-        'bank_accs.SourceFile',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='transactions'
-    )
-    extracted_csv = models.ForeignKey(
-        'bank_accs.ExtractedCSV',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='transactions'
-    )
-    source_artifact = models.ForeignKey(
-        'bank_accs.BankExtractionArtifact',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='transactions'
-    )
-    # New unified extraction system
     data_source_artifact = models.ForeignKey(
         'extractions.DataSourceArtifact',
         on_delete=models.SET_NULL,
@@ -104,8 +82,8 @@ class FileLoadLog(models.Model):
         ('none', 'No Link'),
     ]
 
-    source_file = models.ForeignKey(
-        'bank_accs.SourceFile',
+    data_source_artifact = models.ForeignKey(
+        'extractions.DataSourceArtifact',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -127,8 +105,8 @@ class FileLoadLog(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        filename = self.source_file.filename if self.source_file else 'Unknown'
-        return f"{self.created_at} - Loaded {self.transaction_count} from {filename}"
+        artifact_id = self.data_source_artifact.artifact_id if self.data_source_artifact else 'Unknown'
+        return f"{self.created_at} - Loaded {self.transaction_count} from {artifact_id}"
 
 
 class AccountLog(models.Model):
@@ -137,8 +115,6 @@ class AccountLog(models.Model):
         ('CREATE', 'Account Created'),
         ('UPDATE', 'Account Updated'),
         ('DELETE', 'Account Deleted'),
-        ('LINK_SOURCE', 'Source File Linked'),
-        ('UNLINK_SOURCE', 'Source File Unlinked'),
     ]
 
     bank_account = models.ForeignKey(
@@ -151,12 +127,6 @@ class AccountLog(models.Model):
     action = models.CharField(max_length=20, choices=ACTION_CHOICES)
     old_value = models.CharField(max_length=255, blank=True)
     new_value = models.CharField(max_length=255, blank=True)
-    source_file = models.ForeignKey(
-        'bank_accs.SourceFile',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

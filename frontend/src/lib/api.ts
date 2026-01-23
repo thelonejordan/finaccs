@@ -248,7 +248,7 @@ export async function fetchTransactions(params?: {
   category?: string
   type?: string
   bank_account?: number
-  source_file?: number
+  data_source_artifact?: number
   year?: number
   month?: number
   search?: string
@@ -259,7 +259,7 @@ export async function fetchTransactions(params?: {
   if (params?.category) searchParams.set("category", params.category)
   if (params?.type) searchParams.set("type", params.type)
   if (params?.bank_account) searchParams.set("bank_account", params.bank_account.toString())
-  if (params?.source_file) searchParams.set("source_file", params.source_file.toString())
+  if (params?.data_source_artifact) searchParams.set("data_source_artifact", params.data_source_artifact.toString())
   if (params?.year) searchParams.set("year", params.year.toString())
   if (params?.month) searchParams.set("month", params.month.toString())
   if (params?.search) searchParams.set("search", params.search)
@@ -281,7 +281,6 @@ export async function fetchTopExpenses(params?: {
 
 export async function fetchBankAccounts(): Promise<{
   accounts: BankAccount[]
-  extracted_csvs: ExtractedCSV[]
 }> {
   const res = await fetch(`${API_BASE}/api/accounts/`)
   return res.json()

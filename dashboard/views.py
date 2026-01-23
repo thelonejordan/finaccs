@@ -34,6 +34,27 @@ from credit_cards.views import get_active_cc_transactions
 # Categories to exclude from income/expense calculations (internal transfers)
 EXCLUDED_CATEGORIES = ['Self Transfer']
 
+# Predefined expense categories for consistent display
+PREDEFINED_CATEGORIES = [
+    'Food & Dining',
+    'Transport',
+    'Shopping',
+    'Entertainment',
+    'Utilities',
+    'Rent',
+    'Medical',
+    'Travel',
+    'Education',
+    'Groceries',
+    'Personal Care',
+    'Credit Card Payment',
+    'Investment',
+    'Insurance',
+    'Self Transfer',
+    'Salary/Income',
+    'Other',
+]
+
 
 def get_active_transactions():
     """
@@ -103,7 +124,7 @@ def api_summary(request):
     current_balance = 0
 
     for account in accounts:
-        account_txns = list(all_transactions.filter(bank_account=account).order_by('date', 'source_file__date_range_start', 'row_number'))
+        account_txns = list(all_transactions.filter(bank_account=account).order_by('date', 'row_number'))
         if not account_txns:
             continue
 
@@ -166,7 +187,7 @@ def api_summary(request):
     # Fallback if no accounts
     if not accounts.exists():
         latest = all_transactions.first()
-        earliest = all_transactions.order_by('date', 'source_file__date_range_start', 'row_number').first()
+        earliest = all_transactions.order_by('date', 'row_number').first()
         current_balance = float(latest.closing_balance) if latest else 0
         if earliest:
             starting_balance = float(earliest.closing_balance) - float(earliest.credit_amount) + float(earliest.debit_amount)
@@ -261,9 +282,8 @@ def api_categories(request):
         cat_name = item['category'] or 'Other'
         existing_categories[cat_name] = float(item['total'] or 0)
 
-    # Import predefined categories and add any missing ones
-    from dashboard.management.commands.load_transactions import CATEGORY_PATTERNS
-    for cat_name in CATEGORY_PATTERNS.keys():
+    # Add predefined categories with zero amount if not present
+    for cat_name in PREDEFINED_CATEGORIES:
         if cat_name not in existing_categories:
             existing_categories[cat_name] = 0
 
@@ -281,11 +301,9 @@ def api_categories(request):
     summary="List transactions",
     description="List bank transactions with filtering and pagination.",
     parameters=[
-        OpenApiParameter(name='source', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description="Data source: 'legacy' (default) or 'experimental' (new extraction system)"),
         OpenApiParameter(name='bank_account', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by bank account ID'),
         OpenApiParameter(name='category', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Filter by category'),
         OpenApiParameter(name='type', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Filter by type: credit or debit'),
-        OpenApiParameter(name='source_file', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by source file ID'),
         OpenApiParameter(name='year', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by year'),
         OpenApiParameter(name='month', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by month (1-12)'),
         OpenApiParameter(name='search', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Search narration, category, or reference'),
@@ -298,10 +316,10 @@ def api_categories(request):
 @api_view(['GET'])
 def api_transactions(request):
     from django.db.models import Q
+    from itertools import groupby
 
     transactions = get_active_transactions().select_related(
         'bank_account',
-        'source_file',
         'linked_transaction',
         'linked_transaction__bank_account',
         'cc_payment_match',
@@ -318,6 +336,11 @@ def api_transactions(request):
     if bank_account_id:
         transactions = transactions.filter(bank_account_id=bank_account_id)
 
+    # Filter by data source artifact
+    data_source_artifact_id = request.GET.get('data_source_artifact')
+    if data_source_artifact_id:
+        transactions = transactions.filter(data_source_artifact_id=data_source_artifact_id)
+
     category = request.GET.get('category')
     if category:
         transactions = transactions.filter(category=category)
@@ -327,11 +350,6 @@ def api_transactions(request):
         transactions = transactions.filter(credit_amount__gt=0)
     elif transaction_type == 'debit':
         transactions = transactions.filter(debit_amount__gt=0)
-
-    # Filter by source file
-    source_file_id = request.GET.get('source_file')
-    if source_file_id:
-        transactions = transactions.filter(source_file_id=source_file_id)
 
     # Filter by year and month
     year = request.GET.get('year')
@@ -359,49 +377,44 @@ def api_transactions(request):
 
     total = transactions.count()
 
-    # Custom sorting for experimental mode (overlapping data sources)
+    # Custom sorting for overlapping data sources
     # For descending display: within same date, smaller row numbers first (newer data sources),
     # larger row numbers last (older data sources)
-    if source == 'experimental':
-        from itertools import groupby
+    # Fetch all transactions for custom sorting, then paginate
+    all_txns = list(transactions.order_by('-date', 'row_number'))
 
-        # Fetch all transactions for custom sorting, then paginate
-        all_txns = list(transactions.order_by('-date', 'row_number'))
+    # Sort by date descending first
+    all_txns.sort(key=lambda t: t.date, reverse=True)
 
-        # Sort by date descending first
-        all_txns.sort(key=lambda t: t.date, reverse=True)
+    sorted_result = []
+    # Group by date
+    for date, date_group in groupby(all_txns, key=lambda t: t.date):
+        date_txns = list(date_group)
 
-        sorted_result = []
-        # Group by date
-        for date, date_group in groupby(all_txns, key=lambda t: t.date):
-            date_txns = list(date_group)
+        # Group by data_source_artifact_id
+        artifact_groups = {}
+        for txn in date_txns:
+            aid = txn.data_source_artifact_id
+            if aid not in artifact_groups:
+                artifact_groups[aid] = []
+            artifact_groups[aid].append(txn)
 
-            # Group by data_source_artifact_id
-            artifact_groups = {}
-            for txn in date_txns:
-                aid = txn.data_source_artifact_id
-                if aid not in artifact_groups:
-                    artifact_groups[aid] = []
-                artifact_groups[aid].append(txn)
+        # Sort each artifact group by row_number descending (for display)
+        for aid in artifact_groups:
+            artifact_groups[aid].sort(key=lambda t: t.row_number, reverse=True)
 
-            # Sort each artifact group by row_number descending (for display)
-            for aid in artifact_groups:
-                artifact_groups[aid].sort(key=lambda t: t.row_number, reverse=True)
+        # Sort artifact groups by min row_number ascending (smaller/newer first)
+        sorted_groups = sorted(
+            artifact_groups.values(),
+            key=lambda g: min(t.row_number for t in g),
+            reverse=False
+        )
 
-            # Sort artifact groups by min row_number ascending (smaller/newer first)
-            sorted_groups = sorted(
-                artifact_groups.values(),
-                key=lambda g: min(t.row_number for t in g),
-                reverse=False
-            )
+        # Flatten
+        for group in sorted_groups:
+            sorted_result.extend(group)
 
-            # Flatten
-            for group in sorted_groups:
-                sorted_result.extend(group)
-
-        transactions_page = sorted_result[offset:offset + limit]
-    else:
-        transactions_page = transactions[offset:offset + limit]
+    transactions_page = sorted_result[offset:offset + limit]
 
     data = []
     for t in transactions_page:
@@ -448,15 +461,9 @@ def api_transactions(request):
         except CreditCardPaymentMatch.DoesNotExist:
             pass
 
-        # Get source file info - from legacy source_file or from data_source_artifact
+        # Get source file info from data_source_artifact
         source_file_data = None
-        if t.source_file:
-            source_file_data = {
-                'id': t.source_file.id,
-                'filename': t.source_file.filename,
-            }
-        elif t.data_source_artifact:
-            # For experimental: get filename from the extraction's source file
+        if t.data_source_artifact:
             dsa = t.data_source_artifact
             if hasattr(dsa, 'source_artifact') and dsa.source_artifact:
                 ext = dsa.source_artifact.extraction
@@ -829,10 +836,11 @@ def api_transaction_logs(request):
     # File load logs (initial loads)
     if log_type in ('all', 'file_load') and (not action or action == 'LOAD'):
         file_logs = FileLoadLog.objects.select_related(
-            'source_file',
+            'data_source_artifact',
             'bank_account'
         )
         for log in file_logs:
+            artifact_id = log.data_source_artifact.artifact_id if log.data_source_artifact else None
             all_logs.append({
                 'id': f'file_{log.id}',
                 'log_type': 'file_load',
@@ -846,12 +854,12 @@ def api_transaction_logs(request):
                     'id': log.bank_account.id,
                     'nickname': log.bank_account.nickname,
                 } if log.bank_account else None,
-                'source_file': log.source_file.filename if log.source_file else None,
+                'source_file': artifact_id,
                 'file_load': {
                     'transaction_count': log.transaction_count,
                     'category_summary': log.category_summary,
                     'file_hash': log.file_hash,
-                    'source_file_id': log.source_file.id if log.source_file else None,
+                    'artifact_id': artifact_id,
                     'link_source': log.link_source,
                     'link_source_display': log.get_link_source_display(),
                 },
@@ -887,12 +895,9 @@ def api_transaction_logs(request):
             })
 
     # Account logs
-    if log_type in ('all', 'account') and (not action or action in ['CREATE', 'UPDATE', 'DELETE', 'LINK_SOURCE', 'UNLINK_SOURCE']):
-        acc_logs = AccountLog.objects.select_related(
-            'bank_account',
-            'source_file'
-        )
-        if action and action in ['CREATE', 'UPDATE', 'DELETE', 'LINK_SOURCE', 'UNLINK_SOURCE']:
+    if log_type in ('all', 'account') and (not action or action in ['CREATE', 'UPDATE', 'DELETE']):
+        acc_logs = AccountLog.objects.select_related('bank_account')
+        if action and action in ['CREATE', 'UPDATE', 'DELETE']:
             acc_logs = acc_logs.filter(action=action)
 
         for log in acc_logs:
@@ -909,7 +914,7 @@ def api_transaction_logs(request):
                     'id': log.bank_account.id,
                     'nickname': log.bank_account.nickname,
                 } if log.bank_account else None,
-                'source_file': log.source_file.filename if log.source_file else None,
+                'source_file': None,
                 'file_load': None,
             })
 
@@ -935,11 +940,9 @@ def api_transaction_logs(request):
     summary="Get date range",
     description="Get available years and months with transaction data, optionally filtered.",
     parameters=[
-        OpenApiParameter(name='source', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description="Data source: 'legacy' (default) or 'experimental' (new extraction system)"),
         OpenApiParameter(name='bank_account', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by bank account ID'),
         OpenApiParameter(name='category', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Filter by category'),
         OpenApiParameter(name='type', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Filter by type: credit or debit'),
-        OpenApiParameter(name='source_file', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by source file ID'),
         OpenApiParameter(name='search', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Search narration, category, or reference'),
     ],
     responses={200: OpenApiTypes.OBJECT},
@@ -966,10 +969,6 @@ def api_date_range(request):
         transactions = transactions.filter(credit_amount__gt=0)
     elif transaction_type == 'debit':
         transactions = transactions.filter(debit_amount__gt=0)
-
-    source_file_id = request.GET.get('source_file')
-    if source_file_id:
-        transactions = transactions.filter(source_file_id=source_file_id)
 
     search = request.GET.get('search')
     if search:
@@ -1039,8 +1038,7 @@ def api_inconsistencies(request):
         transactions = list(
             get_active_transactions()
             .filter(bank_account=account)
-            .select_related('source_file')
-            .order_by('date', 'source_file__date_range_start', 'row_number')  # Oldest first, preserving extraction order
+            .order_by('date', 'row_number')  # Oldest first, preserving extraction order
         )
 
         for i, txn in enumerate(transactions):
@@ -1071,10 +1069,6 @@ def api_inconsistencies(request):
                         'id': account.id,
                         'nickname': account.nickname,
                     },
-                    'source_file': {
-                        'id': txn.source_file.id,
-                        'filename': txn.source_file.filename,
-                    } if txn.source_file else None,
                     'previous_transaction': {
                         'id': prev_txn.id,
                         'date': prev_txn.date.isoformat(),
@@ -1143,7 +1137,7 @@ def bank_inconsistencies(request):
 
     all_transactions = list(
         base_transactions
-        .select_related('bank_account', 'source_file', 'extracted_csv', 'data_source_artifact')
+        .select_related('bank_account', 'data_source_artifact')
         .order_by('date', 'row_number')
     )
 
@@ -1154,7 +1148,7 @@ def bank_inconsistencies(request):
             transactions_by_account[txn.bank_account_id] = []
         transactions_by_account[txn.bank_account_id].append(txn)
 
-    # For experimental source, apply custom sorting to handle overlapping statements.
+    # Apply custom sorting to handle overlapping statements.
     #
     # Problem: When two bank statements overlap (e.g., statement downloaded on Jan 14 and Jan 15
     # both contain April 1st transactions), simple (date, row_number) ordering interleaves them
@@ -1172,51 +1166,50 @@ def bank_inconsistencies(request):
     #   → Balance flow: 57969.43 → 23969.43 → 23859.43 (correct continuity)
     #
     # Rule: Same source = ascending row order; Different sources = larger row first
-    if source == 'experimental':
-        from itertools import groupby
+    from itertools import groupby
 
-        def sort_account_transactions(txns):
-            if not txns:
-                return txns
+    def sort_account_transactions(txns):
+        if not txns:
+            return txns
 
-            # Sort by date first, then row_number (initial ordering)
-            txns.sort(key=lambda t: (t.date, t.row_number))
+        # Sort by date first, then row_number (initial ordering)
+        txns.sort(key=lambda t: (t.date, t.row_number))
 
-            sorted_result = []
-            # Group by date
-            for date, date_group in groupby(txns, key=lambda t: t.date):
-                date_txns = list(date_group)
+        sorted_result = []
+        # Group by date
+        for date, date_group in groupby(txns, key=lambda t: t.date):
+            date_txns = list(date_group)
 
-                # Group by data_source_artifact_id
-                artifact_groups = {}
-                for txn in date_txns:
-                    aid = txn.data_source_artifact_id
-                    if aid not in artifact_groups:
-                        artifact_groups[aid] = []
-                    artifact_groups[aid].append(txn)
+            # Group by data_source_artifact_id
+            artifact_groups = {}
+            for txn in date_txns:
+                aid = txn.data_source_artifact_id
+                if aid not in artifact_groups:
+                    artifact_groups[aid] = []
+                artifact_groups[aid].append(txn)
 
-                # Sort each artifact group by row_number ascending
-                for aid in artifact_groups:
-                    artifact_groups[aid].sort(key=lambda t: t.row_number)
+            # Sort each artifact group by row_number ascending
+            for aid in artifact_groups:
+                artifact_groups[aid].sort(key=lambda t: t.row_number)
 
-                # Sort artifact groups by min row_number descending (larger first)
-                sorted_groups = sorted(
-                    artifact_groups.values(),
-                    key=lambda g: min(t.row_number for t in g),
-                    reverse=True
-                )
-
-                # Flatten
-                for group in sorted_groups:
-                    sorted_result.extend(group)
-
-            return sorted_result
-
-        # Apply custom sorting to each account's transactions
-        for account_id in transactions_by_account:
-            transactions_by_account[account_id] = sort_account_transactions(
-                transactions_by_account[account_id]
+            # Sort artifact groups by min row_number descending (larger first)
+            sorted_groups = sorted(
+                artifact_groups.values(),
+                key=lambda g: min(t.row_number for t in g),
+                reverse=True
             )
+
+            # Flatten
+            for group in sorted_groups:
+                sorted_result.extend(group)
+
+        return sorted_result
+
+    # Apply custom sorting to each account's transactions
+    for account_id in transactions_by_account:
+        transactions_by_account[account_id] = sort_account_transactions(
+            transactions_by_account[account_id]
+        )
 
     # 1. Detect same-account duplicates
     if not type_filter or type_filter == 'duplicate':
@@ -1256,8 +1249,7 @@ def bank_inconsistencies(request):
                         },
                         'transactions': [{
                             'id': t.id,
-                            'source_file': t.source_file.filename if t.source_file else None,
-                            'extracted_csv': t.extracted_csv.name if t.extracted_csv else None,
+                            'artifact_id': t.data_source_artifact.artifact_id if t.data_source_artifact else None,
                         } for t in txns],
                     })
 
@@ -1304,8 +1296,7 @@ def bank_inconsistencies(request):
                                 'id': t.bank_account.id,
                                 'nickname': t.bank_account.nickname,
                             },
-                            'source_file': t.source_file.filename if t.source_file else None,
-                            'extracted_csv': t.extracted_csv.name if t.extracted_csv else None,
+                            'artifact_id': t.data_source_artifact.artifact_id if t.data_source_artifact else None,
                         } for t in txns],
                     })
 
@@ -1348,10 +1339,6 @@ def bank_inconsistencies(request):
                                 'id': account.id,
                                 'nickname': account.nickname,
                             },
-                            'source_file': {
-                                'id': txn.source_file.id,
-                                'filename': txn.source_file.filename,
-                            } if txn.source_file else None,
                             'previous_transaction': {
                                 'id': prev_txn.id,
                                 'date': prev_txn.date.isoformat(),
@@ -1542,20 +1529,12 @@ def api_cc_payment_suggestions(request):
     # Get unmatched CC payments (amount < 0 = payment) from active sources only
     # Exclude CC transactions that have an active match (is_active=True) pointing to an active bank transaction
     # CC transactions with inactive matches or orphaned bank transactions will appear here
-    if source == 'experimental':
-        unmatched_cc_payments = get_active_cc_transactions().filter(
-            amount__lt=0
-        ).exclude(
-            bank_payment_match__is_active=True,
-            bank_payment_match__bank_transaction__data_source_artifact__isnull=False
-        ).select_related('credit_card', 'source_file')
-    else:
-        unmatched_cc_payments = get_active_cc_transactions().filter(
-            amount__lt=0
-        ).exclude(
-            bank_payment_match__is_active=True,
-            bank_payment_match__bank_transaction__extracted_csv__isnull=False
-        ).select_related('credit_card', 'source_file')
+    unmatched_cc_payments = get_active_cc_transactions().filter(
+        amount__lt=0
+    ).exclude(
+        bank_payment_match__is_active=True,
+        bank_payment_match__bank_transaction__data_source_artifact__isnull=False
+    ).select_related('credit_card')
 
     # Get offset threshold from query params (default 20%)
     offset_threshold = int(request.GET.get('offset_threshold', 20)) / 100.0
@@ -1647,7 +1626,7 @@ def api_cc_payment_suggestions_reverse(request):
     ).exclude(
         bank_payment_match__is_active=True,
         bank_payment_match__bank_transaction__data_source_artifact__isnull=False
-    ).select_related('credit_card', 'source_file')
+    ).select_related('credit_card')
 
     # Apply filters
     credit_card_id = request.GET.get('credit_card')
@@ -1867,11 +1846,7 @@ def api_cc_payment_matches(request):
     if hasattr(cc_txn, 'bank_payment_match'):
         # Check if the existing match is active AND points to an active bank transaction
         existing_match = cc_txn.bank_payment_match
-        # For experimental, check data_source_artifact instead of extracted_csv
-        if source == 'experimental':
-            is_active_bank = existing_match.bank_transaction.data_source_artifact_id is not None
-        else:
-            is_active_bank = existing_match.bank_transaction.extracted_csv_id is not None
+        is_active_bank = existing_match.bank_transaction.data_source_artifact_id is not None
         if existing_match.is_active and is_active_bank:
             return JsonResponse({'error': 'Credit card transaction is already matched'}, status=400)
         # Delete the inactive/orphaned match so we can re-match
