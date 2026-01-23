@@ -14,6 +14,19 @@ from django.conf import settings
 from django.db.models import Min, Max
 from rest_framework.decorators import api_view
 
+# DRF Spectacular imports (optional - gracefully degrade if not installed)
+try:
+    from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
+    from drf_spectacular.types import OpenApiTypes
+except ImportError:
+    def extend_schema(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    OpenApiParameter = None
+    OpenApiExample = None
+    OpenApiTypes = None
+
 from .models import (
     SourceFile,
     Extraction,
@@ -138,6 +151,41 @@ def _serialize_data_source_artifact(dsa):
 
 # ==================== Source Files API ====================
 
+@extend_schema(
+    summary="List source files",
+    description="List source files with visibility and domain filtering.",
+    parameters=[
+        OpenApiParameter(name='visibility', description="Filter: 'visible', 'hidden', 'all'", required=False, type=str, default='visible'),
+        OpenApiParameter(name='domain', description="Filter: 'bank_account', 'credit_card', 'all'", required=False, type=str, default='all'),
+    ],
+    responses={200: dict},
+    examples=[
+        OpenApiExample(
+            'Source Files List',
+            value={
+                'data': [{
+                    'id': 1,
+                    'source_file_id': 'sf_a1b2c3d4',
+                    'filename': 'statement_2024.pdf',
+                    'file_path': '/data/bank_accounts/statement_2024.pdf',
+                    'file_hash': 'abc123...',
+                    'file_size': 125000,
+                    'mime_type': 'application/pdf',
+                    'domain': 'bank_account',
+                    'password': '',
+                    'extractor': 'hdfc_bank_pdf',
+                    'extraction_status': 'extracted',
+                    'hidden': False,
+                    'created_at': '2024-01-15T10:30:00Z',
+                    'updated_at': '2024-01-15T10:30:00Z',
+                    'auto_detected_extractor': 'hdfc_bank_pdf',
+                }]
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Source Files'],
+)
 @api_view(['GET'])
 def source_file_list(request):
     """
@@ -165,6 +213,20 @@ def source_file_list(request):
     return JsonResponse({'data': files})
 
 
+@extend_schema(
+    summary="Refresh source files",
+    description="Scan directories and create SourceFile records for new files.",
+    request=dict,
+    responses={200: dict},
+    examples=[
+        OpenApiExample(
+            'Refresh Result',
+            value={'created': 5, 'skipped': 10, 'errors': []},
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Source Files'],
+)
 @api_view(['POST'])
 def source_file_refresh(request):
     """
@@ -249,6 +311,25 @@ def source_file_refresh(request):
     })
 
 
+@extend_schema(
+    summary="Bulk update source files",
+    description="Bulk update source files: hide, unhide, set_extractor, set_password, set_domain.",
+    request=dict,
+    responses={200: dict},
+    examples=[
+        OpenApiExample(
+            'Bulk Update Request',
+            value={'ids': [1, 2, 3], 'action': 'set_extractor', 'value': 'hdfc_bank_pdf'},
+            request_only=True,
+        ),
+        OpenApiExample(
+            'Bulk Update Response',
+            value={'success': True, 'updated_count': 3},
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Source Files'],
+)
 @api_view(['POST'])
 def source_file_bulk_update(request):
     """
@@ -296,6 +377,61 @@ def source_file_bulk_update(request):
     })
 
 
+@extend_schema(
+    summary="Get or update source file",
+    description="GET: Retrieve source file with extractions. PATCH: Update password, extractor, domain, hidden.",
+    responses={200: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Source File Detail',
+            value={
+                'id': 1,
+                'source_file_id': 'sf_a1b2c3d4',
+                'filename': 'statement_2024.pdf',
+                'file_path': '/data/bank_accounts/statement_2024.pdf',
+                'file_hash': 'abc123def456...',
+                'file_size': 125000,
+                'mime_type': 'application/pdf',
+                'domain': 'bank_account',
+                'password': '',
+                'extractor': 'hdfc_bank_pdf',
+                'extraction_status': 'extracted',
+                'hidden': False,
+                'created_at': '2024-01-15T10:30:00Z',
+                'updated_at': '2024-01-15T10:30:00Z',
+                'auto_detected_extractor': 'hdfc_bank_pdf',
+                'extractions': [{
+                    'id': 1,
+                    'extraction_id': 'ex_xyz789',
+                    'source_file_id': 'sf_a1b2c3d4',
+                    'source_filename': 'statement_2024.pdf',
+                    'extractor_name': 'hdfc_bank_pdf',
+                    'extractor_version': '1.0',
+                    'status': 'completed',
+                    'error_message': None,
+                    'hidden': False,
+                    'extracted_at': '2024-01-15T10:31:00Z',
+                    'artifacts': [{
+                        'id': 1,
+                        'artifact_id': 'art_abc123',
+                        'artifact_type': 'transactions',
+                        'artifact_key': 'main',
+                        'content_format': 'csv',
+                        'content_hash': 'hash123...',
+                        'row_count': 150,
+                        'data_source_target': 'bank_account_transactions',
+                        'transformer': 'hdfc_bank_transactions',
+                        'transformation_status': 'transformed',
+                        'created_at': '2024-01-15T10:31:00Z',
+                        'data_source_artifacts_count': 1,
+                    }],
+                }],
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Source Files'],
+)
 @api_view(['GET', 'PATCH'])
 def source_file_detail(request, source_file_id):
     """
@@ -332,6 +468,30 @@ def source_file_detail(request, source_file_id):
         return JsonResponse(_serialize_source_file(sf))
 
 
+@extend_schema(
+    summary="Validate file password",
+    description="Validate a password for an encrypted file without extracting.",
+    request=dict,
+    responses={200: dict, 400: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Validate Password Request',
+            value={'password': 'mypassword123'},
+            request_only=True,
+        ),
+        OpenApiExample(
+            'Valid Password Response',
+            value={'valid': True},
+            response_only=True,
+        ),
+        OpenApiExample(
+            'Invalid Password Response',
+            value={'valid': False, 'error': 'Invalid password'},
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Source Files'],
+)
 @api_view(['POST'])
 def source_file_validate_password(request, source_file_id):
     """
@@ -403,6 +563,58 @@ def source_file_validate_password(request, source_file_id):
         })
 
 
+@extend_schema(
+    summary="Extract source file",
+    description="Trigger extraction for a source file. Returns extraction with artifacts.",
+    request=dict,
+    responses={200: dict, 400: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Extract Request',
+            value={'password': 'optional_password', 'extractor': 'hdfc_bank_pdf'},
+            request_only=True,
+        ),
+        OpenApiExample(
+            'Extract Success Response',
+            value={
+                'success': True,
+                'extraction': {
+                    'id': 1,
+                    'extraction_id': 'ex_xyz789',
+                    'source_file_id': 'sf_a1b2c3d4',
+                    'source_filename': 'statement_2024.pdf',
+                    'extractor_name': 'hdfc_bank_pdf',
+                    'extractor_version': '1.0',
+                    'status': 'completed',
+                    'error_message': None,
+                    'hidden': False,
+                    'extracted_at': '2024-01-15T10:31:00Z',
+                    'artifacts': [{
+                        'id': 1,
+                        'artifact_id': 'art_abc123',
+                        'artifact_type': 'transactions',
+                        'artifact_key': 'main',
+                        'content_format': 'csv',
+                        'content_hash': 'hash123...',
+                        'row_count': 150,
+                        'data_source_target': 'bank_account_transactions',
+                        'transformer': 'hdfc_bank_transactions',
+                        'transformation_status': 'not_transformed',
+                        'created_at': '2024-01-15T10:31:00Z',
+                        'data_source_artifacts_count': 0,
+                    }],
+                },
+            },
+            response_only=True,
+        ),
+        OpenApiExample(
+            'Password Required Error',
+            value={'success': False, 'error': 'File is encrypted', 'needs_password': True},
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Source Files'],
+)
 @api_view(['POST'])
 def source_file_extract(request, source_file_id):
     """
@@ -498,6 +710,51 @@ def source_file_extract(request, source_file_id):
 
 # ==================== Extractions API ====================
 
+@extend_schema(
+    summary="List extractions",
+    description="List extractions with visibility, domain, and status filtering.",
+    parameters=[
+        OpenApiParameter(name='visibility', description="Filter: 'visible', 'hidden', 'all'", required=False, type=str, default='visible'),
+        OpenApiParameter(name='domain', description="Filter: 'bank_account', 'credit_card', 'all'", required=False, type=str, default='all'),
+        OpenApiParameter(name='status', description="Filter: 'pending', 'completed', 'error', 'all'", required=False, type=str, default='all'),
+    ],
+    responses={200: dict},
+    examples=[
+        OpenApiExample(
+            'Extractions List',
+            value={
+                'data': [{
+                    'id': 1,
+                    'extraction_id': 'ex_xyz789',
+                    'source_file_id': 'sf_a1b2c3d4',
+                    'source_filename': 'statement_2024.pdf',
+                    'extractor_name': 'hdfc_bank_pdf',
+                    'extractor_version': '1.0',
+                    'status': 'completed',
+                    'error_message': None,
+                    'hidden': False,
+                    'extracted_at': '2024-01-15T10:31:00Z',
+                    'artifacts': [{
+                        'id': 1,
+                        'artifact_id': 'art_abc123',
+                        'artifact_type': 'transactions',
+                        'artifact_key': 'main',
+                        'content_format': 'csv',
+                        'content_hash': 'hash123...',
+                        'row_count': 150,
+                        'data_source_target': 'bank_account_transactions',
+                        'transformer': 'hdfc_bank_transactions',
+                        'transformation_status': 'transformed',
+                        'created_at': '2024-01-15T10:31:00Z',
+                        'data_source_artifacts_count': 1,
+                    }],
+                }]
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions'],
+)
 @api_view(['GET'])
 def extraction_list(request):
     """
@@ -530,6 +787,30 @@ def extraction_list(request):
     return JsonResponse({'data': extractions})
 
 
+@extend_schema(
+    summary="Bulk update extractions",
+    description="Bulk update extractions: hide, unhide, delete.",
+    request=dict,
+    responses={200: dict},
+    examples=[
+        OpenApiExample(
+            'Bulk Update Request',
+            value={'ids': [1, 2, 3], 'action': 'hide'},
+            request_only=True,
+        ),
+        OpenApiExample(
+            'Bulk Update Response',
+            value={'success': True, 'updated_count': 3},
+            response_only=True,
+        ),
+        OpenApiExample(
+            'Bulk Delete Response',
+            value={'success': True, 'deleted_count': 3},
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions'],
+)
 @api_view(['POST'])
 def extraction_bulk_update(request):
     """
@@ -567,6 +848,44 @@ def extraction_bulk_update(request):
     return JsonResponse({'success': True, 'updated_count': queryset.count()})
 
 
+@extend_schema(
+    summary="Get, update, or delete extraction",
+    description="GET: Retrieve extraction with artifacts. PATCH: Update hidden status. DELETE: Delete extraction.",
+    responses={200: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Extraction Detail',
+            value={
+                'id': 1,
+                'extraction_id': 'ex_xyz789',
+                'source_file_id': 'sf_a1b2c3d4',
+                'source_filename': 'statement_2024.pdf',
+                'extractor_name': 'hdfc_bank_pdf',
+                'extractor_version': '1.0',
+                'status': 'completed',
+                'error_message': None,
+                'hidden': False,
+                'extracted_at': '2024-01-15T10:31:00Z',
+                'artifacts': [{
+                    'id': 1,
+                    'artifact_id': 'art_abc123',
+                    'artifact_type': 'transactions',
+                    'artifact_key': 'main',
+                    'content_format': 'csv',
+                    'content_hash': 'hash123...',
+                    'row_count': 150,
+                    'data_source_target': 'bank_account_transactions',
+                    'transformer': 'hdfc_bank_transactions',
+                    'transformation_status': 'transformed',
+                    'created_at': '2024-01-15T10:31:00Z',
+                    'data_source_artifacts_count': 1,
+                }],
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions'],
+)
 @api_view(['GET', 'PATCH', 'DELETE'])
 def extraction_detail(request, extraction_id):
     """
@@ -605,6 +924,32 @@ def extraction_detail(request, extraction_id):
 
 # ==================== Extraction Artifacts API ====================
 
+@extend_schema(
+    summary="Get artifact details",
+    description="Retrieve extraction artifact details.",
+    responses={200: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Artifact Detail',
+            value={
+                'id': 1,
+                'artifact_id': 'art_abc123',
+                'artifact_type': 'transactions',
+                'artifact_key': 'main',
+                'content_format': 'csv',
+                'content_hash': 'hash123...',
+                'row_count': 150,
+                'data_source_target': 'bank_account_transactions',
+                'transformer': 'hdfc_bank_transactions',
+                'transformation_status': 'transformed',
+                'created_at': '2024-01-15T10:31:00Z',
+                'data_source_artifacts_count': 1,
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Artifacts'],
+)
 @api_view(['GET'])
 def artifact_detail(request, artifact_id):
     """
@@ -622,6 +967,30 @@ def artifact_detail(request, artifact_id):
     return JsonResponse(_serialize_artifact(artifact))
 
 
+@extend_schema(
+    summary="Preview artifact content",
+    description="Preview artifact content (CSV, JSON, or text).",
+    parameters=[
+        OpenApiParameter(name='limit', description="Number of rows to return", required=False, type=int, default=50),
+    ],
+    responses={200: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'CSV Preview',
+            value={
+                'data': [
+                    {'date': '2024-01-15', 'description': 'ATM Withdrawal', 'amount': '-5000.00', 'balance': '45000.00'},
+                    {'date': '2024-01-16', 'description': 'Salary Credit', 'amount': '50000.00', 'balance': '95000.00'},
+                ],
+                'total': 150,
+                'columns': ['date', 'description', 'amount', 'balance'],
+                'format': 'csv',
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Artifacts'],
+)
 @api_view(['GET'])
 def artifact_preview(request, artifact_id):
     """
@@ -676,6 +1045,50 @@ def artifact_preview(request, artifact_id):
         })
 
 
+@extend_schema(
+    summary="Transform artifact",
+    description="Transform artifact to create DataSourceArtifact for loading.",
+    request=dict,
+    responses={200: dict, 400: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Transform Request',
+            value={'bank_account_id': 1},
+            request_only=True,
+        ),
+        OpenApiExample(
+            'Transform Response',
+            value={
+                'success': True,
+                'data_source_artifact': {
+                    'id': 1,
+                    'artifact_id': 'dsa_xyz789',
+                    'source_artifact_id': 'art_abc123',
+                    'source_artifact_type': 'transactions',
+                    'source_artifact_key': 'main',
+                    'source_extraction_id': 'ex_xyz789',
+                    'source_filename': 'statement_2024.pdf',
+                    'data_source_target': 'bank_account_transactions',
+                    'content_hash': 'hash456...',
+                    'row_count': 150,
+                    'bank_account_id': 1,
+                    'bank_account_name': 'HDFC Savings',
+                    'credit_card_id': None,
+                    'credit_card_name': None,
+                    'transformer': 'hdfc_bank_transactions',
+                    'status': 'unloaded',
+                    'error_message': None,
+                    'enabled': True,
+                    'hidden': False,
+                    'transformed_at': '2024-01-15T10:32:00Z',
+                    'loaded_at': None,
+                },
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Artifacts'],
+)
 @api_view(['POST'])
 def artifact_transform(request, artifact_id):
     """
@@ -732,6 +1145,30 @@ def artifact_transform(request, artifact_id):
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 
+@extend_schema(
+    summary="Bulk transform artifacts",
+    description="Transform multiple artifacts to create DataSourceArtifacts.",
+    request=dict,
+    responses={200: dict, 400: dict},
+    examples=[
+        OpenApiExample(
+            'Bulk Transform Request',
+            value={'artifact_ids': ['art_abc123', 'art_def456'], 'bank_account_id': 1},
+            request_only=True,
+        ),
+        OpenApiExample(
+            'Bulk Transform Response',
+            value={
+                'results': [
+                    {'artifact_id': 'art_abc123', 'success': True, 'data_source_artifact_id': 'dsa_xyz789'},
+                    {'artifact_id': 'art_def456', 'success': True, 'data_source_artifact_id': 'dsa_abc012'},
+                ]
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Artifacts'],
+)
 @api_view(['POST'])
 def artifact_bulk_transform(request):
     """
@@ -797,6 +1234,48 @@ def artifact_bulk_transform(request):
 
 # ==================== Data Source Artifacts API ====================
 
+@extend_schema(
+    summary="List data sources",
+    description="List data source artifacts with visibility, domain, and status filtering.",
+    parameters=[
+        OpenApiParameter(name='visibility', description="Filter: 'visible', 'hidden', 'all'", required=False, type=str, default='visible'),
+        OpenApiParameter(name='domain', description="Filter: 'bank_account_transactions', 'credit_card_transactions', 'all'", required=False, type=str, default='all'),
+        OpenApiParameter(name='status', description="Filter: 'unloaded', 'loading', 'loaded', 'error', 'all'", required=False, type=str, default='all'),
+    ],
+    responses={200: dict},
+    examples=[
+        OpenApiExample(
+            'Data Sources List',
+            value={
+                'data': [{
+                    'id': 1,
+                    'artifact_id': 'dsa_xyz789',
+                    'source_artifact_id': 'art_abc123',
+                    'source_artifact_type': 'transactions',
+                    'source_artifact_key': 'main',
+                    'source_extraction_id': 'ex_xyz789',
+                    'source_filename': 'statement_2024.pdf',
+                    'data_source_target': 'bank_account_transactions',
+                    'content_hash': 'hash456...',
+                    'row_count': 150,
+                    'bank_account_id': 1,
+                    'bank_account_name': 'HDFC Savings',
+                    'credit_card_id': None,
+                    'credit_card_name': None,
+                    'transformer': 'hdfc_bank_transactions',
+                    'status': 'loaded',
+                    'error_message': None,
+                    'enabled': True,
+                    'hidden': False,
+                    'transformed_at': '2024-01-15T10:32:00Z',
+                    'loaded_at': '2024-01-15T10:33:00Z',
+                }]
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Data Sources'],
+)
 @api_view(['GET'])
 def data_source_list(request):
     """
@@ -833,6 +1312,35 @@ def data_source_list(request):
     return JsonResponse({'data': artifacts})
 
 
+@extend_schema(
+    summary="Bulk update data sources",
+    description="Bulk update data sources: hide, unhide, enable, disable, set_bank_account, set_credit_card, load, unload, delete.",
+    request=dict,
+    responses={200: dict, 400: dict},
+    examples=[
+        OpenApiExample(
+            'Bulk Update Request',
+            value={'ids': [1, 2, 3], 'action': 'set_bank_account', 'value': 1},
+            request_only=True,
+        ),
+        OpenApiExample(
+            'Bulk Update Response',
+            value={'success': True, 'updated_count': 3},
+            response_only=True,
+        ),
+        OpenApiExample(
+            'Bulk Load Response',
+            value={
+                'results': [
+                    {'id': 1, 'artifact_id': 'dsa_xyz789', 'success': True, 'count': 150, 'error': None},
+                    {'id': 2, 'artifact_id': 'dsa_abc012', 'success': True, 'count': 200, 'error': None},
+                ]
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Data Sources'],
+)
 @api_view(['POST'])
 def data_source_bulk_update(request):
     """
@@ -924,6 +1432,41 @@ def data_source_bulk_update(request):
     return JsonResponse({'success': True, 'updated_count': queryset.count()})
 
 
+@extend_schema(
+    summary="Get, update, or delete data source",
+    description="GET: Retrieve data source. PATCH: Update enabled, hidden, bank_account_id, credit_card_id. DELETE: Delete data source.",
+    responses={200: dict, 400: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Data Source Detail',
+            value={
+                'id': 1,
+                'artifact_id': 'dsa_xyz789',
+                'source_artifact_id': 'art_abc123',
+                'source_artifact_type': 'transactions',
+                'source_artifact_key': 'main',
+                'source_extraction_id': 'ex_xyz789',
+                'source_filename': 'statement_2024.pdf',
+                'data_source_target': 'bank_account_transactions',
+                'content_hash': 'hash456...',
+                'row_count': 150,
+                'bank_account_id': 1,
+                'bank_account_name': 'HDFC Savings',
+                'credit_card_id': None,
+                'credit_card_name': None,
+                'transformer': 'hdfc_bank_transactions',
+                'status': 'loaded',
+                'error_message': None,
+                'enabled': True,
+                'hidden': False,
+                'transformed_at': '2024-01-15T10:32:00Z',
+                'loaded_at': '2024-01-15T10:33:00Z',
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Data Sources'],
+)
 @api_view(['GET', 'PATCH', 'DELETE'])
 def data_source_detail(request, artifact_id):
     """
@@ -997,6 +1540,45 @@ def data_source_detail(request, artifact_id):
             return JsonResponse({'error': error}, status=400)
 
 
+@extend_schema(
+    summary="Load data source",
+    description="Load data source artifact into transactions table.",
+    responses={200: dict, 400: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Load Success Response',
+            value={
+                'success': True,
+                'count': 150,
+                'data_source_artifact': {
+                    'id': 1,
+                    'artifact_id': 'dsa_xyz789',
+                    'source_artifact_id': 'art_abc123',
+                    'source_artifact_type': 'transactions',
+                    'source_artifact_key': 'main',
+                    'source_extraction_id': 'ex_xyz789',
+                    'source_filename': 'statement_2024.pdf',
+                    'data_source_target': 'bank_account_transactions',
+                    'content_hash': 'hash456...',
+                    'row_count': 150,
+                    'bank_account_id': 1,
+                    'bank_account_name': 'HDFC Savings',
+                    'credit_card_id': None,
+                    'credit_card_name': None,
+                    'transformer': 'hdfc_bank_transactions',
+                    'status': 'loaded',
+                    'error_message': None,
+                    'enabled': True,
+                    'hidden': False,
+                    'transformed_at': '2024-01-15T10:32:00Z',
+                    'loaded_at': '2024-01-15T10:33:00Z',
+                },
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Data Sources'],
+)
 @api_view(['POST'])
 def data_source_load(request, artifact_id):
     """
@@ -1022,6 +1604,45 @@ def data_source_load(request, artifact_id):
     })
 
 
+@extend_schema(
+    summary="Unload data source",
+    description="Unload data source artifact (delete transactions, keep artifact).",
+    responses={200: dict, 400: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Unload Success Response',
+            value={
+                'success': True,
+                'count': 150,
+                'data_source_artifact': {
+                    'id': 1,
+                    'artifact_id': 'dsa_xyz789',
+                    'source_artifact_id': 'art_abc123',
+                    'source_artifact_type': 'transactions',
+                    'source_artifact_key': 'main',
+                    'source_extraction_id': 'ex_xyz789',
+                    'source_filename': 'statement_2024.pdf',
+                    'data_source_target': 'bank_account_transactions',
+                    'content_hash': 'hash456...',
+                    'row_count': 150,
+                    'bank_account_id': 1,
+                    'bank_account_name': 'HDFC Savings',
+                    'credit_card_id': None,
+                    'credit_card_name': None,
+                    'transformer': 'hdfc_bank_transactions',
+                    'status': 'unloaded',
+                    'error_message': None,
+                    'enabled': True,
+                    'hidden': False,
+                    'transformed_at': '2024-01-15T10:32:00Z',
+                    'loaded_at': None,
+                },
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Data Sources'],
+)
 @api_view(['POST'])
 def data_source_unload(request, artifact_id):
     """
@@ -1048,6 +1669,30 @@ def data_source_unload(request, artifact_id):
     })
 
 
+@extend_schema(
+    summary="Preview data source content",
+    description="Preview data source artifact content as CSV.",
+    parameters=[
+        OpenApiParameter(name='limit', description="Number of rows to return", required=False, type=int, default=50),
+    ],
+    responses={200: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Data Source Preview',
+            value={
+                'data': [
+                    {'date': '2024-01-15', 'description': 'ATM Withdrawal', 'withdrawal_amount': '5000.00', 'deposit_amount': '', 'balance': '45000.00'},
+                    {'date': '2024-01-16', 'description': 'Salary Credit', 'withdrawal_amount': '', 'deposit_amount': '50000.00', 'balance': '95000.00'},
+                ],
+                'total': 150,
+                'columns': ['date', 'description', 'withdrawal_amount', 'deposit_amount', 'balance'],
+                'format': 'csv',
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions - Data Sources'],
+)
 @api_view(['GET'])
 def data_source_preview(request, artifact_id):
     """
@@ -1091,6 +1736,40 @@ def data_source_preview(request, artifact_id):
 
 # ==================== Utility Endpoints ====================
 
+@extend_schema(
+    summary="List extractors",
+    description="List available extractors with their version, domain, and supported extensions.",
+    responses={200: dict},
+    examples=[
+        OpenApiExample(
+            'Extractors List',
+            value={
+                'data': [
+                    {
+                        'name': 'hdfc_bank_pdf',
+                        'version': '1.0',
+                        'domain': 'bank_account',
+                        'supported_extensions': ['.pdf'],
+                    },
+                    {
+                        'name': 'sbi_bank_excel',
+                        'version': '1.0',
+                        'domain': 'bank_account',
+                        'supported_extensions': ['.xlsx', '.xls'],
+                    },
+                    {
+                        'name': 'hdfc_cc_pdf',
+                        'version': '1.0',
+                        'domain': 'credit_card',
+                        'supported_extensions': ['.pdf'],
+                    },
+                ]
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Extractions'],
+)
 @api_view(['GET'])
 def extractor_list(request):
     """
