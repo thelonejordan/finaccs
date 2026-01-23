@@ -409,69 +409,71 @@ function ReversePaymentCard({
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
       <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-        <Collapsible.Trigger asChild>
-          <button className="w-full p-4 flex items-center gap-4 hover:bg-muted/30 transition-colors text-left">
-            <ChevronRightIcon
-              className={`h-5 w-5 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
-            />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <CreditCardIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                <span className="text-sm font-medium">
-                  {ccTxn.credit_card?.nickname || "Unknown Card"}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {formatDate(ccTxn.date)}
-                </span>
-              </div>
-              <p className="text-sm text-muted-foreground truncate">
-                {ccTxn.description}
-              </p>
-            </div>
-            <div className="text-right flex-shrink-0">
-              <FormattedCurrency
-                amount={Math.abs(ccTxn.amount)}
-                className="text-lg font-semibold text-green-600 dark:text-green-400"
+        <div className="flex items-center gap-2 p-4 hover:bg-muted/30 transition-colors">
+          <Collapsible.Trigger asChild>
+            <button className="flex-1 flex items-center gap-4 text-left">
+              <ChevronRightIcon
+                className={`h-5 w-5 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
               />
-              <div className="flex items-center gap-2 justify-end mt-1">
-                {hasSuggestions ? (
-                  <>
-                    <SparklesIcon className="h-4 w-4 text-primary" />
-                    <span className="text-xs text-primary font-medium">
-                      {item.suggestions.length} suggestion{item.suggestions.length !== 1 ? "s" : ""}
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-xs text-muted-foreground">No suggestions</span>
-                )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <CreditCardIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <span className="text-sm font-medium">
+                    {ccTxn.credit_card?.nickname || "Unknown Card"}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatDate(ccTxn.date)}
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground truncate">
+                  {ccTxn.description}
+                </p>
               </div>
-            </div>
-            {/* Remove Tag Button */}
-            <Tooltip.Provider>
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
-                  <button
-                    onClick={handleRemoveCCTag}
-                    disabled={removingTag}
-                    className="p-2 rounded-lg border border-border hover:bg-destructive/10 hover:border-destructive/50 hover:text-destructive transition-colors disabled:opacity-50"
-                  >
-                    {removingTag ? (
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                    ) : (
-                      <TagIcon className="h-4 w-4" />
-                    )}
-                  </button>
-                </Tooltip.Trigger>
-                <Tooltip.Portal>
-                  <Tooltip.Content className="bg-popover text-popover-foreground px-3 py-2 rounded-lg shadow-lg text-xs z-50" sideOffset={4}>
-                    Not a CC payment - remove tag
-                    <Tooltip.Arrow className="fill-popover" />
-                  </Tooltip.Content>
-                </Tooltip.Portal>
-              </Tooltip.Root>
-            </Tooltip.Provider>
-          </button>
-        </Collapsible.Trigger>
+              <div className="text-right flex-shrink-0">
+                <FormattedCurrency
+                  amount={Math.abs(ccTxn.amount)}
+                  className="text-lg font-semibold text-green-600 dark:text-green-400"
+                />
+                <div className="flex items-center gap-2 justify-end mt-1">
+                  {hasSuggestions ? (
+                    <>
+                      <SparklesIcon className="h-4 w-4 text-primary" />
+                      <span className="text-xs text-primary font-medium">
+                        {item.suggestions.length} suggestion{item.suggestions.length !== 1 ? "s" : ""}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">No suggestions</span>
+                  )}
+                </div>
+              </div>
+            </button>
+          </Collapsible.Trigger>
+          {/* Remove Tag Button - outside Collapsible.Trigger to avoid nested buttons */}
+          <Tooltip.Provider>
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
+                <button
+                  onClick={handleRemoveCCTag}
+                  disabled={removingTag}
+                  className="p-2 rounded-lg border border-border hover:bg-destructive/10 hover:border-destructive/50 hover:text-destructive transition-colors disabled:opacity-50"
+                >
+                  {removingTag ? (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  ) : (
+                    <TagIcon className="h-4 w-4" />
+                  )}
+                </button>
+              </Tooltip.Trigger>
+              <Tooltip.Portal>
+                <Tooltip.Content className="bg-popover text-popover-foreground px-3 py-2 rounded-lg shadow-lg text-xs z-50" sideOffset={4}>
+                  Not a CC payment - remove tag
+                  <Tooltip.Arrow className="fill-popover" />
+                </Tooltip.Content>
+              </Tooltip.Portal>
+            </Tooltip.Root>
+          </Tooltip.Provider>
+        </div>
 
         <Collapsible.Content>
           <div className="px-4 pb-4 border-t border-border/50">
