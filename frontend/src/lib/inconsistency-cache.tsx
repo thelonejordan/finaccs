@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
-import { fetchInconsistencies, fetchCreditCardInconsistencies } from './api'
+import { fetchBankInconsistencies, fetchCreditCardInconsistencies } from './api'
 
 interface InconsistencyCache {
   // Combined total for Header badge
@@ -56,8 +56,8 @@ export function InconsistencyCacheProvider({ children }: { children: ReactNode }
 
     try {
       const [bankResult, creditResult] = await Promise.all([
-        // Fetch with limit=1 just to get the count
-        fetchInconsistencies({ limit: 1, offset: 0 }),
+        // Fetch with limit=1 just to get the count (uses new bank-inconsistencies endpoint)
+        fetchBankInconsistencies({ limit: 1, offset: 0 }),
         // Fetch credit card inconsistencies to get counts
         fetchCreditCardInconsistencies(),
       ])

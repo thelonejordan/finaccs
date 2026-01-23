@@ -955,10 +955,13 @@ def data_source_detail(request, artifact_id):
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
+        needs_cache_invalidation = False
         if 'enabled' in data:
             dsa.enabled = data['enabled']
+            needs_cache_invalidation = True
         if 'hidden' in data:
             dsa.hidden = data['hidden']
+            needs_cache_invalidation = True
         if 'bank_account_id' in data:
             if data['bank_account_id']:
                 try:
@@ -979,6 +982,11 @@ def data_source_detail(request, artifact_id):
                 dsa.credit_card = None
 
         dsa.save()
+
+        # Invalidate caches if visibility changed
+        if needs_cache_invalidation:
+            invalidate_all_inconsistencies()
+
         return JsonResponse(_serialize_data_source_artifact(dsa))
 
     elif request.method == 'DELETE':

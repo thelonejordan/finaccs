@@ -1057,11 +1057,11 @@ function CreditCardInconsistencies() {
   )
 }
 
-export function InconsistenciesPage() {
+export function AnomaliesPage() {
   const [activeTab, setActiveTab] = useState<InconsistenciesTab>("bank")
 
   useEffect(() => {
-    document.title = "Inconsistencies | FinAccs"
+    document.title = "Anomalies | FinAccs"
   }, [])
 
   return (

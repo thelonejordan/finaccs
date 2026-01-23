@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
+import { useSearchParams } from "react-router-dom"
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -77,7 +78,7 @@ function getMonthYear(dateStr: string): string {
   })
 }
 
-type StoryTab = "unmatched" | "confirmed"
+type PaymentsTab = "unmatched" | "confirmed"
 
 // Offset Badge Component
 function OffsetBadge({ offset }: { offset: number }) {
@@ -507,7 +508,18 @@ type SuggestionMode = "bank-first" | "cc-first"
 
 // Unmatched Tab Component
 function UnmatchedTab() {
-  const [mode, setMode] = useState<SuggestionMode>("bank-first")
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Get mode from URL, default to "bank-first"
+  const mode = (searchParams.get("mode") as SuggestionMode) || "bank-first"
+
+  const setMode = useCallback((newMode: SuggestionMode) => {
+    setSearchParams(prev => {
+      const newParams = new URLSearchParams(prev)
+      newParams.set("mode", newMode)
+      return newParams
+    }, { replace: true })
+  }, [setSearchParams])
   const [suggestions, setSuggestions] = useState<CCPaymentSuggestionItem[]>([])
   const [reverseSuggestions, setReverseSuggestions] = useState<CCPaymentSuggestionReverseItem[]>([])
   const [totalCount, setTotalCount] = useState<number>(0)
@@ -1117,10 +1129,25 @@ function ConfirmedTab() {
 }
 
 export function PaymentsPage() {
-  const [activeTab, setActiveTab] = useState<StoryTab>("unmatched")
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Get tab from URL, default to "unmatched"
+  const activeTab = (searchParams.get("tab") as PaymentsTab) || "unmatched"
+
+  const setActiveTab = useCallback((newTab: PaymentsTab) => {
+    setSearchParams(prev => {
+      const newParams = new URLSearchParams(prev)
+      newParams.set("tab", newTab)
+      // Clear mode param when switching to confirmed tab
+      if (newTab === "confirmed") {
+        newParams.delete("mode")
+      }
+      return newParams
+    }, { replace: true })
+  }, [setSearchParams])
 
   useEffect(() => {
-    document.title = "Story | FinAccs"
+    document.title = "Payments | FinAccs"
   }, [])
 
   return (

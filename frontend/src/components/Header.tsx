@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { useInconsistencyCache } from "@/lib/inconsistency-cache"
-import { useStoryCache } from "@/lib/story-cache"
+import { usePaymentsCache } from "@/lib/payments-cache"
 import {
   SunIcon,
   MoonIcon,
@@ -20,7 +20,7 @@ const NAV_ITEMS = [
   { path: "/extractions-v2", label: "Extractions v2" },
   { path: "/console", label: "Console" },
   { path: "/payments", label: "Payments" },
-  { path: "/inconsistencies", label: "Anomalies" },
+  { path: "/anomalies", label: "Anomalies" },
   { path: "/activity", label: "Activity" },
 ]
 
@@ -28,10 +28,10 @@ export function Header() {
   const location = useLocation()
   const { mode, setMode } = useTheme()
   const { cache } = useInconsistencyCache()
-  const { cache: storyCache } = useStoryCache()
+  const { cache: paymentsCache } = usePaymentsCache()
   // Use count if available, fall back to previousCount during loading, then 0
   const inconsistencyCount = cache.count ?? cache.previousCount ?? 0
-  const storyCount = storyCache.count ?? storyCache.previousCount ?? 0
+  const paymentsCount = paymentsCache.count ?? paymentsCache.previousCount ?? 0
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
     const saved = localStorage.getItem('autoScrollToTable')
     return saved !== null ? saved === 'true' : true
@@ -64,14 +64,14 @@ export function Header() {
                   }`}
                 >
                   {label}
-                  {path === "/inconsistencies" && inconsistencyCount > 0 && (
+                  {path === "/anomalies" && inconsistencyCount > 0 && (
                     <span className="bg-red-500 text-white text-[10px] font-bold rounded-full h-4 min-w-4 flex items-center justify-center px-1 ml-1">
                       {inconsistencyCount > 99 ? "99+" : inconsistencyCount}
                     </span>
                   )}
-                  {path === "/payments" && storyCount > 0 && (
+                  {path === "/payments" && paymentsCount > 0 && (
                     <span className="bg-red-500 text-white text-[10px] font-bold rounded-full h-4 min-w-4 flex items-center justify-center px-1 ml-1">
-                      {storyCount > 99 ? "99+" : storyCount}
+                      {paymentsCount > 99 ? "99+" : paymentsCount}
                     </span>
                   )}
                 </Link>

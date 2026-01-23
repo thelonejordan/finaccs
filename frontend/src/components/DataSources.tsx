@@ -29,7 +29,7 @@ import {
   type DataSourceArtifact,
 } from "@/lib/api"
 import { useInconsistencyCache } from "@/lib/inconsistency-cache"
-import { useStoryCache } from "@/lib/story-cache"
+import { usePaymentsCache } from "@/lib/payments-cache"
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-IN", {
@@ -51,7 +51,7 @@ interface DataSourcesProps {
 
 export function DataSources({ dataSources, accounts, onCreateAccount, onDataSourceUpdated, onRefresh, selectedId, onSelect }: DataSourcesProps) {
   const { invalidate: invalidateInconsistencyCache } = useInconsistencyCache()
-  const { invalidate: invalidateStoryCache } = useStoryCache()
+  const { invalidate: invalidatePaymentsCache } = usePaymentsCache()
   const [isLinking, setIsLinking] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [togglingId, setTogglingId] = useState<number | null>(null)
@@ -79,7 +79,7 @@ export function DataSources({ dataSources, accounts, onCreateAccount, onDataSour
       onDataSourceUpdated()
       // Invalidate caches since transactions are now included/excluded
       invalidateInconsistencyCache()
-      invalidateStoryCache()
+      invalidatePaymentsCache()
     } catch (error) {
       console.error("Failed to toggle data source:", error)
     } finally {
@@ -129,7 +129,7 @@ export function DataSources({ dataSources, accounts, onCreateAccount, onDataSour
       const result = await loadDataSource(ds.artifact_id)
       if (result.success) {
         invalidateInconsistencyCache()
-        invalidateStoryCache()
+        invalidatePaymentsCache()
       }
       onDataSourceUpdated()
     } catch (error) {
@@ -157,7 +157,7 @@ export function DataSources({ dataSources, accounts, onCreateAccount, onDataSour
       }
       // Invalidate caches after loading
       invalidateInconsistencyCache()
-      invalidateStoryCache()
+      invalidatePaymentsCache()
       // Refresh to get updated data
       if (onRefresh) {
         await onRefresh()

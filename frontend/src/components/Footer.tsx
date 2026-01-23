@@ -8,10 +8,10 @@ import {
 const NAV_ITEMS = [
   { path: "/dashboard", label: "Dashboard" },
   { path: "/transactions", label: "Transactions" },
-  { path: "/credit-cards", label: "Credit Cards" },
-  { path: "/settings", label: "Settings" },
-  { path: "/inconsistencies", label: "Inconsistencies" },
-  { path: "/logs", label: "Activity Log" },
+  { path: "/payments", label: "Payments" },
+  { path: "/anomalies", label: "Anomalies" },
+  { path: "/extractions-v2", label: "Extractions" },
+  { path: "/activity", label: "Activity" },
 ]
 
 export function Footer() {
@@ -81,28 +81,28 @@ export function Footer() {
             </h3>
             <div className="flex flex-col gap-2 text-sm text-muted-foreground">
               <Link
-                to="/settings"
+                to="/console?domain=bank"
                 className="hover:text-foreground transition-colors"
               >
                 Add Bank Account
               </Link>
               <Link
-                to="/settings"
+                to="/console?domain=credit-card"
                 className="hover:text-foreground transition-colors"
               >
                 Add Credit Card
               </Link>
               <Link
-                to="/transactions"
+                to="/extractions-v2"
                 className="hover:text-foreground transition-colors"
               >
-                View All Transactions
+                Upload Statements
               </Link>
               <Link
-                to="/inconsistencies"
+                to="/payments"
                 className="hover:text-foreground transition-colors"
               >
-                Review Inconsistencies
+                Match Payments
               </Link>
             </div>
           </div>

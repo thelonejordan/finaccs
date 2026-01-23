@@ -326,6 +326,7 @@ def api_transactions(request):
         'cc_payment_match',
         'cc_payment_match__credit_card_transaction',
         'cc_payment_match__credit_card_transaction__credit_card',
+        'cc_payment_match__credit_card_transaction__data_source_artifact',
         'data_source_artifact',
         'data_source_artifact__source_artifact',
         'data_source_artifact__source_artifact__extraction',
@@ -437,28 +438,40 @@ def api_transactions(request):
                 'amount': float(linked.debit_amount or linked.credit_amount),
             }
 
-        # Get CC payment match if exists
+        # Get CC payment match if exists and is active
+        # Only show match if:
+        # 1. Match exists and is_active=True
+        # 2. CC transaction is from an active data source (enabled, not hidden, status=loaded)
         cc_match_data = None
         try:
             cc_match = t.cc_payment_match
-            if cc_match:
+            if cc_match and cc_match.is_active:
                 cc_txn = cc_match.credit_card_transaction
-                cc_match_data = {
-                    'id': cc_match.id,
-                    'credit_card_transaction': {
-                        'id': cc_txn.id,
-                        'date': cc_txn.date.isoformat(),
-                        'description': cc_txn.description,
-                        'amount': float(cc_txn.amount),
-                        'credit_card': {
-                            'id': cc_txn.credit_card.id,
-                            'nickname': cc_txn.credit_card.nickname,
-                        } if cc_txn.credit_card else None,
-                    },
-                    'offset': float(cc_match.offset),
-                    'confidence_score': cc_match.confidence_score,
-                    'match_reasons': cc_match.match_reasons,
-                }
+                # Check if CC transaction is from an active data source
+                cc_source = cc_txn.data_source_artifact
+                is_active_cc_source = (
+                    cc_source is not None and
+                    cc_source.status == 'loaded' and
+                    cc_source.enabled and
+                    not cc_source.hidden
+                )
+                if is_active_cc_source:
+                    cc_match_data = {
+                        'id': cc_match.id,
+                        'credit_card_transaction': {
+                            'id': cc_txn.id,
+                            'date': cc_txn.date.isoformat(),
+                            'description': cc_txn.description,
+                            'amount': float(cc_txn.amount),
+                            'credit_card': {
+                                'id': cc_txn.credit_card.id,
+                                'nickname': cc_txn.credit_card.nickname,
+                            } if cc_txn.credit_card else None,
+                        },
+                        'offset': float(cc_match.offset),
+                        'confidence_score': cc_match.confidence_score,
+                        'match_reasons': cc_match.match_reasons,
+                    }
         except CreditCardPaymentMatch.DoesNotExist:
             pass
 

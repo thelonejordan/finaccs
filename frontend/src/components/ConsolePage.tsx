@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react"
+import { useSearchParams } from "react-router-dom"
 import {
   CreditCardIcon,
   FileTextIcon,
@@ -1321,7 +1322,22 @@ type SettingsTab = "bank" | "credit"
 
 // Main Console Page
 export function ConsolePage() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>("bank")
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Get initial tab from URL param
+  const getInitialTab = (): SettingsTab => {
+    const domain = searchParams.get('domain')
+    if (domain === 'credit-card') return 'credit'
+    return 'bank'
+  }
+
+  const [activeTab, setActiveTab] = useState<SettingsTab>(getInitialTab)
+
+  // Update URL when tab changes
+  const handleTabChange = (tab: SettingsTab) => {
+    setActiveTab(tab)
+    setSearchParams({ domain: tab === 'credit' ? 'credit-card' : 'bank' }, { replace: true })
+  }
 
   // Bank Accounts state
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
@@ -1615,7 +1631,7 @@ export function ConsolePage() {
         {/* Tabs */}
         <div className="flex gap-2 mb-6">
           <button
-            onClick={() => setActiveTab("bank")}
+            onClick={() => handleTabChange("bank")}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
               activeTab === "bank"
                 ? "bg-primary text-primary-foreground"
@@ -1626,7 +1642,7 @@ export function ConsolePage() {
             Bank Accounts
           </button>
           <button
-            onClick={() => setActiveTab("credit")}
+            onClick={() => handleTabChange("credit")}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
               activeTab === "credit"
                 ? "bg-primary text-primary-foreground"

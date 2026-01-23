@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
-import { fetchCCPaymentSuggestions } from './api'
+import { fetchCCPaymentSuggestions, fetchCCPaymentSuggestionsReverse } from './api'
 
-interface StoryCache {
+interface PaymentsCache {
   count: number | null
   previousCount: number | null
   lastFetched: number | null
@@ -9,16 +9,16 @@ interface StoryCache {
   isStale: boolean
 }
 
-interface StoryCacheContextValue {
-  cache: StoryCache
+interface PaymentsCacheContextValue {
+  cache: PaymentsCache
   invalidate: () => void
   refresh: () => Promise<void>
 }
 
-const StoryCacheContext = createContext<StoryCacheContextValue | null>(null)
+const PaymentsCacheContext = createContext<PaymentsCacheContextValue | null>(null)
 
-export function StoryCacheProvider({ children }: { children: ReactNode }) {
-  const [cache, setCache] = useState<StoryCache>({
+export function PaymentsCacheProvider({ children }: { children: ReactNode }) {
+  const [cache, setCache] = useState<PaymentsCache>({
     count: null,
     previousCount: null,
     lastFetched: null,
@@ -42,8 +42,12 @@ export function StoryCacheProvider({ children }: { children: ReactNode }) {
     }))
 
     try {
-      const result = await fetchCCPaymentSuggestions()
-      const total = result.total
+      // Fetch both bank-first and cc-first unmatched counts
+      const [bankFirstResult, ccFirstResult] = await Promise.all([
+        fetchCCPaymentSuggestions(),
+        fetchCCPaymentSuggestionsReverse(),
+      ])
+      const total = bankFirstResult.total + ccFirstResult.total
 
       setCache({
         count: total,
@@ -54,7 +58,7 @@ export function StoryCacheProvider({ children }: { children: ReactNode }) {
       })
     } catch (error) {
       if ((error as Error).name !== 'AbortError') {
-        console.error('Failed to fetch story count:', error)
+        console.error('Failed to fetch payments count:', error)
         setCache(prev => ({ ...prev, isLoading: false, isStale: false }))
       }
     }
@@ -85,16 +89,16 @@ export function StoryCacheProvider({ children }: { children: ReactNode }) {
   }, [fetchData])
 
   return (
-    <StoryCacheContext.Provider value={{ cache, invalidate, refresh }}>
+    <PaymentsCacheContext.Provider value={{ cache, invalidate, refresh }}>
       {children}
-    </StoryCacheContext.Provider>
+    </PaymentsCacheContext.Provider>
   )
 }
 
-export function useStoryCache() {
-  const context = useContext(StoryCacheContext)
+export function usePaymentsCache() {
+  const context = useContext(PaymentsCacheContext)
   if (!context) {
-    throw new Error('useStoryCache must be used within StoryCacheProvider')
+    throw new Error('usePaymentsCache must be used within PaymentsCacheProvider')
   }
   return context
 }

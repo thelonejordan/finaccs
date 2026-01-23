@@ -52,8 +52,10 @@ def load_artifact(artifact: DataSourceArtifact) -> Tuple[int, Optional[str]]:
 
         if artifact.data_source_target == 'bank_account_transactions':
             count = _load_bank_transactions(artifact, reader)
+            invalidate_bank_inconsistencies()
         elif artifact.data_source_target == 'credit_card_transactions':
             count = _load_cc_transactions(artifact, reader)
+            invalidate_cc_inconsistencies()
         else:
             raise ValueError(f"Unknown data source target: {artifact.data_source_target}")
 
