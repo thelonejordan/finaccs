@@ -230,7 +230,8 @@ def _snapshot_links(artifact: DataSourceArtifact):
     snapshots = []
 
     if artifact.data_source_target == 'bank_account_transactions':
-        from bank_accounts.models import Transaction, CreditCardPaymentMatch
+        from bank_accounts.models import Transaction
+        from credit_cards.models import CreditCardPaymentMatch
 
         # Snapshot self-transfer links
         transactions = Transaction.objects.filter(
@@ -292,7 +293,8 @@ def _reapply_links(artifact: DataSourceArtifact):
         return
 
     if artifact.data_source_target == 'bank_account_transactions':
-        from bank_accounts.models import Transaction, CreditCardPaymentMatch
+        from bank_accounts.models import Transaction
+        from credit_cards.models import CreditCardPaymentMatch
         from credit_cards.models import CreditCardTransaction
 
         # Build lookup of new transactions by row_id

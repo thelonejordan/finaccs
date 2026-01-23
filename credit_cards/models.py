@@ -61,6 +61,33 @@ class CreditCardTransaction(models.Model):
         return self.amount > 0
 
 
+class CreditCardPaymentMatch(models.Model):
+    """Links bank CC payment to corresponding credit card payment transaction."""
+
+    bank_transaction = models.OneToOneField(
+        'bank_accounts.Transaction',
+        on_delete=models.CASCADE,
+        related_name='cc_payment_match'
+    )
+    credit_card_transaction = models.OneToOneField(
+        'CreditCardTransaction',
+        on_delete=models.CASCADE,
+        related_name='bank_payment_match'
+    )
+    offset = models.DecimalField(max_digits=12, decimal_places=2, default=0)  # Rewards cashout difference
+    confidence_score = models.FloatField(default=0.0)
+    match_reasons = models.JSONField(default=list)  # ["exact_amount", "same_day"]
+    is_active = models.BooleanField(default=True)  # Soft delete when bank extraction is disabled
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        db_table = 'dashboard_creditcardpaymentmatch'
+
+    def __str__(self):
+        return f"Match: Bank {self.bank_transaction_id} <-> CC {self.credit_card_transaction_id}"
+
+
 class DismissedCreditCardInconsistency(models.Model):
     """Track dismissed credit card inconsistencies (false positives)."""
     INCONSISTENCY_TYPES = [

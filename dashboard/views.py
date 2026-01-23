@@ -28,7 +28,8 @@ except ImportError:
     OpenApiExample = _MockCallable
     OpenApiTypes = type('OpenApiTypes', (), {'OBJECT': object, 'INT': int, 'STR': str, 'BOOL': bool})()
 
-from bank_accounts.models import Transaction, TransactionLog, AccountLog, FileLoadLog, CreditCardPaymentMatch, DismissedBankInconsistency
+from bank_accounts.models import Transaction, TransactionLog, AccountLog, FileLoadLog, DismissedBankInconsistency
+from credit_cards.models import CreditCardPaymentMatch
 from credit_cards.views import get_active_cc_transactions
 
 # Categories to exclude from income/expense calculations (internal transfers)
