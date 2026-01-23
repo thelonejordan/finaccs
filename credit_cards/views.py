@@ -282,6 +282,11 @@ def credit_card_transactions(request):
             Q(category__icontains=search)
         )
 
+    # Filter by data source artifact
+    data_source_artifact_id = request.GET.get('data_source_artifact')
+    if data_source_artifact_id:
+        transactions = transactions.filter(data_source_artifact_id=data_source_artifact_id)
+
     # Calculate aggregate stats
     total_charges = transactions.filter(amount__gt=0).aggregate(total=Sum('amount'))['total'] or 0
     total_payments = abs(transactions.filter(amount__lt=0).aggregate(total=Sum('amount'))['total'] or 0)

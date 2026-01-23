@@ -36,12 +36,13 @@ import {
   fetchCreditCardCategories,
   updateCreditCardTransactionCategory,
   deleteCCPaymentMatch,
+  fetchDataSources,
   type CreditCard,
   type CreditCardTransaction,
-  type CreditCardSourceFile,
   type CreditCardTransactionStats,
   type CreditCardCategoryData,
   type DateRange,
+  type DataSourceArtifact,
 } from "@/lib/api"
 
 const MONTH_NAMES = [
@@ -444,7 +445,7 @@ export function CreditCardsPage() {
   const [transactions, setTransactions] = useState<CreditCardTransaction[]>([])
   const [categories, setCategories] = useState<CreditCardCategoryData[]>([])
   const [creditCards, setCreditCards] = useState<CreditCard[]>([])
-  const [sourceFiles, setSourceFiles] = useState<CreditCardSourceFile[]>([])
+  const [dataSources, setDataSources] = useState<DataSourceArtifact[]>([])
   const [stats, setStats] = useState<CreditCardTransactionStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [total, setTotal] = useState(0)
@@ -465,8 +466,8 @@ export function CreditCardsPage() {
     const val = searchParams.get('credit_card')
     return val ? parseInt(val, 10) : null
   })
-  const [selectedSourceFile, setSelectedSourceFile] = useState<number | null>(() => {
-    const val = searchParams.get('source_file')
+  const [selectedDataSource, setSelectedDataSource] = useState<number | null>(() => {
+    const val = searchParams.get('data_source')
     return val ? parseInt(val, 10) : null
   })
   const [page, setPageState] = useState(() => {
@@ -559,10 +560,10 @@ export function CreditCardsPage() {
       category: selectedCategory || null,
       type: selectedType || null,
       credit_card: selectedCreditCard,
-      source_file: selectedSourceFile,
+      data_source: selectedDataSource,
       page: page,
     })
-  }, [selectedYear, selectedMonth, debouncedSearch, selectedCategory, selectedType, selectedCreditCard, selectedSourceFile, page, updateURL])
+  }, [selectedYear, selectedMonth, debouncedSearch, selectedCategory, selectedType, selectedCreditCard, selectedDataSource, page, updateURL])
 
   // Debounce search
   useEffect(() => {
@@ -650,12 +651,23 @@ export function CreditCardsPage() {
       try {
         const data = await fetchCreditCards()
         setCreditCards(data.cards)
-        setSourceFiles(data.source_files)
       } catch (error) {
         console.error("Failed to load credit cards:", error)
       }
     }
     loadCreditCards()
+  }, [])
+
+  useEffect(() => {
+    async function loadDataSources() {
+      try {
+        const data = await fetchDataSources({ domain: 'credit_card_transactions', status: 'loaded' })
+        setDataSources(data.data)
+      } catch (error) {
+        console.error("Failed to load data sources:", error)
+      }
+    }
+    loadDataSources()
   }, [])
 
   useEffect(() => {
@@ -673,7 +685,7 @@ export function CreditCardsPage() {
           category: selectedCategory || undefined,
           type: selectedType || undefined,
           credit_card: selectedCreditCard || undefined,
-          source_file: selectedSourceFile || undefined,
+          data_source_artifact: selectedDataSource || undefined,
           year: selectedYear,
           month: selectedMonth,
           search: debouncedSearch || undefined,
@@ -719,12 +731,12 @@ export function CreditCardsPage() {
       }
     }
     loadTransactions()
-  }, [selectedCategory, selectedType, selectedCreditCard, selectedSourceFile, selectedYear, selectedMonth, debouncedSearch, page, refreshKey])
+  }, [selectedCategory, selectedType, selectedCreditCard, selectedDataSource, selectedYear, selectedMonth, debouncedSearch, page, refreshKey])
 
-  // Filter source files by selected credit card
-  const filteredSourceFiles = selectedCreditCard
-    ? sourceFiles.filter((sf) => sf.credit_card_id === selectedCreditCard)
-    : sourceFiles
+  // Filter data sources by selected credit card
+  const filteredDataSources = selectedCreditCard
+    ? dataSources.filter((ds) => ds.credit_card_id === selectedCreditCard)
+    : dataSources
 
   const totalPages = Math.ceil(total / pageSize)
 
@@ -979,10 +991,10 @@ export function CreditCardsPage() {
                   onValueChange={(value) => {
                     const newCreditCard = value === "all" ? null : parseInt(value, 10)
                     setSelectedCreditCard(newCreditCard)
-                    if (selectedSourceFile && newCreditCard) {
-                      const sourceFile = sourceFiles.find((sf) => sf.id === selectedSourceFile)
-                      if (sourceFile && sourceFile.credit_card_id !== newCreditCard) {
-                        setSelectedSourceFile(null)
+                    if (selectedDataSource && newCreditCard) {
+                      const dataSource = dataSources.find((ds) => ds.id === selectedDataSource)
+                      if (dataSource && dataSource.credit_card_id !== newCreditCard) {
+                        setSelectedDataSource(null)
                       }
                     }
                     setPage(1)
@@ -1032,12 +1044,12 @@ export function CreditCardsPage() {
                 </Select.Root>
               )}
 
-              {/* Source File Filter */}
-              {filteredSourceFiles.length > 0 && (
+              {/* Data Source Filter */}
+              {filteredDataSources.length > 0 && (
                 <Select.Root
-                  value={selectedSourceFile?.toString() || "all"}
+                  value={selectedDataSource?.toString() || "all"}
                   onValueChange={(value) => {
-                    setSelectedSourceFile(value === "all" ? null : parseInt(value, 10))
+                    setSelectedDataSource(value === "all" ? null : parseInt(value, 10))
                     setPage(1)
                   }}
                 >
@@ -1062,13 +1074,13 @@ export function CreditCardsPage() {
                             <CheckIcon className="h-4 w-4" />
                           </Select.ItemIndicator>
                         </Select.Item>
-                        {filteredSourceFiles.map((file) => (
+                        {filteredDataSources.map((ds) => (
                           <Select.Item
-                            key={file.id}
-                            value={file.id.toString()}
+                            key={ds.id}
+                            value={ds.id.toString()}
                             className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent cursor-pointer outline-none text-sm"
                           >
-                            <Select.ItemText>{file.filename}</Select.ItemText>
+                            <Select.ItemText>{ds.source_filename}</Select.ItemText>
                             <Select.ItemIndicator>
                               <CheckIcon className="h-4 w-4" />
                             </Select.ItemIndicator>

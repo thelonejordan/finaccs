@@ -716,7 +716,7 @@ export async function fetchCreditCardTransactions(params?: {
   credit_card?: number
   category?: string
   type?: string  // 'charge' | 'payment'
-  source_file?: number
+  data_source_artifact?: number
   year?: number
   month?: number
   search?: string
@@ -727,7 +727,7 @@ export async function fetchCreditCardTransactions(params?: {
   if (params?.credit_card) searchParams.set("credit_card", params.credit_card.toString())
   if (params?.category) searchParams.set("category", params.category)
   if (params?.type) searchParams.set("type", params.type)
-  if (params?.source_file) searchParams.set("source_file", params.source_file.toString())
+  if (params?.data_source_artifact) searchParams.set("data_source_artifact", params.data_source_artifact.toString())
   if (params?.year) searchParams.set("year", params.year.toString())
   if (params?.month) searchParams.set("month", params.month.toString())
   if (params?.search) searchParams.set("search", params.search)
