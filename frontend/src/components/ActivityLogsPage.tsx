@@ -69,7 +69,7 @@ const ACTION_COLORS: Record<string, string> = {
   UNLINK_SOURCE: "text-orange-500 bg-orange-500/10",
 }
 
-export function LogsPage() {
+export function ActivityLogsPage() {
   const [logs, setLogs] = useState<TransactionLogEntry[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)

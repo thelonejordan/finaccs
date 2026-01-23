@@ -7,29 +7,21 @@ import {
   MoonIcon,
   MonitorIcon,
   CheckIcon,
-  LayoutDashboardIcon,
-  ListIcon,
-  SettingsIcon,
-  AlertTriangleIcon,
-  ScrollTextIcon,
   FocusIcon,
-  BookOpenIcon,
-  FileArchiveIcon,
-  SparklesIcon,
 } from "lucide-react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import { useTheme } from "@/lib/theme"
 
 const NAV_ITEMS = [
-  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboardIcon },
-  { path: "/transactions", label: "Transactions", icon: ListIcon },
-  { path: "/extractions", label: "Extractions", icon: FileArchiveIcon },
-  { path: "/extractions-v2", label: "Extractions v2", icon: SparklesIcon },
-  { path: "/console", label: "Console", icon: SettingsIcon },
-  { path: "/story", label: "Payments", icon: BookOpenIcon },
-  { path: "/inconsistencies", label: "Inconsistencies", icon: AlertTriangleIcon },
-  { path: "/logs", label: "Activity Log", icon: ScrollTextIcon },
+  { path: "/dashboard", label: "Dashboard" },
+  { path: "/transactions", label: "Transactions" },
+  { path: "/extractions", label: "Extractions" },
+  { path: "/extractions-v2", label: "Extractions v2" },
+  { path: "/console", label: "Console" },
+  { path: "/payments", label: "Payments" },
+  { path: "/inconsistencies", label: "Inconsistencies" },
+  { path: "/activity", label: "Activity" },
 ]
 
 export function Header() {
@@ -59,7 +51,7 @@ export function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14">
           <nav className="flex items-center gap-1 overflow-x-auto scrollbar-hide flex-1 min-w-0 py-1">
-            {NAV_ITEMS.map(({ path, label, icon: Icon }) => {
+            {NAV_ITEMS.map(({ path, label }) => {
               const isActive = location.pathname === path
               return (
                 <Link
@@ -71,14 +63,13 @@ export function Header() {
                       : "text-muted-foreground hover:text-foreground hover:bg-muted"
                   }`}
                 >
-                  <Icon className="h-4 w-4" />
-                  <span className="hidden sm:inline">{label}</span>
+                  {label}
                   {path === "/inconsistencies" && inconsistencyCount > 0 && (
                     <span className="bg-red-500 text-white text-[10px] font-bold rounded-full h-4 min-w-4 flex items-center justify-center px-1 ml-1">
                       {inconsistencyCount > 99 ? "99+" : inconsistencyCount}
                     </span>
                   )}
-                  {path === "/story" && storyCount > 0 && (
+                  {path === "/payments" && storyCount > 0 && (
                     <span className="bg-red-500 text-white text-[10px] font-bold rounded-full h-4 min-w-4 flex items-center justify-center px-1 ml-1">
                       {storyCount > 99 ? "99+" : storyCount}
                     </span>

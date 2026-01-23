@@ -1114,7 +1114,7 @@ function ConfirmedTab() {
   )
 }
 
-export function StoryPage() {
+export function PaymentsPage() {
   const [activeTab, setActiveTab] = useState<StoryTab>("unmatched")
 
   useEffect(() => {

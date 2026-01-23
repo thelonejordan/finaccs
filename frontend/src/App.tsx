@@ -3,8 +3,8 @@ import { Dashboard } from "@/components/Dashboard"
 import { TransactionsPage } from "@/components/TransactionsPage"
 import { ConsolePage } from "@/components/ConsolePage"
 import { InconsistenciesPage } from "@/components/InconsistenciesPage"
-import { LogsPage } from "@/components/LogsPage"
-import { StoryPage } from "@/components/StoryPage"
+import { ActivityLogsPage } from "@/components/ActivityLogsPage"
+import { PaymentsPage } from "@/components/PaymentsPage"
 import { ExtractionsPage } from "@/components/ExtractionsPage"
 import { ExtractionsV2Page } from "@/components/ExtractionsV2Page"
 import { ThemeProvider } from "@/lib/theme"
@@ -23,10 +23,10 @@ function App() {
           <Route path="/transactions" element={<TransactionsPage />} />
           <Route path="/extractions" element={<ExtractionsPage />} />
           <Route path="/extractions-v2" element={<ExtractionsV2Page />} />
-          <Route path="/story" element={<StoryPage />} />
+          <Route path="/payments" element={<PaymentsPage />} />
           <Route path="/console" element={<ConsolePage />} />
           <Route path="/inconsistencies" element={<InconsistenciesPage />} />
-          <Route path="/logs" element={<LogsPage />} />
+          <Route path="/activity" element={<ActivityLogsPage />} />
         </Routes>
         </StoryCacheProvider>
         </InconsistencyCacheProvider>

@@ -79,7 +79,7 @@ function AccountForm({
   }
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} className="space-y-4 p-4 border border-amber-500/30 rounded-lg bg-gradient-to-br from-amber-500/10 to-transparent">
+    <form ref={formRef} onSubmit={handleSubmit} className="space-y-4 p-4 border border-primary/30 rounded-lg bg-gradient-to-br from-primary/10 to-transparent">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Nickname</label>
@@ -89,7 +89,7 @@ function AccountForm({
             placeholder="e.g., Salary Account"
             value={formData.nickname}
             onChange={(e) => setFormData({ ...formData, nickname: e.target.value })}
-            className="w-full px-3 py-1.5 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+            className="w-full px-3 py-1.5 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
         </div>
         <div className="space-y-1">
@@ -100,7 +100,7 @@ function AccountForm({
             placeholder="e.g., HDFC Bank"
             value={formData.bank_name}
             onChange={(e) => setFormData({ ...formData, bank_name: e.target.value })}
-            className="w-full px-3 py-1.5 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+            className="w-full px-3 py-1.5 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
         </div>
         <div className="space-y-1">
@@ -111,7 +111,7 @@ function AccountForm({
             placeholder="Enter account number"
             value={formData.account_number}
             onChange={(e) => setFormData({ ...formData, account_number: e.target.value })}
-            className="w-full px-3 py-1.5 rounded-md border border-input bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+            className="w-full px-3 py-1.5 rounded-md border border-input bg-background text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
         </div>
         <div className="space-y-1">
@@ -122,7 +122,7 @@ function AccountForm({
             placeholder="e.g., HDFC0001234"
             value={formData.ifsc_code}
             onChange={(e) => setFormData({ ...formData, ifsc_code: e.target.value.toUpperCase() })}
-            className="w-full px-3 py-1.5 rounded-md border border-input bg-background text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+            className="w-full px-3 py-1.5 rounded-md border border-input bg-background text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-primary/50"
             maxLength={11}
           />
         </div>
@@ -133,7 +133,7 @@ function AccountForm({
             placeholder="e.g., Koramangala"
             value={formData.branch}
             onChange={(e) => setFormData({ ...formData, branch: e.target.value })}
-            className="w-full px-3 py-1.5 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+            className="w-full px-3 py-1.5 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
         </div>
         {formData.source_files.length > 0 && (
@@ -166,7 +166,7 @@ function AccountForm({
         <button
           type="submit"
           disabled={saving}
-          className="px-3 py-1.5 text-sm rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
+          className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
         >
           <CheckIcon className="h-3.5 w-3.5" />
           {saving ? "Saving..." : "Save"}
@@ -338,15 +338,15 @@ export function AccountsSection({ accounts, onSave, initialAddSourceFile, onAddi
       <div className="relative">
         <div className="p-6 pt-0 space-y-3 max-h-[512px] overflow-y-auto">
           {accounts.length === 0 && !isAdding ? (
-            <div className="text-center py-8 rounded-xl bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20">
-              <div className="p-3 rounded-full bg-amber-500/20 w-fit mx-auto mb-3">
-                <SparklesIcon className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+            <div className="text-center py-8 rounded-xl bg-gradient-to-br from-primary/10 to-transparent border border-primary/20">
+              <div className="p-3 rounded-full bg-primary/20 w-fit mx-auto mb-3">
+                <SparklesIcon className="h-6 w-6 text-primary" />
               </div>
               <p className="font-medium">No accounts configured</p>
               <p className="text-sm text-muted-foreground mt-1">Add a bank account to get started</p>
               <button
                 onClick={() => setIsAdding(true)}
-                className="mt-4 px-4 py-2 text-sm rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors inline-flex items-center gap-2 font-medium shadow-sm"
+                className="mt-4 px-4 py-2 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors inline-flex items-center gap-2 font-medium shadow-sm"
               >
                 <PlusIcon className="h-4 w-4" />
                 Add Account
