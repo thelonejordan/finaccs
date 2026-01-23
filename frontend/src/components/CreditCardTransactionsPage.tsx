@@ -805,7 +805,7 @@ export function CreditCardTransactionsPage() {
             {/* Domain toggle */}
             <div className="flex items-center bg-muted rounded-lg p-1">
               <button
-                onClick={() => navigate('/transactions')}
+                onClick={() => navigate('/transactions?domain=bank')}
                 className="px-3 py-1.5 text-sm rounded-md transition-colors text-muted-foreground hover:text-foreground"
               >
                 Bank Account

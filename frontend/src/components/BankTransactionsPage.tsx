@@ -1072,7 +1072,7 @@ export function BankTransactionsPage() {
                 Bank Account
               </button>
               <button
-                onClick={() => navigate('/credit-cards')}
+                onClick={() => navigate('/transactions?domain=credit-card')}
                 className="px-3 py-1.5 text-sm rounded-md transition-colors text-muted-foreground hover:text-foreground"
               >
                 Credit Card

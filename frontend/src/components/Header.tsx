@@ -45,7 +45,7 @@ export function Header() {
     return saved !== null ? saved === 'true' : true
   })
 
-  const showAutoScrollToggle = location.pathname === '/transactions' || location.pathname === '/credit-cards'
+  const showAutoScrollToggle = location.pathname === '/transactions'
 
   const handleAutoScrollToggle = () => {
     const newValue = !autoScrollEnabled
@@ -60,7 +60,7 @@ export function Header() {
         <div className="flex items-center justify-between h-14">
           <nav className="flex items-center gap-1 overflow-x-auto scrollbar-hide flex-1 min-w-0 py-1">
             {NAV_ITEMS.map(({ path, label, icon: Icon }) => {
-              const isActive = location.pathname === path || (path === "/transactions" && location.pathname === "/credit-cards")
+              const isActive = location.pathname === path
               return (
                 <Link
                   key={path}
