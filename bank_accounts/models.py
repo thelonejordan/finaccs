@@ -12,6 +12,7 @@ class BankAccount(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        db_table = 'bank_accounts_bankaccount'
 
     def __str__(self):
         return f"{self.nickname} ({self.bank_name})"
@@ -53,7 +54,7 @@ class BankTransaction(models.Model):
 
     class Meta:
         ordering = ['-date', '-row_number']
-        db_table = 'dashboard_transaction'
+        db_table = 'bank_accounts_banktransaction'
 
     def __str__(self):
         return f"{self.date} - {self.narration[:50]}"
@@ -87,7 +88,7 @@ class TransactionLog(models.Model):
 
     class Meta:
         ordering = ['-created_at']
-        db_table = 'dashboard_transactionlog'
+        db_table = 'bank_accounts_transactionlog'
 
     def __str__(self):
         return f"{self.created_at} - {self.action} - Transaction {self.transaction_id}"
@@ -121,7 +122,7 @@ class FileLoadLog(models.Model):
 
     class Meta:
         ordering = ['-created_at']
-        db_table = 'dashboard_fileloadlog'
+        db_table = 'bank_accounts_fileloadlog'
 
     def __str__(self):
         artifact_id = self.data_source_artifact.artifact_id if self.data_source_artifact else 'Unknown'
@@ -150,7 +151,7 @@ class AccountLog(models.Model):
 
     class Meta:
         ordering = ['-created_at']
-        db_table = 'dashboard_accountlog'
+        db_table = 'bank_accounts_accountlog'
 
     def __str__(self):
         return f"{self.created_at} - {self.action} - Account {self.bank_account_id}"
@@ -172,7 +173,7 @@ class DismissedBankInconsistency(models.Model):
     class Meta:
         ordering = ['-dismissed_at']
         unique_together = [['inconsistency_type', 'transaction_ids']]
-        db_table = 'dashboard_dismissedbankinconsistency'
+        db_table = 'bank_accounts_dismissedbankinconsistency'
 
     def __str__(self):
         return f"{self.get_inconsistency_type_display()}: {self.transaction_ids}"

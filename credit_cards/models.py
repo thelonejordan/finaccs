@@ -82,7 +82,7 @@ class CreditCardPaymentMatch(models.Model):
 
     class Meta:
         ordering = ['-created_at']
-        db_table = 'dashboard_creditcardpaymentmatch'
+        db_table = 'credit_cards_creditcardpaymentmatch'
 
     def __str__(self):
         return f"Match: Bank {self.bank_transaction_id} <-> CC {self.credit_card_transaction_id}"
