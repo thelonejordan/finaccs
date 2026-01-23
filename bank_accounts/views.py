@@ -67,6 +67,29 @@ def get_account_stats(account):
     summary="List bank accounts",
     description="Get all bank accounts with their transaction statistics.",
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Bank Accounts List',
+            value={
+                'accounts': [{
+                    'id': 1,
+                    'nickname': 'HDFC Savings',
+                    'bank_name': 'HDFC Bank',
+                    'account_number': '1234567890',
+                    'ifsc_code': 'HDFC0001234',
+                    'branch': 'Main Branch',
+                    'created_at': '2024-01-15T10:30:00Z',
+                    'updated_at': '2024-01-15T10:30:00Z',
+                    'current_balance': 125000.0,
+                    'last_transaction_date': '2024-01-20',
+                    'starting_balance': 50000.0,
+                    'first_transaction_date': '2023-06-01',
+                    'transaction_count': 250,
+                }]
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Bank Accounts'],
 )
 @extend_schema(
@@ -149,6 +172,25 @@ def account_list(request):
     summary="Get bank account",
     description="Get details of a specific bank account.",
     responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Bank Account Detail',
+            value={
+                'id': 1,
+                'nickname': 'HDFC Savings',
+                'bank_name': 'HDFC Bank',
+                'account_number': '1234567890',
+                'ifsc_code': 'HDFC0001234',
+                'branch': 'Main Branch',
+                'current_balance': 125000.0,
+                'last_transaction_date': '2024-01-20',
+                'starting_balance': 50000.0,
+                'first_transaction_date': '2023-06-01',
+                'transaction_count': 250,
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Bank Accounts'],
 )
 @extend_schema(
@@ -157,6 +199,13 @@ def account_list(request):
     description="Update bank account details.",
     request=OpenApiTypes.OBJECT,
     responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Update Bank Account',
+            value={'nickname': 'Updated Name', 'branch': 'New Branch'},
+            request_only=True,
+        ),
+    ],
     tags=['Bank Accounts'],
 )
 @extend_schema(
@@ -164,6 +213,13 @@ def account_list(request):
     summary="Delete bank account",
     description="Delete a bank account.",
     responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Delete Success',
+            value={'success': True},
+            response_only=True,
+        ),
+    ],
     tags=['Bank Accounts'],
 )
 @api_view(['GET', 'PUT', 'DELETE'])

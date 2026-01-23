@@ -79,6 +79,37 @@ def get_active_transactions():
     summary="Get financial summary",
     description="Get comprehensive financial summary including balance, credits, debits, income/expense breakdown, and per-account statistics.",
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Financial Summary',
+            value={
+                'starting_balance': 50000.0,
+                'current_balance': 125000.0,
+                'total_credits': 200000.0,
+                'total_debits': 125000.0,
+                'net_flow': 75000.0,
+                'salary_income': 150000.0,
+                'other_income': 50000.0,
+                'expenses': 125000.0,
+                'unaccounted': 0.0,
+                'transaction_count': 250,
+                'per_account': [{
+                    'id': 1,
+                    'nickname': 'HDFC Savings',
+                    'starting_balance': 50000.0,
+                    'current_balance': 125000.0,
+                    'total_credits': 200000.0,
+                    'total_debits': 125000.0,
+                    'salary_income': 150000.0,
+                    'other_income': 50000.0,
+                    'expenses': 125000.0,
+                    'unaccounted': 0.0,
+                    'transaction_count': 250,
+                }],
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Dashboard'],
 )
 @api_view(['GET'])
@@ -215,6 +246,19 @@ def api_summary(request):
     summary="Get monthly breakdown",
     description="Get monthly credit/debit breakdown, excluding self transfers.",
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Monthly Breakdown',
+            value={
+                'data': [
+                    {'month': 'Jan 2024', 'credits': 50000.0, 'debits': 35000.0},
+                    {'month': 'Feb 2024', 'credits': 55000.0, 'debits': 40000.0},
+                    {'month': 'Mar 2024', 'credits': 60000.0, 'debits': 45000.0},
+                ]
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Dashboard'],
 )
 @api_view(['GET'])
@@ -256,6 +300,21 @@ def api_monthly(request):
         ),
     ],
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Expense Categories',
+            value={
+                'data': [
+                    {'category': 'Food & Dining', 'amount': 25000.0},
+                    {'category': 'Shopping', 'amount': 15000.0},
+                    {'category': 'Transport', 'amount': 8000.0},
+                    {'category': 'Utilities', 'amount': 5000.0},
+                    {'category': 'Entertainment', 'amount': 3000.0},
+                ]
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Dashboard'],
 )
 @api_view(['GET'])
@@ -312,6 +371,36 @@ def api_categories(request):
         OpenApiParameter(name='offset', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Pagination offset (default: 0)'),
     ],
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Transactions List',
+            value={
+                'data': [{
+                    'id': 1,
+                    'date': '2024-01-15',
+                    'narration': 'ATM Withdrawal',
+                    'debit': 5000.0,
+                    'credit': 0.0,
+                    'balance': 45000.0,
+                    'category': 'Other',
+                    'reference': 'REF123456',
+                    'bank_account': {'id': 1, 'nickname': 'HDFC Savings'},
+                    'source_file': {'id': 1, 'filename': 'statement_2024.pdf'},
+                    'linked_transaction': None,
+                    'cc_payment_match': None,
+                }],
+                'total': 250,
+                'limit': 100,
+                'offset': 0,
+                'stats': {
+                    'total_credits': 200000.0,
+                    'total_debits': 125000.0,
+                    'net_flow': 75000.0,
+                },
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Transactions'],
 )
 @api_view(['GET'])
@@ -525,6 +614,22 @@ def api_transactions(request):
         OpenApiParameter(name='limit', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Number of expenses to return (default: 10)'),
     ],
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Top Expenses',
+            value={
+                'data': [{
+                    'id': 1,
+                    'date': '2024-01-15',
+                    'narration': 'Online Shopping - Amazon',
+                    'amount': 25000.0,
+                    'category': 'Shopping',
+                    'bank_account': {'id': 1, 'nickname': 'HDFC Savings'},
+                }]
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Dashboard'],
 )
 @api_view(['GET'])
@@ -617,6 +722,23 @@ def api_transaction_update(request, transaction_id):
         OpenApiParameter(name='days', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Date range window in days (default: 7)'),
     ],
     responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Potential Links',
+            value={
+                'data': [{
+                    'id': 2,
+                    'date': '2024-01-15',
+                    'narration': 'IMPS Transfer',
+                    'debit': 0.0,
+                    'credit': 10000.0,
+                    'category': None,
+                    'bank_account': {'id': 2, 'nickname': 'SBI Savings'},
+                }]
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Transactions'],
 )
 @api_view(['GET'])
@@ -834,6 +956,35 @@ def api_link_transaction(request, transaction_id):
         OpenApiParameter(name='offset', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Pagination offset (default: 0)'),
     ],
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Transaction Logs',
+            value={
+                'data': [{
+                    'id': 'txn_1',
+                    'log_type': 'transaction',
+                    'action': 'CATEGORY_CHANGE',
+                    'action_display': 'Category Changed',
+                    'old_value': 'Other',
+                    'new_value': 'Food & Dining',
+                    'created_at': '2024-01-15T10:30:00Z',
+                    'transaction': {
+                        'id': 1,
+                        'date': '2024-01-15',
+                        'narration': 'Restaurant payment',
+                        'bank_account': 'HDFC Savings',
+                    },
+                    'bank_account': None,
+                    'source_file': None,
+                    'file_load': None,
+                }],
+                'total': 50,
+                'limit': 100,
+                'offset': 0,
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Logs'],
 )
 @api_view(['GET'])
@@ -960,6 +1111,18 @@ def api_transaction_logs(request):
         OpenApiParameter(name='search', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Search narration, category, or reference'),
     ],
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Date Range',
+            value={
+                'years': {
+                    '2024': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                    '2023': [6, 7, 8, 9, 10, 11, 12],
+                }
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Dashboard'],
 )
 @api_view(['GET'])
@@ -1016,6 +1179,34 @@ def api_date_range(request):
         OpenApiParameter(name='offset', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Pagination offset (default: 0)'),
     ],
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Balance Inconsistencies',
+            value={
+                'data': [{
+                    'transaction_id': 1,
+                    'date': '2024-01-15',
+                    'narration': 'ATM Withdrawal',
+                    'debit': 5000.0,
+                    'credit': 0.0,
+                    'actual_balance': 45000.0,
+                    'expected_balance': 50000.0,
+                    'gap': -5000.0,
+                    'reference': 'REF123456',
+                    'bank_account': {'id': 1, 'nickname': 'HDFC Savings'},
+                    'previous_transaction': {
+                        'id': 0,
+                        'date': '2024-01-14',
+                        'closing_balance': 50000.0,
+                    },
+                }],
+                'total': 5,
+                'limit': 100,
+                'offset': 0,
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Dashboard'],
 )
 @api_view(['GET'])
@@ -1124,6 +1315,34 @@ def api_inconsistencies(request):
         OpenApiParameter(name='offset', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Pagination offset (default: 0)'),
     ],
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Bank Inconsistencies',
+            value={
+                'data': [{
+                    'type': 'duplicate',
+                    'transaction_ids': [1, 2],
+                    'dismissed': False,
+                    'date': '2024-01-15',
+                    'narration': 'ATM Withdrawal',
+                    'debit': 5000.0,
+                    'credit': 0.0,
+                    'balance': 45000.0,
+                    'count': 2,
+                    'bank_account': {'id': 1, 'nickname': 'HDFC Savings'},
+                    'transactions': [
+                        {'id': 1, 'artifact_id': 'dsa_abc123'},
+                        {'id': 2, 'artifact_id': 'dsa_def456'},
+                    ],
+                }],
+                'total': 10,
+                'counts': {'duplicate': 3, 'cross_account': 2, 'balance_gap': 5},
+                'limit': 100,
+                'offset': 0,
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Dashboard'],
 )
 @api_view(['GET'])
@@ -1386,6 +1605,18 @@ def bank_inconsistencies(request):
     description="Mark a bank inconsistency as dismissed.",
     request=OpenApiTypes.OBJECT,
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Dismiss Request',
+            value={'type': 'duplicate', 'transaction_ids': [1, 2], 'reason': 'Known duplicate from overlapping statements'},
+            request_only=True,
+        ),
+        OpenApiExample(
+            'Dismiss Response',
+            value={'success': True, 'id': 1, 'created': True},
+            response_only=True,
+        ),
+    ],
     tags=['Dashboard'],
 )
 @api_view(['POST'])
@@ -1423,6 +1654,18 @@ def dismiss_bank_inconsistency(request):
     description="Restore a dismissed bank inconsistency.",
     request=OpenApiTypes.OBJECT,
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Restore Request',
+            value={'type': 'duplicate', 'transaction_ids': [1, 2]},
+            request_only=True,
+        ),
+        OpenApiExample(
+            'Restore Response',
+            value={'success': True, 'deleted': True},
+            response_only=True,
+        ),
+    ],
     tags=['Dashboard'],
 )
 @api_view(['POST'])
@@ -1506,6 +1749,37 @@ def calculate_match_score(bank_txn, cc_txn):
         OpenApiParameter(name='year', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by year'),
     ],
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'CC Payment Suggestions',
+            value={
+                'data': [{
+                    'bank_transaction': {
+                        'id': 1,
+                        'date': '2024-01-15',
+                        'narration': 'HDFC CC Payment',
+                        'amount': 25000.0,
+                        'is_debit': True,
+                        'bank_account': {'id': 1, 'nickname': 'HDFC Savings'},
+                    },
+                    'suggestions': [{
+                        'credit_card_transaction': {
+                            'id': 10,
+                            'date': '2024-01-15',
+                            'description': 'Payment Received',
+                            'amount': -25000.0,
+                            'credit_card': {'id': 1, 'nickname': 'HDFC Credit Card'},
+                        },
+                        'offset': 0.0,
+                        'confidence_score': 1.0,
+                        'match_reasons': ['exact_amount', 'same_day'],
+                    }],
+                }],
+                'total': 5,
+            },
+            response_only=True,
+        ),
+    ],
     tags=['CC Payment Matching'],
 )
 @api_view(['GET'])
@@ -1619,6 +1893,37 @@ def api_cc_payment_suggestions(request):
         OpenApiParameter(name='year', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by year'),
     ],
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'CC Payment Suggestions (Reverse)',
+            value={
+                'data': [{
+                    'credit_card_transaction': {
+                        'id': 10,
+                        'date': '2024-01-15',
+                        'description': 'Payment Received',
+                        'amount': -25000.0,
+                        'credit_card': {'id': 1, 'nickname': 'HDFC Credit Card'},
+                    },
+                    'suggestions': [{
+                        'bank_transaction': {
+                            'id': 1,
+                            'date': '2024-01-15',
+                            'narration': 'HDFC CC Payment',
+                            'amount': 25000.0,
+                            'is_debit': True,
+                            'bank_account': {'id': 1, 'nickname': 'HDFC Savings'},
+                        },
+                        'offset': 0.0,
+                        'confidence_score': 1.0,
+                        'match_reasons': ['exact_amount', 'same_day'],
+                    }],
+                }],
+                'total': 5,
+            },
+            response_only=True,
+        ),
+    ],
     tags=['CC Payment Matching'],
 )
 @api_view(['GET'])
@@ -1731,6 +2036,37 @@ def api_cc_payment_suggestions_reverse(request):
         OpenApiParameter(name='year', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by year'),
     ],
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'CC Payment Matches',
+            value={
+                'data': [{
+                    'id': 1,
+                    'bank_transaction': {
+                        'id': 1,
+                        'date': '2024-01-15',
+                        'narration': 'HDFC CC Payment',
+                        'amount': 25000.0,
+                        'is_debit': True,
+                        'bank_account': {'id': 1, 'nickname': 'HDFC Savings'},
+                    },
+                    'credit_card_transaction': {
+                        'id': 10,
+                        'date': '2024-01-15',
+                        'description': 'Payment Received',
+                        'amount': -25000.0,
+                        'credit_card': {'id': 1, 'nickname': 'HDFC Credit Card'},
+                    },
+                    'offset': 0.0,
+                    'confidence_score': 1.0,
+                    'match_reasons': ['exact_amount', 'same_day'],
+                    'created_at': '2024-01-16T10:30:00Z',
+                }],
+                'total': 10,
+            },
+            response_only=True,
+        ),
+    ],
     tags=['CC Payment Matching'],
 )
 @extend_schema(
@@ -1893,6 +2229,13 @@ def api_cc_payment_matches(request):
     summary="Delete a CC payment match",
     description="Remove a confirmed credit card payment match.",
     responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Delete Success',
+            value={'success': True},
+            response_only=True,
+        ),
+    ],
     tags=['CC Payment Matching'],
 )
 @api_view(['DELETE'])
@@ -1911,6 +2254,13 @@ def api_cc_payment_match_delete(request, match_id):
     summary="Get CC payment match years",
     description="Get available years with match counts for filtering.",
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Match Years',
+            value={'years': {'2024': 15, '2023': 12}},
+            response_only=True,
+        ),
+    ],
     tags=['CC Payment Matching'],
 )
 @api_view(['GET'])

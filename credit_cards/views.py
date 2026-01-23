@@ -83,6 +83,29 @@ def get_credit_card_stats(card):
     summary="List credit cards",
     description="Get all credit cards with their transaction statistics.",
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Credit Cards List',
+            value={
+                'cards': [{
+                    'id': 1,
+                    'nickname': 'HDFC Card',
+                    'card_name': 'HDFC Regalia',
+                    'card_number_mask': '****1234',
+                    'issuer': 'HDFC',
+                    'credit_limit': 500000.0,
+                    'created_at': '2024-01-15T10:30:00Z',
+                    'updated_at': '2024-01-15T10:30:00Z',
+                    'total_charges': 50000.0,
+                    'total_payments': 45000.0,
+                    'last_transaction_date': '2024-01-20',
+                    'first_transaction_date': '2023-06-01',
+                    'transaction_count': 150,
+                }]
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Credit Cards'],
 )
 @extend_schema(
@@ -158,6 +181,25 @@ def credit_card_list(request):
     summary="Get credit card",
     description="Get details of a specific credit card.",
     responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Credit Card Detail',
+            value={
+                'id': 1,
+                'nickname': 'HDFC Card',
+                'card_name': 'HDFC Regalia',
+                'card_number_mask': '****1234',
+                'issuer': 'HDFC',
+                'credit_limit': 500000.0,
+                'total_charges': 50000.0,
+                'total_payments': 45000.0,
+                'last_transaction_date': '2024-01-20',
+                'first_transaction_date': '2023-06-01',
+                'transaction_count': 150,
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Credit Cards'],
 )
 @extend_schema(
@@ -166,6 +208,13 @@ def credit_card_list(request):
     description="Update credit card details.",
     request=OpenApiTypes.OBJECT,
     responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Update Credit Card',
+            value={'nickname': 'Updated Card Name', 'credit_limit': 600000},
+            request_only=True,
+        ),
+    ],
     tags=['Credit Cards'],
 )
 @extend_schema(
@@ -173,6 +222,13 @@ def credit_card_list(request):
     summary="Delete credit card",
     description="Delete a credit card.",
     responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Delete Success',
+            value={'success': True},
+            response_only=True,
+        ),
+    ],
     tags=['Credit Cards'],
 )
 @api_view(['GET', 'PUT', 'DELETE'])
@@ -236,6 +292,32 @@ def credit_card_detail(request, card_id):
         OpenApiParameter(name='offset', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Pagination offset (default: 0)'),
     ],
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Credit Card Transactions',
+            value={
+                'data': [{
+                    'id': 1,
+                    'date': '2024-01-15',
+                    'description': 'Amazon.in Purchase',
+                    'amount': 2500.0,
+                    'intl_amount': 0.0,
+                    'intl_currency': '',
+                    'exchange_rate': None,
+                    'category': 'Shopping',
+                    'credit_card': {'id': 1, 'nickname': 'HDFC Card'},
+                    'bank_payment_match': None,
+                }],
+                'total': 150,
+                'stats': {
+                    'total_charges': 50000.0,
+                    'total_payments': 45000.0,
+                    'net': 5000.0,
+                },
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Credit Card Transactions'],
 )
 @api_view(['GET'])
@@ -358,6 +440,13 @@ def credit_card_transactions(request):
     summary="Get credit card date range",
     description="Get available years and months with credit card transaction data.",
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Date Range',
+            value={'years': {'2024': [1, 2, 3, 4, 5, 6], '2023': [7, 8, 9, 10, 11, 12]}},
+            response_only=True,
+        ),
+    ],
     tags=['Credit Card Transactions'],
 )
 @api_view(['GET'])
@@ -402,6 +491,19 @@ PREDEFINED_CC_CATEGORIES = [
         OpenApiParameter(name='include_all', type=OpenApiTypes.BOOL, location=OpenApiParameter.QUERY, description='Include uncategorized (default: false)'),
     ],
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Credit Card Categories',
+            value={
+                'categories': [
+                    {'category': 'Shopping', 'count': 50, 'amount': 25000.0},
+                    {'category': 'Food Delivery', 'count': 30, 'amount': 8000.0},
+                    {'category': 'Transport', 'count': 20, 'amount': 3000.0},
+                ]
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Credit Card Transactions'],
 )
 @api_view(['GET'])
@@ -512,6 +614,32 @@ def credit_card_transaction_category(request, transaction_id):
         OpenApiParameter(name='include_dismissed', type=OpenApiTypes.BOOL, location=OpenApiParameter.QUERY, description='Include dismissed inconsistencies (default: false)'),
     ],
     responses={200: OpenApiTypes.OBJECT},
+    examples=[
+        OpenApiExample(
+            'Credit Card Inconsistencies',
+            value={
+                'data': [{
+                    'type': 'same_card_duplicate',
+                    'key': '1_2024-01-15_Amazon Purchase_2500.0',
+                    'dismissed': False,
+                    'transactions': [{
+                        'id': 1,
+                        'date': '2024-01-15',
+                        'description': 'Amazon Purchase',
+                        'amount': 2500.0,
+                        'credit_card': {'id': 1, 'nickname': 'HDFC Card'},
+                    }],
+                }],
+                'counts': {
+                    'same_card_duplicate': 2,
+                    'cross_card_match': 1,
+                    'missing_description': 3,
+                },
+                'total': 6,
+            },
+            response_only=True,
+        ),
+    ],
     tags=['Credit Card Transactions'],
 )
 @api_view(['GET'])
