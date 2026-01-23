@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { useSearchParams } from "react-router-dom"
 import {
   FileTextIcon,
   DownloadIcon,
@@ -1188,8 +1189,21 @@ function mapExtraction(ext: Extraction, sourceFiles: SourceFile[]): MappedExtrac
 // Main Extractions Page
 
 export function ExtractionsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+
   // Domain toggle: 'credit_card' or 'bank_account'
-  const [domain, setDomain] = useState<'credit_card' | 'bank_account'>('bank_account')
+  const getInitialDomain = (): 'credit_card' | 'bank_account' => {
+    const domainParam = searchParams.get('domain')
+    if (domainParam === 'credit-card') return 'credit_card'
+    return 'bank_account'
+  }
+
+  const [domain, setDomain] = useState<'credit_card' | 'bank_account'>(getInitialDomain)
+
+  const handleDomainChange = (newDomain: 'credit_card' | 'bank_account') => {
+    setDomain(newDomain)
+    setSearchParams({ domain: newDomain === 'credit_card' ? 'credit-card' : 'bank' }, { replace: true })
+  }
 
   // State
   const [sourceFiles, setSourceFiles] = useState<PDFSourceFile[]>([])
@@ -1503,7 +1517,7 @@ export function ExtractionsPage() {
             {/* Domain toggle (bank_account/credit_card) */}
             <div className="flex items-center bg-muted rounded-lg p-1">
               <button
-                onClick={() => setDomain('bank_account')}
+                onClick={() => handleDomainChange('bank_account')}
                 className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
                   domain === 'bank_account'
                     ? 'bg-background text-foreground shadow-sm'
@@ -1513,7 +1527,7 @@ export function ExtractionsPage() {
                 Bank Account
               </button>
               <button
-                onClick={() => setDomain('credit_card')}
+                onClick={() => handleDomainChange('credit_card')}
                 className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
                   domain === 'credit_card'
                     ? 'bg-background text-foreground shadow-sm'
