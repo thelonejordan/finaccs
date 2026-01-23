@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { Dashboard } from "@/components/Dashboard"
 import { BankTransactionsPage } from "@/components/BankTransactionsPage"
-import { CreditCardsPage } from "@/components/CreditCardsPage"
+import { CreditCardTransactionsPage } from "@/components/CreditCardTransactionsPage"
 import { ConsolePage } from "@/components/ConsolePage"
 import { InconsistenciesPage } from "@/components/InconsistenciesPage"
 import { LogsPage } from "@/components/LogsPage"
@@ -22,7 +22,7 @@ function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/transactions" element={<BankTransactionsPage />} />
-          <Route path="/credit-cards" element={<CreditCardsPage />} />
+          <Route path="/credit-cards" element={<CreditCardTransactionsPage />} />
           <Route path="/extractions" element={<ExtractionsPage />} />
           <Route path="/extractions-v2" element={<ExtractionsV2Page />} />
           <Route path="/story" element={<StoryPage />} />

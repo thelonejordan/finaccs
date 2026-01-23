@@ -428,7 +428,7 @@ function Pagination({
   )
 }
 
-export function CreditCardsPage() {
+export function CreditCardTransactionsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
 
