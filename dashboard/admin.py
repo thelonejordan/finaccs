@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Transaction, TransactionLog, FileLoadLog, AccountLog
+from bank_accs.models import Transaction, TransactionLog, FileLoadLog, AccountLog
 
 
 @admin.register(Transaction)

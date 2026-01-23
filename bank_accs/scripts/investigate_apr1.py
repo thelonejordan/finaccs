@@ -1,4 +1,4 @@
-from dashboard.models import Transaction
+from bank_accs.models import Transaction
 from django.db.models import Q
 
 

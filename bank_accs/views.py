@@ -22,8 +22,7 @@ except ImportError:
     OpenApiExample = _MockCallable
     OpenApiTypes = type('OpenApiTypes', (), {'OBJECT': object, 'INT': int, 'STR': str, 'BOOL': bool})()
 
-from .models import BankAccount
-from dashboard.models import AccountLog
+from .models import BankAccount, AccountLog
 
 
 def get_account_stats(account):

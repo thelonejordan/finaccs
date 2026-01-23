@@ -28,7 +28,7 @@ except ImportError:
     OpenApiExample = _MockCallable
     OpenApiTypes = type('OpenApiTypes', (), {'OBJECT': object, 'INT': int, 'STR': str, 'BOOL': bool})()
 
-from .models import Transaction, TransactionLog, AccountLog, FileLoadLog, CreditCardPaymentMatch
+from bank_accs.models import Transaction, TransactionLog, AccountLog, FileLoadLog, CreditCardPaymentMatch, DismissedBankInconsistency
 from credit_cards.views import get_active_cc_transactions
 
 # Categories to exclude from income/expense calculations (internal transfers)
@@ -1116,7 +1116,6 @@ def api_inconsistencies(request):
 def bank_inconsistencies(request):
     """Detect duplicates, cross-account matches, and balance gaps in bank transactions."""
     from bank_accs.models import BankAccount
-    from .models import DismissedBankInconsistency
 
     bank_account_id = request.GET.get('bank_account')
     type_filter = request.GET.get('type')
@@ -1378,8 +1377,6 @@ def bank_inconsistencies(request):
 @api_view(['POST'])
 def dismiss_bank_inconsistency(request):
     """Dismiss a bank inconsistency."""
-    from .models import DismissedBankInconsistency
-
     data = json.loads(request.body)
     inconsistency_type = data.get('type')
     transaction_ids = data.get('transaction_ids', [])
@@ -1417,8 +1414,6 @@ def dismiss_bank_inconsistency(request):
 @api_view(['POST'])
 def restore_bank_inconsistency(request):
     """Restore a dismissed bank inconsistency."""
-    from .models import DismissedBankInconsistency
-
     data = json.loads(request.body)
     inconsistency_type = data.get('type')
     transaction_ids = data.get('transaction_ids', [])
