@@ -80,10 +80,22 @@ Copy the example environment file and customize:
 cp .env.example .env
 ```
 
-Edit `.env` with your settings:
-- `SECRET_KEY` - Django secret key
-- `DATABASE_URL` - Database connection string
-- `CORS_ALLOWED_ORIGINS` - Allowed frontend origins
+**Environment Variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SECRET_KEY` | - | Django secret key (required in production) |
+| `DEBUG` | `False` | Django debug mode |
+| `ALLOWED_HOSTS` | - | Comma-separated allowed hosts |
+| `DATABASE_URL` | - | MySQL connection string |
+| `CORS_ALLOWED_ORIGINS` | - | Comma-separated CORS origins |
+| `DEV_MODE` | `0` | Enable dev features (API docs, django-extensions) |
+| `REDIS_ENABLED` | `0` | Enable Redis caching |
+| `REDIS_HOST` | `127.0.0.1` | Redis host |
+| `REDIS_PORT` | `6379` | Redis port |
+| `REDIS_USERNAME` | `default` | Redis username |
+| `REDIS_PASSWORD` | - | Redis password |
+| `VITE_API_BASE` | `http://localhost:8000` | Frontend API base URL |
 
 ### 6. Enable Redis Caching (Optional)
 
@@ -162,53 +174,50 @@ cd frontend && npm run dev &
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/summary/` | GET | Financial summary (balance, totals) |
-| `/api/monthly/` | GET | Monthly income/expense breakdown |
-| `/api/categories/` | GET | Spending by category |
-| `/api/transactions/` | GET | List transactions (with pagination) |
-| `/api/top-expenses/` | GET | Top expenses by amount |
-| `/api/accounts/` | GET, POST | Bank accounts management |
-| `/api/accounts/<id>/` | GET, PUT, DELETE | Single account operations |
+Main API groups (enable `DEV_MODE=1` to access `/api/docs/` for full OpenAPI docs):
+
+| Prefix | Description |
+|--------|-------------|
+| `/api/summary/`, `/api/monthly/`, `/api/categories/` | Dashboard analytics |
+| `/api/transactions/` | Bank transactions CRUD |
+| `/api/accounts/` | Bank accounts management |
+| `/api/credit-cards/`, `/api/credit-card-transactions/` | Credit card management |
+| `/api/cc-payment-*` | CC payment matching |
+| `/api/bank-inconsistencies/`, `/api/credit-card-inconsistencies/` | Anomaly detection |
+| `/api/extractions/` | Extraction pipeline (source files, artifacts, data sources) |
 
 ## Project Structure
 
 ```
 finaccs/
-├── bank_accs/              # Bank accounts app
-│   ├── data/               # Bank statement files
-│   ├── models.py           # BankAccount model
-│   ├── views.py            # Account API views
-│   └── urls.py             # Account URL routes
+├── bank_accounts/          # Bank accounts app (models, views)
+├── bank_accs/              # Bank statement data directory
+│   └── data/               # Place bank statement files here
+├── credit_cards/           # Credit cards app (models, views)
 ├── dashboard/              # Dashboard/transactions app
-│   ├── models.py           # Transaction model
-│   └── views.py            # Transaction API views
+├── extractions/            # PDF/CSV extraction pipeline
 ├── frontend/               # React frontend
 │   ├── src/
-│   │   ├── components/     # React components
-│   │   ├── lib/            # API client, utilities
-│   │   └── App.tsx         # Main app component
-│   ├── package.json
-│   └── vite.config.ts
+│   │   ├── components/     # React page components
+│   │   └── lib/            # API client, caches, theme
+│   └── package.json
 ├── project/                # Django project settings
-│   ├── settings.py
-│   └── urls.py
-├── pyproject.toml          # Python dependencies
+├── pyproject.toml          # Python dependencies (uv)
 ├── manage.py               # Django CLI
-└── .env                    # Environment configuration
+├── .env.example            # Environment template
+└── MODELLING.md            # Data model documentation
 ```
 
 ## Features
 
-- **Summary Cards:** Current balance, total income, expenses, transaction count
-- **Monthly Chart:** Bar chart showing monthly income vs expenses
-- **Category Waffle Chart:** Visual breakdown of spending by category
-- **Recent Transactions:** Latest transactions with hover details
-- **Top Expenses:** Largest expenses ranked by amount
-- **Bank Account Management:** Add/edit bank account details
-- **Data Sources:** View linked and pending statement files
-- **Dark/Light Mode:** Theme toggle in the menu
+- **Dashboard:** Summary cards, monthly charts, category breakdown, top expenses
+- **Bank Transactions:** Browse, search, filter, and categorize bank transactions
+- **Credit Card Transactions:** Track credit card spending with category management
+- **CC Payment Matching:** Match bank payments to credit card transactions
+- **Anomaly Detection:** Identify duplicate transactions and balance gaps
+- **Extraction Pipeline:** Upload and process PDF/CSV bank statements
+- **Console:** Manage bank accounts and credit cards
+- **Dark/Light Mode:** Theme toggle in the header
 
 ## Development Notes
 
