@@ -592,8 +592,14 @@ export function CreditCardsPage() {
             setSelectedMonth(months[months.length - 1])
           }
         }
+
+        // If no data available, stop loading
+        if (years.length === 0) {
+          setLoading(false)
+        }
       } catch (error) {
         console.error("Failed to load date range:", error)
+        setLoading(false)
       }
     }
     loadDateRange()
@@ -672,7 +678,10 @@ export function CreditCardsPage() {
 
   useEffect(() => {
     async function loadTransactions() {
-      if (!selectedYear || !selectedMonth) return
+      if (!selectedYear || !selectedMonth) {
+        setLoading(false)
+        return
+      }
 
       // Only show loading spinner if not a page change (to prevent layout shift)
       const isPageChange = isPageChangeRef.current
@@ -1160,8 +1169,8 @@ export function CreditCardsPage() {
               </div>
             ) : !selectedYear || !selectedMonth ? (
               <div className="text-center py-12 text-muted-foreground">
-                <CalendarIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Select a year and month to view transactions</p>
+                <CreditCardIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>{availableYears.length === 0 ? "No credit card transactions available" : "Select a year and month to view transactions"}</p>
               </div>
             ) : transactions.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">

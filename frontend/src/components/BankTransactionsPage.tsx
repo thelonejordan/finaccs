@@ -639,7 +639,7 @@ function Pagination({
   )
 }
 
-export function TransactionsModernPage() {
+export function BankTransactionsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
 
