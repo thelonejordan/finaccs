@@ -77,7 +77,7 @@ def load_artifact(artifact: DataSourceArtifact) -> Tuple[int, Optional[str]]:
 
 def _load_bank_transactions(artifact: DataSourceArtifact, reader) -> int:
     """Load bank account transactions from CSV reader."""
-    from bank_accs.models import Transaction
+    from bank_accounts.models import Transaction
 
     transactions = []
     for row in reader:
@@ -173,7 +173,7 @@ def unload_artifact(artifact: DataSourceArtifact) -> Tuple[int, Optional[str]]:
 
         # Delete transactions
         if artifact.data_source_target == 'bank_account_transactions':
-            from bank_accs.models import Transaction
+            from bank_accounts.models import Transaction
             count, _ = Transaction.objects.filter(data_source_artifact=artifact).delete()
             invalidate_bank_inconsistencies()
         elif artifact.data_source_target == 'credit_card_transactions':
@@ -230,7 +230,7 @@ def _snapshot_links(artifact: DataSourceArtifact):
     snapshots = []
 
     if artifact.data_source_target == 'bank_account_transactions':
-        from bank_accs.models import Transaction, CreditCardPaymentMatch
+        from bank_accounts.models import Transaction, CreditCardPaymentMatch
 
         # Snapshot self-transfer links
         transactions = Transaction.objects.filter(
@@ -292,7 +292,7 @@ def _reapply_links(artifact: DataSourceArtifact):
         return
 
     if artifact.data_source_target == 'bank_account_transactions':
-        from bank_accs.models import Transaction, CreditCardPaymentMatch
+        from bank_accounts.models import Transaction, CreditCardPaymentMatch
         from credit_cards.models import CreditCardTransaction
 
         # Build lookup of new transactions by row_id

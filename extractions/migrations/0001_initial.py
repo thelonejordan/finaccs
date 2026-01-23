@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('bank_accs', '0001_initial_squashed'),
+        ('bank_accounts', '0001_initial_squashed'),
         ('credit_cards', '0002_creditcardtransaction_artifact_row_id'),
     ]
 
@@ -90,7 +90,7 @@ class Migration(migrations.Migration):
                 ('hidden', models.BooleanField(default=False)),
                 ('transformed_at', models.DateTimeField(auto_now_add=True)),
                 ('loaded_at', models.DateTimeField(blank=True, null=True)),
-                ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='data_source_artifacts', to='bank_accs.bankaccount')),
+                ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='data_source_artifacts', to='bank_accounts.bankaccount')),
                 ('credit_card', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='data_source_artifacts', to='credit_cards.creditcard')),
                 ('source_artifact', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='data_source_artifacts', to='extractions.extractionartifact')),
             ],

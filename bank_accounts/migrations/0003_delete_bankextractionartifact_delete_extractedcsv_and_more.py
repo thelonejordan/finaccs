@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('bank_accs', '0002_remove_bankextractionartifact_bank_account_and_more'),
+        ('bank_accounts', '0002_remove_bankextractionartifact_bank_account_and_more'),
         ('dashboard', '0003_remove_accountlog_source_file_and_more'),
     ]
 

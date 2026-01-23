@@ -43,7 +43,7 @@ class Migration(migrations.Migration):
                 ('error_message', models.TextField(blank=True)),
                 ('disabled', models.BooleanField(default=False)),
                 ('hidden', models.BooleanField(default=False)),
-                ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='extracted_csvs', to='bank_accs.bankaccount')),
+                ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='extracted_csvs', to='bank_accounts.bankaccount')),
             ],
             options={
                 'ordering': ['-extracted_at'],
@@ -60,8 +60,8 @@ class Migration(migrations.Migration):
                 ('data_hash', models.CharField(max_length=64)),
                 ('row_count', models.IntegerField(default=0)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='artifacts', to='bank_accs.bankaccount')),
-                ('extraction', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='artifacts', to='bank_accs.extractedcsv')),
+                ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='artifacts', to='bank_accounts.bankaccount')),
+                ('extraction', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='artifacts', to='bank_accounts.extractedcsv')),
             ],
             options={
                 'ordering': ['artifact_type'],
@@ -78,7 +78,7 @@ class Migration(migrations.Migration):
                 ('description', models.TextField(blank=True)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('default_bank_account', models.ForeignKey(blank=True, help_text='Default bank account for new files matching this pipeline', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='default_pipelines', to='bank_accs.bankaccount')),
+                ('default_bank_account', models.ForeignKey(blank=True, help_text='Default bank account for new files matching this pipeline', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='default_pipelines', to='bank_accounts.bankaccount')),
             ],
             options={
                 'ordering': ['name'],
@@ -87,7 +87,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='extractedcsv',
             name='pipeline',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='bank_accs.extractionpipeline'),
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='bank_accounts.extractionpipeline'),
         ),
         migrations.CreateModel(
             name='SourceFile',
@@ -103,8 +103,8 @@ class Migration(migrations.Migration):
                 ('mime_type', models.CharField(blank=True, max_length=100)),
                 ('date_range_start', models.DateField(blank=True, null=True)),
                 ('date_range_end', models.DateField(blank=True, null=True)),
-                ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='source_files', to='bank_accs.bankaccount')),
-                ('pipeline', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='source_files', to='bank_accs.extractionpipeline')),
+                ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='source_files', to='bank_accounts.bankaccount')),
+                ('pipeline', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='source_files', to='bank_accounts.extractionpipeline')),
             ],
             options={
                 'ordering': ['-created_at'],
@@ -113,6 +113,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='extractedcsv',
             name='source_file',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='extracted_csvs', to='bank_accs.sourcefile'),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='extracted_csvs', to='bank_accounts.sourcefile'),
         ),
     ]

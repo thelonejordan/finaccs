@@ -1,9 +1,9 @@
-from bank_accs.models import Transaction
+from bank_accounts.models import Transaction
 from django.db.models import Q
 
 
 def run():
-    from bank_accs.models import BankAccount
+    from bank_accounts.models import BankAccount
 
     account = BankAccount.objects.get(nickname='SBI')
 

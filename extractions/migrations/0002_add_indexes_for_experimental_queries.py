@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('bank_accs', '0001_initial_squashed'),
+        ('bank_accounts', '0001_initial_squashed'),
         ('credit_cards', '0003_creditcardtransaction_data_source_artifact'),
         ('extractions', '0001_initial'),
     ]

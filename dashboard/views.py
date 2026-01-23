@@ -28,7 +28,7 @@ except ImportError:
     OpenApiExample = _MockCallable
     OpenApiTypes = type('OpenApiTypes', (), {'OBJECT': object, 'INT': int, 'STR': str, 'BOOL': bool})()
 
-from bank_accs.models import Transaction, TransactionLog, AccountLog, FileLoadLog, CreditCardPaymentMatch, DismissedBankInconsistency
+from bank_accounts.models import Transaction, TransactionLog, AccountLog, FileLoadLog, CreditCardPaymentMatch, DismissedBankInconsistency
 from credit_cards.views import get_active_cc_transactions
 
 # Categories to exclude from income/expense calculations (internal transfers)
@@ -85,7 +85,7 @@ def api_summary(request):
     # Get active transactions (excludes disabled source files)
     all_transactions = get_active_transactions()
     from django.db.models import Q
-    from bank_accs.models import BankAccount
+    from bank_accounts.models import BankAccount
 
     # For income/expense breakdown, exclude linked self transfers (both sides of the link)
     # Exclude transactions that link TO another (linked_transaction is set)
@@ -1013,7 +1013,7 @@ def api_inconsistencies(request):
 
     If actual closing_balance != expected_closing, it's an inconsistency.
     """
-    from bank_accs.models import BankAccount
+    from bank_accounts.models import BankAccount
 
     bank_account_id = request.GET.get('bank_account')
     limit = int(request.GET.get('limit', 100))
@@ -1115,7 +1115,7 @@ def api_inconsistencies(request):
 @api_view(['GET'])
 def bank_inconsistencies(request):
     """Detect duplicates, cross-account matches, and balance gaps in bank transactions."""
-    from bank_accs.models import BankAccount
+    from bank_accounts.models import BankAccount
 
     bank_account_id = request.GET.get('bank_account')
     type_filter = request.GET.get('type')

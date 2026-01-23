@@ -246,7 +246,7 @@ class DataSourceArtifact(models.Model):
 
     # Entity links (mutually exclusive)
     bank_account = models.ForeignKey(
-        'bank_accs.BankAccount',
+        'bank_accounts.BankAccount',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

@@ -31,7 +31,7 @@ from .extractors import (
 from .transformers import transform_artifact, get_transformer
 from .loader import load_artifact, unload_artifact, delete_artifact, reload_artifact
 
-from bank_accs.models import BankAccount
+from bank_accounts.models import BankAccount
 from credit_cards.models import CreditCard
 from project.cache_utils import invalidate_all_inconsistencies
 
@@ -172,7 +172,7 @@ def source_file_refresh(request):
     Scan directories and create SourceFile records for new files.
 
     Request body (optional):
-    - bank_account_dir: str (default: 'bank_accs/data')
+    - bank_account_dir: str (default: 'bank_accounts/data')
     - credit_card_dir: str (default: 'credit_cards/data')
     """
     try:
@@ -180,7 +180,7 @@ def source_file_refresh(request):
     except json.JSONDecodeError:
         data = {}
 
-    bank_dir = Path(settings.BASE_DIR) / data.get('bank_account_dir', 'bank_accs/data')
+    bank_dir = Path(settings.BASE_DIR) / data.get('bank_account_dir', 'bank_accounts/data')
     cc_dir = Path(settings.BASE_DIR) / data.get('credit_card_dir', 'credit_cards/data')
 
     created = 0

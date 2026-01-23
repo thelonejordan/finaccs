@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('bank_accs', '0001_initial_squashed'),
+        ('bank_accounts', '0001_initial_squashed'),
         ('credit_cards', '0001_initial_squashed'),
     ]
 
@@ -22,8 +22,8 @@ class Migration(migrations.Migration):
                 ('old_value', models.CharField(blank=True, max_length=255)),
                 ('new_value', models.CharField(blank=True, max_length=255)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='logs', to='bank_accs.bankaccount')),
-                ('source_file', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='bank_accs.sourcefile')),
+                ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='logs', to='bank_accounts.bankaccount')),
+                ('source_file', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='bank_accounts.sourcefile')),
             ],
             options={
                 'ordering': ['-created_at'],
@@ -52,8 +52,8 @@ class Migration(migrations.Migration):
                 ('category_summary', models.JSONField(blank=True, default=dict)),
                 ('link_source', models.CharField(choices=[('pre_existing', 'Pre-existing Link'), ('none', 'No Link')], default='none', max_length=20)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='bank_accs.bankaccount')),
-                ('source_file', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='load_logs', to='bank_accs.sourcefile')),
+                ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='bank_accounts.bankaccount')),
+                ('source_file', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='load_logs', to='bank_accounts.sourcefile')),
             ],
             options={
                 'ordering': ['-created_at'],
@@ -72,11 +72,11 @@ class Migration(migrations.Migration):
                 ('closing_balance', models.DecimalField(decimal_places=2, max_digits=12)),
                 ('category', models.CharField(blank=True, max_length=50)),
                 ('row_number', models.IntegerField(default=0)),
-                ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='transactions', to='bank_accs.bankaccount')),
-                ('extracted_csv', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='transactions', to='bank_accs.extractedcsv')),
+                ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='transactions', to='bank_accounts.bankaccount')),
+                ('extracted_csv', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='transactions', to='bank_accounts.extractedcsv')),
                 ('linked_transaction', models.OneToOneField(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='linked_from', to='dashboard.transaction')),
-                ('source_artifact', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='transactions', to='bank_accs.bankextractionartifact')),
-                ('source_file', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='transactions', to='bank_accs.sourcefile')),
+                ('source_artifact', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='transactions', to='bank_accounts.bankextractionartifact')),
+                ('source_file', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='transactions', to='bank_accounts.sourcefile')),
             ],
             options={
                 'ordering': ['-date', '-row_number'],

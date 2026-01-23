@@ -2,6 +2,6 @@
 /**/__pycache__/
 db.sqlite3
 .env
-/bank_accs/data/
+/bank_accounts/data/
 /credit_cards/data/
 /frontend_dist/

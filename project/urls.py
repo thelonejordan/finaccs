@@ -43,7 +43,7 @@ def health(request):
 urlpatterns = [
     path('api/health/', health, name='health'),
     path('admin/', admin.site.urls),
-    path('', include('bank_accs.urls')),
+    path('', include('bank_accounts.urls')),
     path('', include('dashboard.urls')),
     path('', include('credit_cards.urls')),
     path('', include('extractions.urls')),

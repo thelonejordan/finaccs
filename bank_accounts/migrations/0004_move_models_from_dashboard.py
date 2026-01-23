@@ -1,4 +1,4 @@
-# Generated manually for moving models from dashboard to bank_accs
+# Generated manually for moving models from dashboard to bank_accounts
 
 import django.db.models.deletion
 from django.db import migrations, models
@@ -8,14 +8,14 @@ class Migration(migrations.Migration):
     """
     Move Transaction, TransactionLog, FileLoadLog, AccountLog,
     CreditCardPaymentMatch, and DismissedBankInconsistency models
-    from dashboard app to bank_accs app.
+    from dashboard app to bank_accounts app.
 
     Uses SeparateDatabaseAndState to update Django's model registry
     without modifying the actual database tables.
     """
 
     dependencies = [
-        ('bank_accs', '0003_delete_bankextractionartifact_delete_extractedcsv_and_more'),
+        ('bank_accounts', '0003_delete_bankextractionartifact_delete_extractedcsv_and_more'),
         ('credit_cards', '0004_remove_extractionartifact_extraction_and_more'),
         ('extractions', '0002_add_indexes_for_experimental_queries'),
     ]
@@ -37,9 +37,9 @@ class Migration(migrations.Migration):
                         ('category', models.CharField(blank=True, max_length=50)),
                         ('artifact_row_id', models.CharField(blank=True, max_length=50)),
                         ('row_number', models.IntegerField(default=0)),
-                        ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='transactions', to='bank_accs.bankaccount')),
+                        ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='transactions', to='bank_accounts.bankaccount')),
                         ('data_source_artifact', models.ForeignKey(blank=True, db_index=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='bank_transactions', to='extractions.datasourceartifact')),
-                        ('linked_transaction', models.OneToOneField(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='linked_from', to='bank_accs.transaction')),
+                        ('linked_transaction', models.OneToOneField(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='linked_from', to='bank_accounts.transaction')),
                     ],
                     options={
                         'ordering': ['-date', '-row_number'],
@@ -54,7 +54,7 @@ class Migration(migrations.Migration):
                         ('old_value', models.CharField(blank=True, max_length=255)),
                         ('new_value', models.CharField(blank=True, max_length=255)),
                         ('created_at', models.DateTimeField(auto_now_add=True)),
-                        ('transaction', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='logs', to='bank_accs.transaction')),
+                        ('transaction', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='logs', to='bank_accounts.transaction')),
                     ],
                     options={
                         'ordering': ['-created_at'],
@@ -70,7 +70,7 @@ class Migration(migrations.Migration):
                         ('category_summary', models.JSONField(blank=True, default=dict)),
                         ('link_source', models.CharField(choices=[('pre_existing', 'Pre-existing Link'), ('none', 'No Link')], default='none', max_length=20)),
                         ('created_at', models.DateTimeField(auto_now_add=True)),
-                        ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='bank_accs.bankaccount')),
+                        ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='bank_accounts.bankaccount')),
                         ('data_source_artifact', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='load_logs', to='extractions.datasourceartifact')),
                     ],
                     options={
@@ -86,7 +86,7 @@ class Migration(migrations.Migration):
                         ('old_value', models.CharField(blank=True, max_length=255)),
                         ('new_value', models.CharField(blank=True, max_length=255)),
                         ('created_at', models.DateTimeField(auto_now_add=True)),
-                        ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='logs', to='bank_accs.bankaccount')),
+                        ('bank_account', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='logs', to='bank_accounts.bankaccount')),
                     ],
                     options={
                         'ordering': ['-created_at'],
@@ -102,7 +102,7 @@ class Migration(migrations.Migration):
                         ('match_reasons', models.JSONField(default=list)),
                         ('is_active', models.BooleanField(default=True)),
                         ('created_at', models.DateTimeField(auto_now_add=True)),
-                        ('bank_transaction', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='cc_payment_match', to='bank_accs.transaction')),
+                        ('bank_transaction', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='cc_payment_match', to='bank_accounts.transaction')),
                         ('credit_card_transaction', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='bank_payment_match', to='credit_cards.creditcardtransaction')),
                     ],
                     options={
