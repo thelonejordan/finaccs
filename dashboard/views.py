@@ -28,7 +28,7 @@ except ImportError:
     OpenApiExample = _MockCallable
     OpenApiTypes = type('OpenApiTypes', (), {'OBJECT': object, 'INT': int, 'STR': str, 'BOOL': bool})()
 
-from bank_accounts.models import Transaction, TransactionLog, AccountLog, FileLoadLog, DismissedBankInconsistency
+from bank_accounts.models import BankTransaction, TransactionLog, AccountLog, FileLoadLog, DismissedBankInconsistency
 from credit_cards.models import CreditCardPaymentMatch
 from credit_cards.views import get_active_cc_transactions
 
@@ -67,7 +67,7 @@ def get_active_transactions():
     - enabled=True means the artifact is shown in views (not disabled)
     - hidden=False means the artifact is visible in UI lists
     """
-    return Transaction.objects.filter(
+    return BankTransaction.objects.filter(
         data_source_artifact__isnull=False,
         data_source_artifact__status='loaded',
         data_source_artifact__enabled=True,
@@ -424,7 +424,7 @@ def api_transactions(request):
         if not linked:
             try:
                 linked = t.linked_from
-            except Transaction.DoesNotExist:
+            except BankTransaction.DoesNotExist:
                 linked = None
 
         linked_data = None
@@ -561,8 +561,8 @@ def api_top_expenses(request):
 @api_view(['PUT', 'PATCH'])
 def api_transaction_update(request, transaction_id):
     try:
-        transaction = Transaction.objects.get(id=transaction_id)
-    except Transaction.DoesNotExist:
+        transaction = BankTransaction.objects.get(id=transaction_id)
+    except BankTransaction.DoesNotExist:
         return JsonResponse({'error': 'Transaction not found'}, status=404)
 
     try:
@@ -612,8 +612,8 @@ def api_potential_links(request, transaction_id):
     from datetime import timedelta
 
     try:
-        transaction = Transaction.objects.select_related('bank_account').get(id=transaction_id)
-    except Transaction.DoesNotExist:
+        transaction = BankTransaction.objects.select_related('bank_account').get(id=transaction_id)
+    except BankTransaction.DoesNotExist:
         return JsonResponse({'error': 'Transaction not found'}, status=404)
 
     # Must have a bank account
@@ -701,8 +701,8 @@ def api_potential_links(request, transaction_id):
 def api_link_transaction(request, transaction_id):
     """Link or unlink self-transfer transactions."""
     try:
-        transaction = Transaction.objects.select_related('bank_account', 'linked_transaction').get(id=transaction_id)
-    except Transaction.DoesNotExist:
+        transaction = BankTransaction.objects.select_related('bank_account', 'linked_transaction').get(id=transaction_id)
+    except BankTransaction.DoesNotExist:
         return JsonResponse({'error': 'Transaction not found'}, status=404)
 
     if request.method == 'DELETE':
@@ -749,8 +749,8 @@ def api_link_transaction(request, transaction_id):
         return JsonResponse({'error': 'link_to is required'}, status=400)
 
     try:
-        link_to = Transaction.objects.select_related('bank_account').get(id=link_to_id)
-    except Transaction.DoesNotExist:
+        link_to = BankTransaction.objects.select_related('bank_account').get(id=link_to_id)
+    except BankTransaction.DoesNotExist:
         return JsonResponse({'error': 'Target transaction not found'}, status=404)
 
     # Validate different bank accounts
@@ -1823,12 +1823,12 @@ def api_cc_payment_matches(request):
 
     try:
         bank_txn = get_active_transactions().get(id=bank_txn_id)
-    except Transaction.DoesNotExist:
+    except BankTransaction.DoesNotExist:
         return JsonResponse({'error': 'Bank transaction not found or not active'}, status=404)
 
     try:
-        cc_txn = CreditCardTransaction.objects.get(id=cc_txn_id)
-    except CreditCardTransaction.DoesNotExist:
+        cc_txn = CreditCardBankTransaction.objects.get(id=cc_txn_id)
+    except CreditCardBankTransaction.DoesNotExist:
         return JsonResponse({'error': 'Credit card transaction not found'}, status=404)
 
     # Check if already matched

@@ -17,7 +17,7 @@ class BankAccount(models.Model):
         return f"{self.nickname} ({self.bank_name})"
 
 
-class Transaction(models.Model):
+class BankTransaction(models.Model):
     date = models.DateField()
     narration = models.TextField()
     value_date = models.DateField()
@@ -76,7 +76,7 @@ class TransactionLog(models.Model):
     ]
 
     transaction = models.ForeignKey(
-        Transaction,
+        BankTransaction,
         on_delete=models.CASCADE,
         related_name='logs'
     )

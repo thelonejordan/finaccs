@@ -1,9 +1,9 @@
 from django.contrib import admin
-from bank_accounts.models import Transaction, TransactionLog, FileLoadLog, AccountLog
+from bank_accounts.models import BankTransaction, TransactionLog, FileLoadLog, AccountLog
 
 
-@admin.register(Transaction)
-class TransactionAdmin(admin.ModelAdmin):
+@admin.register(BankTransaction)
+class BankTransactionAdmin(admin.ModelAdmin):
     list_display = ('date', 'narration_short', 'debit_amount', 'credit_amount', 'closing_balance', 'category', 'bank_account')
     list_filter = ('category', 'bank_account')
     search_fields = ('narration', 'reference_number')

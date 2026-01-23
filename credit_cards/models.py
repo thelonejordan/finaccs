@@ -65,7 +65,7 @@ class CreditCardPaymentMatch(models.Model):
     """Links bank CC payment to corresponding credit card payment transaction."""
 
     bank_transaction = models.OneToOneField(
-        'bank_accounts.Transaction',
+        'bank_accounts.BankTransaction',
         on_delete=models.CASCADE,
         related_name='cc_payment_match'
     )

@@ -1,4 +1,4 @@
-from bank_accounts.models import Transaction
+from bank_accounts.models import BankTransaction
 from django.db.models import Q
 
 
@@ -9,7 +9,7 @@ def run():
 
     # Get transactions around May 1, 2022
     txns = list(
-        Transaction.objects
+        BankTransaction.objects
         .filter(bank_account=account)
         .filter(Q(source_file__isnull=True) | Q(source_file__disabled=False))
         .filter(date__gte='2022-03-25', date__lte='2022-05-10')
