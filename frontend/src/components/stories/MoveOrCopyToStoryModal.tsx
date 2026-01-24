@@ -20,8 +20,20 @@ interface MoveOrCopyToStoryModalProps {
 }
 
 const EMOJI_OPTIONS = [
-  "📁", "🗂️", "📂", "📊", "📈", "💰", "💳", "🏦",
-  "🛒", "🛍️", "🍔", "☕", "🎬", "🎮", "✈️", "🏠",
+  // Row 1 - Generic & Organization
+  "📁", "🗂️", "📂", "📋", "🏷️", "🔖", "⭐", "📌",
+  // Row 2 - Income & Finance
+  "💰", "💵", "💸", "💳", "🏦", "📈", "📊", "💼",
+  // Row 3 - Shopping & Food
+  "🛒", "🛍️", "🍔", "☕", "🥗", "🍕", "🛵", "📦",
+  // Row 4 - Home & Utilities
+  "🏠", "🔑", "💡", "⚡", "💧", "🔧", "🧹", "🏢",
+  // Row 5 - Transport & Travel
+  "🚗", "⛽", "✈️", "🚆", "🧳", "🏨", "🌴", "🗺️",
+  // Row 6 - Health, Education & Entertainment
+  "💊", "🏥", "📚", "🎓", "🎬", "🎮", "🎵", "📺",
+  // Row 7 - Tech, Gifts & Misc
+  "📱", "💻", "🎁", "👕", "🐱", "🐶", "🐷", "📝",
 ]
 
 export function MoveOrCopyToStoryModal({
@@ -40,7 +52,7 @@ export function MoveOrCopyToStoryModal({
 
   // Create form state
   const [newName, setNewName] = useState("")
-  const [newIcon, setNewIcon] = useState("📁")
+  const [newIcon, setNewIcon] = useState("💰")
   const [isCreating, setIsCreating] = useState(false)
 
   const isMove = mode === "move"
@@ -52,7 +64,7 @@ export function MoveOrCopyToStoryModal({
       loadStories()
       setShowCreateForm(false)
       setNewName("")
-      setNewIcon("📁")
+      setNewIcon("💰")
       setError(null)
     }
   }, [open])

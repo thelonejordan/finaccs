@@ -462,6 +462,9 @@ export function CreditCardTransactionsPage() {
   const [dateRange, setDateRange] = useState<DateRange | null>(null)
   const [selectedYear, setSelectedYear] = useState<number | null>(getInitialYear)
   const [selectedMonth, setSelectedMonth] = useState<number | null>(getInitialMonth)
+  const [showAllYear, setShowAllYear] = useState<boolean>(() => {
+    return searchParams.get('show_all_year') === 'true'
+  })
 
   // Filters - initialize from URL
   const [search, setSearch] = useState(searchParams.get('search') || "")
@@ -561,7 +564,8 @@ export function CreditCardTransactionsPage() {
   useEffect(() => {
     updateURL({
       year: selectedYear,
-      month: selectedMonth,
+      month: showAllYear ? null : selectedMonth,
+      show_all_year: showAllYear ? 'true' : null,
       search: debouncedSearch || null,
       category: selectedCategory || null,
       type: selectedType || null,
@@ -569,7 +573,7 @@ export function CreditCardTransactionsPage() {
       data_source: selectedDataSource,
       page: page,
     })
-  }, [selectedYear, selectedMonth, debouncedSearch, selectedCategory, selectedType, selectedCreditCard, selectedDataSource, page, updateURL])
+  }, [selectedYear, selectedMonth, showAllYear, debouncedSearch, selectedCategory, selectedType, selectedCreditCard, selectedDataSource, page, updateURL])
 
   // Debounce search
   useEffect(() => {
@@ -684,7 +688,7 @@ export function CreditCardTransactionsPage() {
 
   useEffect(() => {
     async function loadTransactions() {
-      if (!selectedYear || !selectedMonth) {
+      if (!selectedYear || (!showAllYear && !selectedMonth)) {
         setLoading(false)
         return
       }
@@ -702,7 +706,7 @@ export function CreditCardTransactionsPage() {
           credit_card: selectedCreditCard || undefined,
           data_source_artifact: selectedDataSource || undefined,
           year: selectedYear,
-          month: selectedMonth,
+          month: showAllYear ? undefined : (selectedMonth ?? undefined),
           search: debouncedSearch || undefined,
           limit: pageSize,
           offset: (page - 1) * pageSize,
@@ -746,7 +750,7 @@ export function CreditCardTransactionsPage() {
       }
     }
     loadTransactions()
-  }, [selectedCategory, selectedType, selectedCreditCard, selectedDataSource, selectedYear, selectedMonth, debouncedSearch, page, refreshKey])
+  }, [selectedCategory, selectedType, selectedCreditCard, selectedDataSource, selectedYear, selectedMonth, showAllYear, debouncedSearch, page, refreshKey])
 
   // Filter data sources by selected credit card
   const filteredDataSources = selectedCreditCard
@@ -758,7 +762,7 @@ export function CreditCardTransactionsPage() {
   // Clear selection when page/filters change
   useEffect(() => {
     setSelectedIds(new Set())
-  }, [selectedCategory, selectedType, selectedCreditCard, selectedDataSource, selectedYear, selectedMonth, debouncedSearch, page])
+  }, [selectedCategory, selectedType, selectedCreditCard, selectedDataSource, selectedYear, selectedMonth, showAllYear, debouncedSearch, page])
 
   // Selection helpers
   const toggleSelectAll = () => {
@@ -857,10 +861,6 @@ export function CreditCardTransactionsPage() {
 
         {/* Year Tabs */}
         <section className="mb-4">
-          <div className="flex items-center gap-2 mb-2">
-            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium text-muted-foreground">Year</span>
-          </div>
           <div className="flex flex-wrap gap-2">
             {allYearsInRange.map((year) => {
               const hasData = availableYears.includes(year)
@@ -888,33 +888,55 @@ export function CreditCardTransactionsPage() {
 
         {/* Month Tabs */}
         <section className="mb-6">
-          <div className="flex items-center gap-2 mb-2">
-            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium text-muted-foreground">Month</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {[...MONTH_NAMES].reverse().map((name, index) => {
-              const monthNum = 12 - index
-              const hasData = availableMonths.includes(monthNum)
-              const isSelected = selectedMonth === monthNum
+          <div className="flex items-center gap-4">
+            <div className={`flex flex-wrap gap-2 ${showAllYear ? "opacity-40" : ""}`}>
+              {[...MONTH_NAMES].reverse().map((name, index) => {
+                const monthNum = 12 - index
+                const hasData = availableMonths.includes(monthNum)
+                const isSelected = selectedMonth === monthNum
 
-              return (
-                <button
-                  key={monthNum}
-                  onClick={() => hasData && handleMonthChange(monthNum)}
-                  disabled={!hasData}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    isSelected
-                      ? "bg-primary text-primary-foreground"
-                      : hasData
-                      ? "bg-card border border-border hover:bg-accent"
-                      : "bg-muted text-muted-foreground/40 cursor-not-allowed"
-                  }`}
-                >
-                  {name}
-                </button>
-              )
-            })}
+                return (
+                  <button
+                    key={monthNum}
+                    onClick={() => hasData && !showAllYear && handleMonthChange(monthNum)}
+                    disabled={!hasData || showAllYear}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                      isSelected
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : hasData
+                        ? "bg-card border-border hover:bg-accent"
+                        : "bg-muted text-muted-foreground/40 border-transparent cursor-not-allowed"
+                    }`}
+                  >
+                    {name}
+                  </button>
+                )
+              })}
+            </div>
+            {/* All Year Toggle */}
+            <button
+              onClick={() => {
+                setShowAllYear(!showAllYear)
+                setPageState(1)
+                shouldScrollToTableRef.current = true
+              }}
+              className={`ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                showAllYear
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-card border border-border text-muted-foreground hover:bg-accent"
+              }`}
+            >
+              <div className={`w-8 h-4 rounded-full relative transition-colors ${
+                showAllYear ? "bg-primary-foreground/30" : "bg-border"
+              }`}>
+                <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all ${
+                  showAllYear
+                    ? "right-0.5 bg-primary-foreground"
+                    : "left-0.5 bg-muted-foreground"
+                }`} />
+              </div>
+              All Year
+            </button>
           </div>
         </section>
 
@@ -1167,11 +1189,14 @@ export function CreditCardTransactionsPage() {
             </div>
             <div className="rounded-xl border border-border bg-card shadow-sm p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-primary/10">
-                  <ActivityIcon className="h-5 w-5 text-primary" />
+                <div className={`p-2 rounded-lg ${stats.net >= 0 ? "bg-green-500/10" : "bg-red-500/10"}`}>
+                  {stats.net >= 0
+                    ? <TrendingUpIcon className="h-5 w-5 text-(--color-income)" />
+                    : <TrendingDownIcon className="h-5 w-5 text-(--color-expense)" />
+                  }
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Net</p>
+                  <p className="text-sm text-muted-foreground">{stats.net >= 0 ? "Total Received" : "Total Spent"}</p>
                   <p className={`text-xl font-bold inline-flex items-center gap-1 ${
                     stats.net >= 0
                       ? "text-(--color-income)"
@@ -1191,9 +1216,9 @@ export function CreditCardTransactionsPage() {
           <header className="p-6 pb-2">
             <h3 className="font-semibold">
               Transactions
-              {selectedYear && selectedMonth && (
+              {selectedYear && (showAllYear || selectedMonth) && (
                 <span className="text-muted-foreground font-normal ml-2">
-                  {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+                  {showAllYear ? `All of ${selectedYear}` : `${MONTH_NAMES[selectedMonth! - 1]} ${selectedYear}`}
                 </span>
               )}
             </h3>
@@ -1203,7 +1228,7 @@ export function CreditCardTransactionsPage() {
               <div className="flex items-center justify-center py-12">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               </div>
-            ) : !selectedYear || !selectedMonth ? (
+            ) : !selectedYear || (!showAllYear && !selectedMonth) ? (
               <div className="text-center py-12 text-muted-foreground">
                 <CreditCardIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>{availableYears.length === 0 ? "No credit card transactions available" : "Select a year and month to view transactions"}</p>

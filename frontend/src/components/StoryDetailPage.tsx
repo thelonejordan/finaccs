@@ -2,10 +2,11 @@ import { useEffect, useState } from "react"
 import { useParams, useNavigate, Link } from "react-router-dom"
 import {
   ArrowLeftIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
   TrashIcon,
   XIcon,
   HashIcon,
-  WalletIcon,
   CalendarIcon,
   PencilIcon,
   CheckIcon,
@@ -13,11 +14,14 @@ import {
   LandmarkIcon,
   MoveIcon,
   CopyIcon,
+  TrendingUpIcon,
+  TrendingDownIcon,
 } from "lucide-react"
 import * as Dialog from "@radix-ui/react-dialog"
 import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import { MoveOrCopyToStoryModal } from "@/components/stories/MoveOrCopyToStoryModal"
+import { CreateStoryModal } from "@/components/stories/CreateStoryModal"
 import {
   fetchStory,
   updateStory,
@@ -27,6 +31,23 @@ import {
   type StoryTransaction,
   type TransactionRef,
 } from "@/lib/api"
+
+const EMOJI_OPTIONS = [
+  // Row 1 - Generic & Organization
+  "📁", "🗂️", "📂", "📋", "🏷️", "🔖", "⭐", "📌",
+  // Row 2 - Income & Finance
+  "💰", "💵", "💸", "💳", "🏦", "📈", "📊", "💼",
+  // Row 3 - Shopping & Food
+  "🛒", "🛍️", "🍔", "☕", "🥗", "🍕", "🛵", "📦",
+  // Row 4 - Home & Utilities
+  "🏠", "🔑", "💡", "⚡", "💧", "🔧", "🧹", "🏢",
+  // Row 5 - Transport & Travel
+  "🚗", "⛽", "✈️", "🚆", "🧳", "🏨", "🌴", "🗺️",
+  // Row 6 - Health, Education & Entertainment
+  "💊", "🏥", "📚", "🎓", "🎬", "🎮", "🎵", "📺",
+  // Row 7 - Tech, Gifts & Misc
+  "📱", "💻", "🎁", "👕", "🐱", "🐶", "🐷", "📝",
+]
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
@@ -60,60 +81,6 @@ function formatDate(dateStr: string | null): string {
   })
 }
 
-function DeleteConfirmDialog({
-  open,
-  onOpenChange,
-  onConfirm,
-  isDeleting,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onConfirm: () => void
-  isDeleting: boolean
-}) {
-  return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-card rounded-lg shadow-xl p-6 w-full max-w-md z-50">
-          <Dialog.Title className="text-lg font-semibold text-foreground">
-            Delete Story
-          </Dialog.Title>
-          <Dialog.Description className="mt-2 text-sm text-muted-foreground">
-            Are you sure you want to delete this story? This will remove all transaction associations. The transactions themselves will not be deleted.
-          </Dialog.Description>
-
-          <div className="mt-6 flex justify-end gap-3">
-            <button
-              onClick={() => onOpenChange(false)}
-              disabled={isDeleting}
-              className="px-4 py-2 text-sm font-medium rounded-md border border-border text-foreground hover:bg-accent disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={onConfirm}
-              disabled={isDeleting}
-              className="px-4 py-2 text-sm font-medium rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-            >
-              {isDeleting ? "Deleting..." : "Delete Story"}
-            </button>
-          </div>
-
-          <Dialog.Close asChild>
-            <button
-              className="absolute top-4 right-4 p-1 rounded-full hover:bg-accent"
-              aria-label="Close"
-            >
-              <XIcon className="h-4 w-4 text-muted-foreground" />
-            </button>
-          </Dialog.Close>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
-  )
-}
-
 export function StoryDetailPage() {
   const { storyId } = useParams<{ storyId: string }>()
   const navigate = useNavigate()
@@ -127,10 +94,11 @@ export function StoryDetailPage() {
   const [editedName, setEditedName] = useState("")
   const [isEditingDescription, setIsEditingDescription] = useState(false)
   const [editedDescription, setEditedDescription] = useState("")
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [iconPickerOpen, setIconPickerOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
   // Delete state
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
   // Remove transaction state
@@ -190,6 +158,21 @@ export function StoryDetailPage() {
       await updateStory(storyId, { description: editedDescription.trim() })
       setStory({ ...story, description: editedDescription.trim() })
       setIsEditingDescription(false)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleSaveIcon = async (newIcon: string) => {
+    if (!story || !storyId) return
+
+    setIsSaving(true)
+    try {
+      await updateStory(storyId, { icon: newIcon })
+      setStory({ ...story, icon: newIcon })
+      setIconPickerOpen(false)
     } catch (err) {
       console.error(err)
     } finally {
@@ -340,7 +323,42 @@ export function StoryDetailPage() {
         {/* Story Header */}
         <header className="mb-8">
           <div className="flex items-start gap-4">
-            <div className="text-5xl">{story.icon}</div>
+            <div className="relative">
+              <button
+                onClick={() => setIconPickerOpen(!iconPickerOpen)}
+                className="w-12 h-12 flex items-center justify-center text-2xl rounded-lg border border-border bg-muted/50 hover:bg-muted hover:border-muted-foreground/30 transition-colors cursor-pointer"
+                title="Click to change icon"
+              >
+                {story.icon}
+              </button>
+              {iconPickerOpen && (
+                <div className="absolute top-full left-0 mt-2 p-3 bg-card border border-border rounded-lg shadow-xl z-50 w-max">
+                  <div className="grid grid-cols-8 gap-1.5" style={{ width: "fit-content" }}>
+                    {EMOJI_OPTIONS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => handleSaveIcon(emoji)}
+                        disabled={isSaving}
+                        className={`w-9 h-9 flex items-center justify-center text-lg rounded-lg transition-colors flex-shrink-0 ${
+                          story.icon === emoji
+                            ? "bg-primary text-primary-foreground"
+                            : "hover:bg-muted"
+                        }`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setIconPickerOpen(false)}
+                    className="mt-2 w-full px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:bg-accent"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
             <div className="flex-1 min-w-0">
               {isEditingName ? (
                 <div className="flex items-center gap-2">
@@ -423,17 +441,18 @@ export function StoryDetailPage() {
                 >
                   {story.description || (
                     <span className="text-muted-foreground/50 italic">
-                      Click to add description...
+                      Add description
                     </span>
                   )}
                 </p>
               )}
             </div>
             <button
-              onClick={() => setDeleteDialogOpen(true)}
-              className="p-2 rounded-lg hover:bg-red-500/10 text-red-500 transition-colors"
+              onClick={() => setEditModalOpen(true)}
+              className="p-2 rounded-lg hover:bg-accent text-muted-foreground transition-colors"
+              title="Edit story"
             >
-              <TrashIcon className="h-5 w-5" />
+              <PencilIcon className="h-5 w-5" />
             </button>
           </div>
         </header>
@@ -453,12 +472,20 @@ export function StoryDetailPage() {
           </div>
           <div className="bg-card rounded-xl border border-border shadow-sm p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-green-500/10">
-                <WalletIcon className="h-5 w-5 text-green-500" />
+              <div className={`p-2 rounded-lg ${story.total_spent < 0 ? "bg-green-500/10" : "bg-red-500/10"}`}>
+                {story.total_spent < 0
+                  ? <TrendingUpIcon className="h-5 w-5 text-(--color-income)" />
+                  : <TrendingDownIcon className="h-5 w-5 text-(--color-expense)" />
+                }
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total Spent</p>
-                <FormattedCurrency amount={story.total_spent} className="text-xl font-bold" />
+                <p className="text-sm text-muted-foreground">{story.total_spent < 0 ? "Total Received" : "Total Spent"}</p>
+                <p className={`text-xl font-bold inline-flex items-center gap-1 ${
+                  story.total_spent < 0 ? "text-(--color-income)" : "text-(--color-expense)"
+                }`}>
+                  <FormattedCurrency amount={Math.abs(story.total_spent)} />
+                  {story.total_spent < 0 ? <ArrowUpIcon className="h-4 w-4" /> : <ArrowDownIcon className="h-4 w-4" />}
+                </p>
               </div>
             </div>
           </div>
@@ -625,7 +652,7 @@ export function StoryDetailPage() {
                             {removingId?.type === txn.type && removingId?.id === txn.id ? (
                               <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
                             ) : (
-                              <XIcon className="h-4 w-4" />
+                              <TrashIcon className="h-4 w-4" />
                             )}
                           </button>
                         </td>
@@ -638,13 +665,6 @@ export function StoryDetailPage() {
           </div>
         </section>
       </main>
-
-      <DeleteConfirmDialog
-        open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
-        onConfirm={handleDeleteStory}
-        isDeleting={isDeleting}
-      />
 
       {/* Bulk Delete Confirmation Dialog */}
       <Dialog.Root open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
@@ -698,6 +718,21 @@ export function StoryDetailPage() {
           onComplete={handleMoveOrCopyComplete}
         />
       )}
+
+      {/* Edit Story Modal */}
+      <CreateStoryModal
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        onCreated={loadStory}
+        story={{
+          story_id: story.story_id,
+          name: story.name,
+          description: story.description,
+          icon: story.icon,
+        }}
+        onDelete={handleDeleteStory}
+        isDeleting={isDeleting}
+      />
 
       <Footer />
     </div>
