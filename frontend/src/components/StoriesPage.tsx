@@ -7,8 +7,9 @@ import {
   HashIcon,
   WalletIcon,
   GitCompareIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
 } from "lucide-react"
-import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import { CreateStoryModal } from "@/components/stories/CreateStoryModal"
 import { CompareStoriesModal } from "@/components/stories/CompareStoriesModal"
@@ -54,7 +55,12 @@ function StoryCard({ story }: { story: Story }) {
             </span>
             <span className="flex items-center gap-1.5">
               <WalletIcon className="h-4 w-4" />
-              {formatCurrency(story.total_spent)}
+              {formatCurrency(Math.abs(story.total_spent))}
+              {story.total_spent !== 0 && (
+                story.total_spent < 0
+                  ? <ArrowUpIcon className="h-3.5 w-3.5 text-green-500" />
+                  : <ArrowDownIcon className="h-3.5 w-3.5 text-red-500" />
+              )}
             </span>
           </div>
           {(story.min_date || story.max_date) && (
@@ -101,9 +107,7 @@ export function StoriesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/40">
-      <Header />
-
+    <>
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Page Header */}
         <header className="mb-8 flex items-center justify-between">
@@ -177,6 +181,6 @@ export function StoriesPage() {
       />
 
       <Footer />
-    </div>
+    </>
   )
 }

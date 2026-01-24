@@ -186,16 +186,6 @@ export function CompareStoriesModal({ open, onOpenChange }: CompareStoriesModalP
     return result.unique_transactions[activeTab] || []
   }
 
-  const getStoryName = (storyId: string): string => {
-    const story = result?.stories.find((s) => s.story_id === storyId)
-    return story?.name || storyId
-  }
-
-  const getStoryIcon = (storyId: string): string => {
-    const story = result?.stories.find((s) => s.story_id === storyId)
-    return story?.icon || "📁"
-  }
-
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>

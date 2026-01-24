@@ -21,7 +21,6 @@ import {
   CreditCardIcon,
   BuildingIcon,
 } from "lucide-react"
-import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import {
   StatusBadge,
@@ -1646,20 +1645,17 @@ export function ExtractionsV2Page() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-muted/40">
-        <Header />
+      <>
         <main className="max-w-7xl mx-auto px-4 py-6 flex justify-center items-center h-96">
           <Loader2Icon className="h-8 w-8 animate-spin text-muted-foreground" />
         </main>
         <Footer />
-      </div>
+      </>
     )
   }
 
   return (
-    <div className="min-h-screen bg-muted/40">
-      <Header />
-
+    <>
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         {/* View Toggle */}
         <div className="flex items-center">
@@ -1945,6 +1941,6 @@ export function ExtractionsV2Page() {
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }

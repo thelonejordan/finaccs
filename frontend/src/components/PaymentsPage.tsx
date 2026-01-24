@@ -18,7 +18,6 @@ import {
 import * as Select from "@radix-ui/react-select"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import * as Collapsible from "@radix-ui/react-collapsible"
-import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import {
   fetchCCPaymentSuggestions,
@@ -510,8 +509,8 @@ type SuggestionMode = "bank-first" | "cc-first"
 function UnmatchedTab() {
   const [searchParams, setSearchParams] = useSearchParams()
 
-  // Get mode from URL, default to "bank-first"
-  const mode = (searchParams.get("mode") as SuggestionMode) || "bank-first"
+  // Get mode from URL, default to "cc-first"
+  const mode = (searchParams.get("mode") as SuggestionMode) || "cc-first"
 
   const setMode = useCallback((newMode: SuggestionMode) => {
     setSearchParams(prev => {
@@ -522,7 +521,7 @@ function UnmatchedTab() {
   }, [setSearchParams])
   const [suggestions, setSuggestions] = useState<CCPaymentSuggestionItem[]>([])
   const [reverseSuggestions, setReverseSuggestions] = useState<CCPaymentSuggestionReverseItem[]>([])
-  const [totalCount, setTotalCount] = useState<number>(0)
+  const [_totalCount, setTotalCount] = useState<number>(0)
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   const [creditCards, setCreditCards] = useState<CreditCard[]>([])
   const [loading, setLoading] = useState(true)
@@ -660,61 +659,8 @@ function UnmatchedTab() {
     <>
       {/* Filter Section */}
       <section className="rounded-xl border border-border bg-card shadow-sm mb-6">
-        <div className="p-6">
+        <div className="p-4">
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
-            <h2 className="text-lg font-semibold">
-              {mode === "bank-first" ? "Unmatched Bank CC Payments" : "Unmatched CC Payments"}
-            </h2>
-            <div className="flex-1" />
-
-            {/* Offset Threshold Selector */}
-            <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-input bg-background">
-              <span className="text-sm text-muted-foreground whitespace-nowrap">Max offset:</span>
-              <div className="flex items-center gap-1">
-                {[0, 20, 40, 60, 80, 100].map((value) => (
-                  <button
-                    key={value}
-                    onClick={() => setOffsetThreshold(value)}
-                    className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                      offsetThreshold === value
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {value === 100 ? "All" : `${value}%`}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Mode Toggle */}
-            <div className="flex items-center gap-1 p-1 rounded-lg bg-muted">
-              <button
-                onClick={() => setMode("bank-first")}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  mode === "bank-first"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <BuildingIcon className="h-4 w-4" />
-                <ArrowRightIcon className="h-3 w-3" />
-                <CreditCardIcon className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setMode("cc-first")}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  mode === "cc-first"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <CreditCardIcon className="h-4 w-4" />
-                <ArrowRightIcon className="h-3 w-3" />
-                <BuildingIcon className="h-4 w-4" />
-              </button>
-            </div>
-
             {/* Bank Account Filter (bank-first mode) */}
             {mode === "bank-first" && bankAccounts.length > 0 && (
               <Select.Root
@@ -723,7 +669,7 @@ function UnmatchedTab() {
                   setSelectedBankAccount(value === "all" ? null : parseInt(value, 10))
                 }}
               >
-                <Select.Trigger className="inline-flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-w-[180px]">
+                <Select.Trigger className="inline-flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-w-[180px] ml-8">
                   <div className="flex items-center gap-2">
                     <BuildingIcon className="h-4 w-4 text-muted-foreground" />
                     <Select.Value placeholder="All Accounts" />
@@ -775,7 +721,7 @@ function UnmatchedTab() {
                   setSelectedCreditCard(value === "all" ? null : parseInt(value, 10))
                 }}
               >
-                <Select.Trigger className="inline-flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-w-[180px]">
+                <Select.Trigger className="inline-flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-w-[180px] ml-8">
                   <div className="flex items-center gap-2">
                     <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
                     <Select.Value placeholder="All Cards" />
@@ -815,31 +761,54 @@ function UnmatchedTab() {
                 </Select.Portal>
               </Select.Root>
             )}
-          </div>
-        </div>
-      </section>
 
-      {/* Summary Card */}
-      <section className="rounded-xl border border-border bg-card shadow-sm p-4 mb-6">
-        <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-lg ${currentSuggestions.length > 0 ? 'bg-amber-500/10' : 'bg-green-500/10'}`}>
-            {currentSuggestions.length > 0 ? (
-              <CreditCardIcon className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-            ) : (
-              <CheckCircleIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
-            )}
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">
-              Unmatched {mode === "bank-first" ? "Bank CC Payments" : "CC Payments"}{" "}
-              {(mode === "bank-first" && selectedBankAccount) || (mode === "cc-first" && selectedCreditCard) ? "(filtered)" : ""}
-            </p>
-            <p className={`text-xl font-bold ${currentSuggestions.length > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
-              {currentSuggestions.length}
-              <span className="text-sm font-normal text-muted-foreground ml-2">
-                / {totalCount} total
-              </span>
-            </p>
+            <div className="flex-1" />
+
+            {/* Offset Threshold Selector */}
+            <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-input bg-background">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">Max offset:</span>
+              <div className="flex items-center gap-1">
+                {[0, 20, 40, 60, 80, 100].map((value) => (
+                  <button
+                    key={value}
+                    onClick={() => setOffsetThreshold(value)}
+                    className={`w-9 py-1 rounded text-xs font-medium transition-colors text-center ${
+                      offsetThreshold === value
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {value === 100 ? "All" : `${value}%`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex-1" />
+
+            {/* Mode Toggle */}
+            <div className="flex items-center gap-1 p-1 rounded-lg bg-muted mr-8">
+              <button
+                onClick={() => setMode("cc-first")}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  mode === "cc-first"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                CC → Bank
+              </button>
+              <button
+                onClick={() => setMode("bank-first")}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  mode === "bank-first"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Bank → CC
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -1151,9 +1120,7 @@ export function PaymentsPage() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-muted/40">
-      <Header />
-
+    <>
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Tabs */}
         <div className="flex gap-2 mb-6">
@@ -1186,6 +1153,6 @@ export function PaymentsPage() {
         {activeTab === "confirmed" && <ConfirmedTab />}
       </main>
       <Footer />
-    </div>
+    </>
   )
 }

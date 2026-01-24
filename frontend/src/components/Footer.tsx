@@ -20,11 +20,11 @@ export function Footer() {
 
   return (
     <footer className="mt-16 border-t border-border bg-card">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Main Footer Content */}
-        <div className="py-10 grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_1fr] gap-12 md:gap-8">
+        <div className="py-10 grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8">
           {/* Brand Section */}
-          <div className="space-y-4 md:pl-4">
+          <div className="space-y-4">
             <div className="flex items-center gap-2 h-5">
               <div className="p-1.5 rounded-lg bg-primary/10">
                 <WalletIcon className="h-4 w-4 text-primary" />
@@ -46,11 +46,8 @@ export function Footer() {
             </a>
           </div>
 
-          {/* Spacer */}
-          <div className="hidden md:block" />
-
           {/* Navigation Section */}
-          <div className="space-y-4 md:pl-4">
+          <div className="space-y-4">
             <h3 className="text-sm font-semibold uppercase tracking-wider text-foreground h-5 flex items-center">
               Navigation
             </h3>
@@ -75,7 +72,7 @@ export function Footer() {
           </div>
 
           {/* Quick Actions Section */}
-          <div className="space-y-4 md:pl-4">
+          <div className="space-y-4">
             <h3 className="text-sm font-semibold uppercase tracking-wider text-foreground h-5 flex items-center">
               Quick Actions
             </h3>

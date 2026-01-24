@@ -24,7 +24,6 @@ import {
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Tooltip from "@radix-ui/react-tooltip"
-import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import {
   fetchBankInconsistencies,
@@ -1079,9 +1078,7 @@ export function AnomaliesPage() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-muted/40">
-      <Header />
-
+    <>
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Tabs */}
         <div className="flex gap-2 mb-6">
@@ -1114,6 +1111,6 @@ export function AnomaliesPage() {
         {activeTab === "credit" && <CreditCardInconsistencies />}
       </main>
       <Footer />
-    </div>
+    </>
   )
 }

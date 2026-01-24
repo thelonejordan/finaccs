@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react"
 
-export type FontFamily = "default" | "manrope"
+export type FontFamily = "default" | "manrope" | "albert-sans"
 
 interface FontContextType {
   font: FontFamily
@@ -12,12 +12,13 @@ const FontContext = createContext<FontContextType | undefined>(undefined)
 const FONT_STACKS: Record<FontFamily, string> = {
   default: 'ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"',
   manrope: '"Manrope", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"',
+  "albert-sans": '"Albert Sans", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"',
 }
 
 export function FontProvider({ children }: { children: React.ReactNode }) {
   const [font, setFontState] = useState<FontFamily>(() => {
     const stored = localStorage.getItem("font-family") as FontFamily | null
-    if (stored && ["default", "manrope"].includes(stored)) return stored
+    if (stored && ["default", "manrope", "albert-sans"].includes(stored)) return stored
     return "manrope" // Default to Manrope
   })
 

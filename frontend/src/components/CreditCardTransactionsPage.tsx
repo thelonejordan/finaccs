@@ -15,8 +15,6 @@ import {
   FileIcon,
   TrendingUpIcon,
   TrendingDownIcon,
-  ActivityIcon,
-  CalendarIcon,
   GlobeIcon,
   Link2Icon,
   Link2OffIcon,
@@ -28,7 +26,6 @@ import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import * as Dialog from "@radix-ui/react-dialog"
-import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import { AddToStoryModal } from "@/components/stories/AddToStoryModal"
 import {
@@ -457,6 +454,7 @@ export function CreditCardTransactionsPage() {
   // Selection state for adding to stories
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [addToStoryModalOpen, setAddToStoryModalOpen] = useState(false)
+  const lastSelectedIndexRef = useRef<number | null>(null)
 
   // Date range state - initialize from URL
   const [dateRange, setDateRange] = useState<DateRange | null>(null)
@@ -762,6 +760,7 @@ export function CreditCardTransactionsPage() {
   // Clear selection when page/filters change
   useEffect(() => {
     setSelectedIds(new Set())
+    lastSelectedIndexRef.current = null
   }, [selectedCategory, selectedType, selectedCreditCard, selectedDataSource, selectedYear, selectedMonth, showAllYear, debouncedSearch, page])
 
   // Selection helpers
@@ -771,18 +770,32 @@ export function CreditCardTransactionsPage() {
     } else {
       setSelectedIds(new Set(transactions.map(t => t.id)))
     }
+    lastSelectedIndexRef.current = null
   }
 
-  const toggleSelect = (id: number) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
+  const handleSelect = (id: number, event: React.MouseEvent) => {
+    const currentIndex = transactions.findIndex(t => t.id === id)
+
+    if (event.shiftKey && lastSelectedIndexRef.current !== null) {
+      // Shift-click: select range
+      const start = Math.min(lastSelectedIndexRef.current, currentIndex)
+      const end = Math.max(lastSelectedIndexRef.current, currentIndex)
+      const newSet = new Set(selectedIds)
+      for (let i = start; i <= end; i++) {
+        newSet.add(transactions[i].id)
       }
-      return next
-    })
+      setSelectedIds(newSet)
+    } else {
+      // Normal click: toggle single item
+      const newSet = new Set(selectedIds)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      setSelectedIds(newSet)
+      lastSelectedIndexRef.current = currentIndex
+    }
   }
 
   const handleAddedToStory = () => {
@@ -824,9 +837,7 @@ export function CreditCardTransactionsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/40">
-      <Header />
-
+    <>
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Page Header */}
         <header className="mb-8 flex items-center justify-between">
@@ -1339,7 +1350,8 @@ export function CreditCardTransactionsPage() {
                             <input
                               type="checkbox"
                               checked={selectedIds.has(t.id)}
-                              onChange={() => toggleSelect(t.id)}
+                              onClick={(e) => handleSelect(t.id, e)}
+                              readOnly
                               className="rounded border-border"
                             />
                           </td>
@@ -1457,6 +1469,6 @@ export function CreditCardTransactionsPage() {
       />
 
       <Footer />
-    </div>
+    </>
   )
 }

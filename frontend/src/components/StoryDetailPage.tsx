@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useParams, useNavigate, Link } from "react-router-dom"
 import {
   ArrowLeftIcon,
@@ -18,7 +18,6 @@ import {
   TrendingDownIcon,
 } from "lucide-react"
 import * as Dialog from "@radix-ui/react-dialog"
-import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import { MoveOrCopyToStoryModal } from "@/components/stories/MoveOrCopyToStoryModal"
 import { CreateStoryModal } from "@/components/stories/CreateStoryModal"
@@ -106,6 +105,7 @@ export function StoryDetailPage() {
 
   // Selection state
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
+  const lastSelectedIndexRef = useRef<number | null>(null)
   const [moveOrCopyMode, setMoveOrCopyMode] = useState<"move" | "copy">("move")
   const [moveOrCopyModalOpen, setMoveOrCopyModalOpen] = useState(false)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false)
@@ -211,17 +211,32 @@ export function StoryDetailPage() {
   // Selection helpers
   const getTxnKey = (txn: StoryTransaction) => `${txn.type}-${txn.id}`
 
-  const toggleSelect = (txn: StoryTransaction) => {
+  const handleSelect = (txn: StoryTransaction, event: React.MouseEvent) => {
+    const currentIndex = story!.transactions.findIndex(
+      t => t.type === txn.type && t.id === txn.id
+    )
     const key = getTxnKey(txn)
-    setSelectedKeys(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) {
-        next.delete(key)
-      } else {
-        next.add(key)
+
+    if (event.shiftKey && lastSelectedIndexRef.current !== null) {
+      // Shift-click: select range
+      const start = Math.min(lastSelectedIndexRef.current, currentIndex)
+      const end = Math.max(lastSelectedIndexRef.current, currentIndex)
+      const newSet = new Set(selectedKeys)
+      for (let i = start; i <= end; i++) {
+        newSet.add(getTxnKey(story!.transactions[i]))
       }
-      return next
-    })
+      setSelectedKeys(newSet)
+    } else {
+      // Normal click: toggle single item
+      const newSet = new Set(selectedKeys)
+      if (newSet.has(key)) {
+        newSet.delete(key)
+      } else {
+        newSet.add(key)
+      }
+      setSelectedKeys(newSet)
+      lastSelectedIndexRef.current = currentIndex
+    }
   }
 
   const toggleSelectAll = () => {
@@ -231,6 +246,7 @@ export function StoryDetailPage() {
     } else {
       setSelectedKeys(new Set(story.transactions.map(getTxnKey)))
     }
+    lastSelectedIndexRef.current = null
   }
 
   const getSelectedTransactions = (): TransactionRef[] => {
@@ -273,22 +289,20 @@ export function StoryDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-muted/40">
-        <Header />
+      <>
         <main className="max-w-7xl mx-auto px-4 py-8">
           <div className="flex items-center justify-center py-16">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           </div>
         </main>
         <Footer />
-      </div>
+      </>
     )
   }
 
   if (error || !story) {
     return (
-      <div className="min-h-screen bg-muted/40">
-        <Header />
+      <>
         <main className="max-w-7xl mx-auto px-4 py-8">
           <div className="bg-card rounded-xl border border-border shadow-sm p-12 text-center">
             <p className="text-muted-foreground">{error || "Story not found"}</p>
@@ -302,14 +316,12 @@ export function StoryDetailPage() {
           </div>
         </main>
         <Footer />
-      </div>
+      </>
     )
   }
 
   return (
-    <div className="min-h-screen bg-muted/40">
-      <Header />
-
+    <>
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Back link */}
         <Link
@@ -472,19 +484,35 @@ export function StoryDetailPage() {
           </div>
           <div className="bg-card rounded-xl border border-border shadow-sm p-4">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${story.total_spent < 0 ? "bg-green-500/10" : "bg-red-500/10"}`}>
-                {story.total_spent < 0
-                  ? <TrendingUpIcon className="h-5 w-5 text-(--color-income)" />
-                  : <TrendingDownIcon className="h-5 w-5 text-(--color-expense)" />
+              <div className={`p-2 rounded-lg ${
+                story.total_spent === 0
+                  ? "bg-muted"
+                  : story.total_spent < 0
+                    ? "bg-green-500/10"
+                    : "bg-red-500/10"
+              }`}>
+                {story.total_spent === 0
+                  ? <TrendingUpIcon className="h-5 w-5 text-muted-foreground" />
+                  : story.total_spent < 0
+                    ? <TrendingUpIcon className="h-5 w-5 text-(--color-income)" />
+                    : <TrendingDownIcon className="h-5 w-5 text-(--color-expense)" />
                 }
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">{story.total_spent < 0 ? "Total Received" : "Total Spent"}</p>
+                <p className="text-sm text-muted-foreground">Total Sum</p>
                 <p className={`text-xl font-bold inline-flex items-center gap-1 ${
-                  story.total_spent < 0 ? "text-(--color-income)" : "text-(--color-expense)"
+                  story.total_spent === 0
+                    ? ""
+                    : story.total_spent < 0
+                      ? "text-(--color-income)"
+                      : "text-(--color-expense)"
                 }`}>
                   <FormattedCurrency amount={Math.abs(story.total_spent)} />
-                  {story.total_spent < 0 ? <ArrowUpIcon className="h-4 w-4" /> : <ArrowDownIcon className="h-4 w-4" />}
+                  {story.total_spent !== 0 && (
+                    story.total_spent < 0
+                      ? <ArrowUpIcon className="h-4 w-4" />
+                      : <ArrowDownIcon className="h-4 w-4" />
+                  )}
                 </p>
               </div>
             </div>
@@ -605,7 +633,8 @@ export function StoryDetailPage() {
                           <input
                             type="checkbox"
                             checked={selectedKeys.has(getTxnKey(txn))}
-                            onChange={() => toggleSelect(txn)}
+                            onClick={(e) => handleSelect(txn, e)}
+                            readOnly
                             className="h-4 w-4 rounded border-border"
                           />
                         </td>
@@ -735,6 +764,6 @@ export function StoryDetailPage() {
       />
 
       <Footer />
-    </div>
+    </>
   )
 }

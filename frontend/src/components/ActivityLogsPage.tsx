@@ -16,7 +16,6 @@ import {
   BuildingIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
-import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import {
   fetchTransactionLogs,
@@ -118,9 +117,7 @@ export function ActivityLogsPage() {
   const totalPages = Math.ceil(total / pageSize)
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-
+    <>
       {/* Filters */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="flex items-center gap-4">
@@ -421,6 +418,6 @@ export function ActivityLogsPage() {
         </div>
       </div>
       <Footer />
-    </div>
+    </>
   )
 }

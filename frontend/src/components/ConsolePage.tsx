@@ -32,7 +32,6 @@ import {
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import * as Dialog from "@radix-ui/react-dialog"
-import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import { AccountsSection } from "@/components/AccountsSection"
 import { DataSources } from "@/components/DataSources"
@@ -1596,21 +1595,16 @@ export function ConsolePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-muted/40">
-        <Header />
-        <main className="max-w-7xl mx-auto px-4 py-8">
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          </div>
-        </main>
-      </div>
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      </main>
     )
   }
 
   return (
-    <div className="min-h-screen bg-muted/40" onClick={handleCreditTabClick}>
-      <Header />
-
+    <>
       <main className="max-w-7xl mx-auto px-4 py-8" onClick={handleCreditTabClick}>
         <header className="mb-8">
           <div className="flex items-center justify-between">
@@ -1729,6 +1723,6 @@ export function ConsolePage() {
         )}
       </main>
       <Footer />
-    </div>
+    </>
   )
 }

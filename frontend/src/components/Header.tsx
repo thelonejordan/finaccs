@@ -1,7 +1,5 @@
 import { useState } from "react"
-import { Link, useLocation } from "react-router-dom"
-import { useInconsistencyCache } from "@/lib/inconsistency-cache"
-import { usePaymentsCache } from "@/lib/payments-cache"
+import { useLocation } from "react-router-dom"
 import {
   SunIcon,
   MoonIcon,
@@ -15,38 +13,37 @@ import * as Tooltip from "@radix-ui/react-tooltip"
 import { useTheme } from "@/lib/theme"
 import { useFont, type FontFamily } from "@/lib/font"
 
-const NAV_ITEMS = [
-  { path: "/dashboard", label: "Dashboard" },
-  { path: "/transactions", label: "Transactions" },
-  { path: "/stories", label: "Stories" },
-  { path: "/extractions", label: "Extractions" },
-  { path: "/extractions-v2", label: "Extractions v2" },
-  { path: "/console", label: "Console" },
-  { path: "/payments", label: "Payments" },
-  { path: "/anomalies", label: "Anomalies" },
-  { path: "/activity", label: "Activity" },
-]
+const PAGE_TITLES: Record<string, string> = {
+  "/dashboard": "Dashboard",
+  "/transactions": "Transactions",
+  "/stories": "Stories",
+  "/extractions": "Extractions",
+  "/extractions-v2": "Extractions v2",
+  "/console": "Console",
+  "/payments": "Payments",
+  "/anomalies": "Anomalies",
+  "/activity": "Activity",
+}
 
 const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
   { value: "default", label: "Default" },
   { value: "manrope", label: "Manrope" },
+  { value: "albert-sans", label: "Albert Sans" },
 ]
 
 export function Header() {
   const location = useLocation()
   const { mode, setMode } = useTheme()
   const { font, setFont } = useFont()
-  const { cache } = useInconsistencyCache()
-  const { cache: paymentsCache } = usePaymentsCache()
-  // Use count if available, fall back to previousCount during loading, then 0
-  const inconsistencyCount = cache.count ?? cache.previousCount ?? 0
-  const paymentsCount = paymentsCache.count ?? paymentsCache.previousCount ?? 0
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(() => {
     const saved = localStorage.getItem('autoScrollToTable')
     return saved !== null ? saved === 'true' : true
   })
 
-  const showAutoScrollToggle = location.pathname === '/transactions'
+  // Get page title, handle story detail pages
+  const pageTitle = location.pathname.startsWith("/stories/")
+    ? "Story Details"
+    : PAGE_TITLES[location.pathname] || "FinAccs"
 
   const handleAutoScrollToggle = () => {
     const newValue = !autoScrollEnabled
@@ -56,66 +53,37 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-50 bg-card border-b border-border">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-14">
-          <nav className="flex items-center gap-1 overflow-x-auto scrollbar-hide flex-1 min-w-0 py-1">
-            {NAV_ITEMS.map(({ path, label }) => {
-              const isActive = location.pathname === path
-              return (
-                <Link
-                  key={path}
-                  to={path}
-                  className={`relative flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  }`}
-                >
-                  {label}
-                  {path === "/anomalies" && inconsistencyCount > 0 && (
-                    <span className="bg-red-500 text-white text-[10px] font-bold rounded-full h-4 min-w-4 flex items-center justify-center px-1 ml-1">
-                      {inconsistencyCount > 99 ? "99+" : inconsistencyCount}
-                    </span>
-                  )}
-                  {path === "/payments" && paymentsCount > 0 && (
-                    <span className="bg-red-500 text-white text-[10px] font-bold rounded-full h-4 min-w-4 flex items-center justify-center px-1 ml-1">
-                      {paymentsCount > 99 ? "99+" : paymentsCount}
-                    </span>
-                  )}
-                </Link>
-              )
-            })}
-          </nav>
+    <header className="sticky top-0 z-50 bg-background border-b border-border h-8">
+      <div className="px-4 sm:px-6 h-full">
+        <div className="flex items-center justify-center h-full relative">
+          <h1 className="text-[13px] font-medium">{pageTitle}</h1>
 
-          <div className="flex items-center gap-1 flex-shrink-0">
+          <div className="flex items-center gap-1 absolute right-0">
             {/* Auto-scroll Toggle */}
-            {showAutoScrollToggle && (
-              <Tooltip.Provider>
-                <Tooltip.Root>
-                  <Tooltip.Trigger asChild>
-                    <button
-                      onClick={handleAutoScrollToggle}
-                      className={`p-2 rounded-lg transition-colors hover:bg-accent ${
-                        autoScrollEnabled ? 'text-primary' : 'text-muted-foreground'
-                      }`}
-                      aria-label="Toggle auto-scroll"
-                    >
-                      <FocusIcon className="h-5 w-5" />
-                    </button>
-                  </Tooltip.Trigger>
-                  <Tooltip.Portal>
-                    <Tooltip.Content
-                      className="bg-card text-card-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm"
-                      sideOffset={5}
-                    >
-                      Scroll table into view
-                      <Tooltip.Arrow className="fill-card" />
-                    </Tooltip.Content>
-                  </Tooltip.Portal>
-                </Tooltip.Root>
-              </Tooltip.Provider>
-            )}
+            <Tooltip.Provider>
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
+                  <button
+                    onClick={handleAutoScrollToggle}
+                    className={`p-1.5 rounded-md transition-colors hover:bg-accent ${
+                      autoScrollEnabled ? 'text-primary' : 'text-muted-foreground'
+                    }`}
+                    aria-label={autoScrollEnabled ? "Disable auto-scroll to table" : "Enable auto-scroll to table"}
+                  >
+                    <FocusIcon className="h-4 w-4" strokeWidth={2.5} />
+                  </button>
+                </Tooltip.Trigger>
+                <Tooltip.Portal>
+                  <Tooltip.Content
+                    className="bg-popover text-popover-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm z-50"
+                    sideOffset={5}
+                  >
+                    Auto-scroll to table
+                    <Tooltip.Arrow className="fill-popover" />
+                  </Tooltip.Content>
+                </Tooltip.Portal>
+              </Tooltip.Root>
+            </Tooltip.Provider>
 
             {/* Font Toggle */}
             <DropdownMenu.Root>
@@ -124,27 +92,27 @@ export function Header() {
                   <Tooltip.Trigger asChild>
                     <DropdownMenu.Trigger asChild>
                       <button
-                        className="p-2 rounded-lg hover:bg-accent transition-colors"
+                        className="p-1.5 rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
                         aria-label="Change font"
                       >
-                        <TypeIcon className="h-5 w-5" />
+                        <TypeIcon className="h-4 w-4" strokeWidth={2.5} />
                       </button>
                     </DropdownMenu.Trigger>
                   </Tooltip.Trigger>
                   <Tooltip.Portal>
                     <Tooltip.Content
-                      className="bg-card text-card-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm"
+                      className="bg-popover text-popover-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm z-50"
                       sideOffset={5}
                     >
                       Change font
-                      <Tooltip.Arrow className="fill-card" />
+                      <Tooltip.Arrow className="fill-popover" />
                     </Tooltip.Content>
                   </Tooltip.Portal>
                 </Tooltip.Root>
               </Tooltip.Provider>
               <DropdownMenu.Portal>
                 <DropdownMenu.Content
-                  className="bg-card rounded-lg shadow-lg border border-border p-1 min-w-[140px] z-50"
+                  className="bg-popover rounded-lg shadow-lg border border-border p-1 min-w-[140px] z-50"
                   sideOffset={5}
                   align="end"
                 >
@@ -174,29 +142,29 @@ export function Header() {
                   <Tooltip.Trigger asChild>
                     <DropdownMenu.Trigger asChild>
                       <button
-                        className="p-2 rounded-lg hover:bg-accent transition-colors"
+                        className="p-1.5 rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
                         aria-label="Change theme"
                       >
-                        {mode === "light" && <SunIcon className="h-5 w-5" />}
-                        {mode === "dark" && <MoonIcon className="h-5 w-5" />}
-                        {mode === "system" && <MonitorIcon className="h-5 w-5" />}
+                        {mode === "light" && <SunIcon className="h-4 w-4" strokeWidth={2.5} />}
+                        {mode === "dark" && <MoonIcon className="h-4 w-4" strokeWidth={2.5} />}
+                        {mode === "system" && <MonitorIcon className="h-4 w-4" strokeWidth={2.5} />}
                       </button>
                     </DropdownMenu.Trigger>
                   </Tooltip.Trigger>
                   <Tooltip.Portal>
                     <Tooltip.Content
-                      className="bg-card text-card-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm"
+                      className="bg-popover text-popover-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm z-50"
                       sideOffset={5}
                     >
                       Change theme
-                      <Tooltip.Arrow className="fill-card" />
+                      <Tooltip.Arrow className="fill-popover" />
                     </Tooltip.Content>
                   </Tooltip.Portal>
                 </Tooltip.Root>
               </Tooltip.Provider>
               <DropdownMenu.Portal>
                 <DropdownMenu.Content
-                  className="bg-card rounded-lg shadow-lg border border-border p-1 min-w-[140px] z-50"
+                  className="bg-popover rounded-lg shadow-lg border border-border p-1 min-w-[140px] z-50"
                   sideOffset={5}
                   align="end"
                 >

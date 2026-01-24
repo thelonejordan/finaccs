@@ -21,8 +21,8 @@ import {
   BriefcaseIcon,
   ReceiptIcon,
   HelpCircleIcon,
+  CalendarIcon,
 } from "lucide-react"
-import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import { TransactionTooltip } from "@/components/TransactionTooltip"
 import {
@@ -164,12 +164,26 @@ export function Dashboard() {
     )
   }
 
+  const today = new Date()
+  const formattedDate = today.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+
   return (
     <Tooltip.Provider delayDuration={300}>
-    <div className="min-h-screen bg-muted/40">
-      <Header />
-
       <main className="max-w-7xl mx-auto px-4 py-8">
+        {/* Welcome Section */}
+        <div className="mb-8">
+          <p className="text-muted-foreground flex items-center gap-1.5 text-sm mb-1">
+            <CalendarIcon className="h-4 w-4" />
+            {formattedDate}
+          </p>
+          <h1 className="text-4xl font-normal">Welcome back, Jordan!</h1>
+        </div>
+
         {/* Balance Overview */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
           <PerAccountTooltip accounts={summary?.per_account ?? []} field="starting_balance">
@@ -595,7 +609,6 @@ export function Dashboard() {
         </div>
       </main>
       <Footer />
-    </div>
     </Tooltip.Provider>
   )
 }

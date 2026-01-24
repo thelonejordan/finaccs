@@ -27,7 +27,6 @@ import {
   LandmarkIcon,
 } from "lucide-react"
 import * as Dialog from "@radix-ui/react-dialog"
-import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
 import {
   getArtifactUrl,
@@ -1471,21 +1470,16 @@ export function ExtractionsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-muted/40">
-        <Header />
-        <main className="max-w-7xl mx-auto px-4 py-8">
-          <div className="flex items-center justify-center py-12">
-            <Loader2Icon className="h-8 w-8 animate-spin text-primary" />
-          </div>
-        </main>
-      </div>
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        <div className="flex items-center justify-center py-12">
+          <Loader2Icon className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </main>
     )
   }
 
   return (
-    <div className="min-h-screen bg-muted/40" onClick={handleMainClick}>
-      <Header />
-
+    <>
       <main className="max-w-7xl mx-auto px-4 py-8" onClick={handleMainClick}>
         <header className="mb-8 flex items-center justify-between">
           <div>
@@ -1715,6 +1709,6 @@ export function ExtractionsPage() {
       </Dialog.Root>
 
       <Footer />
-    </div>
+    </>
   )
 }
