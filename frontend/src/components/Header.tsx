@@ -8,14 +8,17 @@ import {
   MonitorIcon,
   CheckIcon,
   FocusIcon,
+  TypeIcon,
 } from "lucide-react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import { useTheme } from "@/lib/theme"
+import { useFont, type FontFamily } from "@/lib/font"
 
 const NAV_ITEMS = [
   { path: "/dashboard", label: "Dashboard" },
   { path: "/transactions", label: "Transactions" },
+  { path: "/stories", label: "Stories" },
   { path: "/extractions", label: "Extractions" },
   { path: "/extractions-v2", label: "Extractions v2" },
   { path: "/console", label: "Console" },
@@ -24,9 +27,15 @@ const NAV_ITEMS = [
   { path: "/activity", label: "Activity" },
 ]
 
+const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
+  { value: "default", label: "Default" },
+  { value: "manrope", label: "Manrope" },
+]
+
 export function Header() {
   const location = useLocation()
   const { mode, setMode } = useTheme()
+  const { font, setFont } = useFont()
   const { cache } = useInconsistencyCache()
   const { cache: paymentsCache } = usePaymentsCache()
   // Use count if available, fall back to previousCount during loading, then 0
@@ -107,6 +116,56 @@ export function Header() {
                 </Tooltip.Root>
               </Tooltip.Provider>
             )}
+
+            {/* Font Toggle */}
+            <DropdownMenu.Root>
+              <Tooltip.Provider>
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <DropdownMenu.Trigger asChild>
+                      <button
+                        className="p-2 rounded-lg hover:bg-accent transition-colors"
+                        aria-label="Change font"
+                      >
+                        <TypeIcon className="h-5 w-5" />
+                      </button>
+                    </DropdownMenu.Trigger>
+                  </Tooltip.Trigger>
+                  <Tooltip.Portal>
+                    <Tooltip.Content
+                      className="bg-card text-card-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm"
+                      sideOffset={5}
+                    >
+                      Change font
+                      <Tooltip.Arrow className="fill-card" />
+                    </Tooltip.Content>
+                  </Tooltip.Portal>
+                </Tooltip.Root>
+              </Tooltip.Provider>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  className="bg-card rounded-lg shadow-lg border border-border p-1 min-w-[140px] z-50"
+                  sideOffset={5}
+                  align="end"
+                >
+                  <DropdownMenu.RadioGroup
+                    value={font}
+                    onValueChange={(value) => setFont(value as FontFamily)}
+                  >
+                    {FONT_OPTIONS.map(({ value, label }) => (
+                      <DropdownMenu.RadioItem
+                        key={value}
+                        value={value}
+                        className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-md cursor-pointer hover:bg-accent outline-none"
+                      >
+                        <span className="flex-1">{label}</span>
+                        {font === value && <CheckIcon className="h-4 w-4" />}
+                      </DropdownMenu.RadioItem>
+                    ))}
+                  </DropdownMenu.RadioGroup>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
 
             {/* Theme Toggle */}
             <DropdownMenu.Root>

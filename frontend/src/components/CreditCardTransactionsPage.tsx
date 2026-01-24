@@ -22,6 +22,7 @@ import {
   Link2OffIcon,
   XIcon,
   BuildingIcon,
+  BookOpenIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
@@ -29,6 +30,7 @@ import * as Tooltip from "@radix-ui/react-tooltip"
 import * as Dialog from "@radix-ui/react-dialog"
 import { Header } from "@/components/Header"
 import { Footer } from "@/components/Footer"
+import { AddToStoryModal } from "@/components/stories/AddToStoryModal"
 import {
   fetchCreditCards,
   fetchCreditCardTransactions,
@@ -452,6 +454,10 @@ export function CreditCardTransactionsPage() {
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
+  // Selection state for adding to stories
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [addToStoryModalOpen, setAddToStoryModalOpen] = useState(false)
+
   // Date range state - initialize from URL
   const [dateRange, setDateRange] = useState<DateRange | null>(null)
   const [selectedYear, setSelectedYear] = useState<number | null>(getInitialYear)
@@ -748,6 +754,36 @@ export function CreditCardTransactionsPage() {
     : dataSources
 
   const totalPages = Math.ceil(total / pageSize)
+
+  // Clear selection when page/filters change
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [selectedCategory, selectedType, selectedCreditCard, selectedDataSource, selectedYear, selectedMonth, debouncedSearch, page])
+
+  // Selection helpers
+  const toggleSelectAll = () => {
+    if (selectedIds.size === transactions.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(transactions.map(t => t.id)))
+    }
+  }
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  const handleAddedToStory = () => {
+    setSelectedIds(new Set())
+  }
 
   // Get available years and months
   const availableYears = dateRange ? Object.keys(dateRange.years).map(Number).sort((a, b) => b - a) : []
@@ -1189,6 +1225,30 @@ export function CreditCardTransactionsPage() {
                   className="mb-4 pb-4 border-b border-border/50"
                 />
 
+                {/* Bulk Action Bar */}
+                {selectedIds.size > 0 && (
+                  <div className="mb-4 p-3 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-between">
+                    <span className="text-sm font-medium">
+                      {selectedIds.size} transaction{selectedIds.size !== 1 ? "s" : ""} selected
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setAddToStoryModalOpen(true)}
+                        className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 flex items-center gap-1.5"
+                      >
+                        <BookOpenIcon className="h-4 w-4" />
+                        Add to Story
+                      </button>
+                      <button
+                        onClick={() => setSelectedIds(new Set())}
+                        className="px-3 py-1.5 rounded-md border border-border text-sm hover:bg-accent"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div
                   ref={tableContainerRef}
                   className="max-h-[60vh] overflow-y-auto"
@@ -1197,12 +1257,20 @@ export function CreditCardTransactionsPage() {
                   <table className="w-full caption-bottom text-sm table-fixed">
                     <thead className="border-b border-border/40 sticky top-0 bg-card z-10 shadow-sm">
                       <tr>
-                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[110px]">Date</th>
-                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[280px]">Description</th>
+                        <th className="h-12 px-3 text-center align-middle font-medium text-muted-foreground w-[40px]">
+                          <input
+                            type="checkbox"
+                            checked={transactions.length > 0 && selectedIds.size === transactions.length}
+                            onChange={toggleSelectAll}
+                            className="rounded border-border"
+                          />
+                        </th>
+                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[100px]">Date</th>
+                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[260px]">Description</th>
                         <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[100px]">Card</th>
-                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[130px]">Category</th>
+                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[120px]">Category</th>
                         <th className="h-12 px-3 text-center align-middle font-medium text-muted-foreground w-[50px]">Link</th>
-                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground w-[100px]">
+                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground w-[90px]">
                           <Tooltip.Provider>
                             <Tooltip.Root>
                               <Tooltip.Trigger asChild>
@@ -1223,13 +1291,13 @@ export function CreditCardTransactionsPage() {
                             </Tooltip.Root>
                           </Tooltip.Provider>
                         </th>
-                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground w-[120px]">Amount</th>
+                        <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground w-[110px]">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
                       {page > 1 && (
                         <tr ref={prevPageRowRef} className="border-b border-border/40 hover:bg-muted/30 transition-colors">
-                          <td colSpan={7} className="px-4 py-3 align-middle text-center">
+                          <td colSpan={8} className="px-4 py-3 align-middle text-center">
                             <button
                               onClick={() => setPage(page - 1)}
                               className="text-sm text-muted-foreground/80 hover:text-foreground transition-colors inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted/50 hover:bg-muted"
@@ -1241,7 +1309,15 @@ export function CreditCardTransactionsPage() {
                         </tr>
                       )}
                       {transactions.map((t) => (
-                        <tr key={t.id} className="border-b border-border/40 transition-colors hover:bg-muted/50">
+                        <tr key={t.id} className={`border-b border-border/40 transition-colors hover:bg-muted/50 ${selectedIds.has(t.id) ? 'bg-primary/5' : ''}`}>
+                          <td className="px-3 py-3 align-middle text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(t.id)}
+                              onChange={() => toggleSelect(t.id)}
+                              className="rounded border-border"
+                            />
+                          </td>
                           <td className="px-4 py-3 align-middle text-sm text-muted-foreground whitespace-nowrap">
                             {formatDate(t.date)}
                           </td>
@@ -1317,7 +1393,7 @@ export function CreditCardTransactionsPage() {
                       ))}
                       {page < totalPages && (
                         <tr className="hover:bg-muted/30 transition-colors">
-                          <td colSpan={7} className="px-4 py-3 align-middle text-center">
+                          <td colSpan={8} className="px-4 py-3 align-middle text-center">
                             <button
                               onClick={() => setPage(page + 1)}
                               className="text-sm text-muted-foreground/80 hover:text-foreground transition-colors inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted/50 hover:bg-muted"
@@ -1347,6 +1423,14 @@ export function CreditCardTransactionsPage() {
           </div>
         </section>
       </main>
+
+      <AddToStoryModal
+        open={addToStoryModalOpen}
+        onOpenChange={setAddToStoryModalOpen}
+        selectedTransactions={Array.from(selectedIds).map(id => ({ type: 'credit_card' as const, id }))}
+        onAdded={handleAddedToStory}
+      />
+
       <Footer />
     </div>
   )

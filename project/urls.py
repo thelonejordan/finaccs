@@ -47,6 +47,7 @@ urlpatterns = [
     path('', include('dashboard.urls')),
     path('', include('credit_cards.urls')),
     path('', include('extractions.urls')),
+    path('', include('stories.urls')),
 ]
 
 # API docs (dev only)

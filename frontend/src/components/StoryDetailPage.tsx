@@ -1,0 +1,705 @@
+import { useEffect, useState } from "react"
+import { useParams, useNavigate, Link } from "react-router-dom"
+import {
+  ArrowLeftIcon,
+  TrashIcon,
+  XIcon,
+  HashIcon,
+  WalletIcon,
+  CalendarIcon,
+  PencilIcon,
+  CheckIcon,
+  CreditCardIcon,
+  LandmarkIcon,
+  MoveIcon,
+  CopyIcon,
+} from "lucide-react"
+import * as Dialog from "@radix-ui/react-dialog"
+import { Header } from "@/components/Header"
+import { Footer } from "@/components/Footer"
+import { MoveOrCopyToStoryModal } from "@/components/stories/MoveOrCopyToStoryModal"
+import {
+  fetchStory,
+  updateStory,
+  deleteStory,
+  removeTransactionsFromStory,
+  type StoryDetail,
+  type StoryTransaction,
+  type TransactionRef,
+} from "@/lib/api"
+
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount)
+}
+
+function FormattedCurrency({ amount, className = "" }: { amount: number; className?: string }) {
+  const formatted = formatCurrency(amount)
+  const match = formatted.match(/^(.*?)(\.\d{2})$/)
+  if (match) {
+    return (
+      <span className={className}>
+        {match[1]}
+        <span className="opacity-50">{match[2]}</span>
+      </span>
+    )
+  }
+  return <span className={className}>{formatted}</span>
+}
+
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return "-"
+  return new Date(dateStr).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
+}
+
+function DeleteConfirmDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  isDeleting,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onConfirm: () => void
+  isDeleting: boolean
+}) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-card rounded-lg shadow-xl p-6 w-full max-w-md z-50">
+          <Dialog.Title className="text-lg font-semibold text-foreground">
+            Delete Story
+          </Dialog.Title>
+          <Dialog.Description className="mt-2 text-sm text-muted-foreground">
+            Are you sure you want to delete this story? This will remove all transaction associations. The transactions themselves will not be deleted.
+          </Dialog.Description>
+
+          <div className="mt-6 flex justify-end gap-3">
+            <button
+              onClick={() => onOpenChange(false)}
+              disabled={isDeleting}
+              className="px-4 py-2 text-sm font-medium rounded-md border border-border text-foreground hover:bg-accent disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={isDeleting}
+              className="px-4 py-2 text-sm font-medium rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {isDeleting ? "Deleting..." : "Delete Story"}
+            </button>
+          </div>
+
+          <Dialog.Close asChild>
+            <button
+              className="absolute top-4 right-4 p-1 rounded-full hover:bg-accent"
+              aria-label="Close"
+            >
+              <XIcon className="h-4 w-4 text-muted-foreground" />
+            </button>
+          </Dialog.Close>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
+
+export function StoryDetailPage() {
+  const { storyId } = useParams<{ storyId: string }>()
+  const navigate = useNavigate()
+
+  const [story, setStory] = useState<StoryDetail | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Editing state
+  const [isEditingName, setIsEditingName] = useState(false)
+  const [editedName, setEditedName] = useState("")
+  const [isEditingDescription, setIsEditingDescription] = useState(false)
+  const [editedDescription, setEditedDescription] = useState("")
+  const [isSaving, setIsSaving] = useState(false)
+
+  // Delete state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  // Remove transaction state
+  const [removingId, setRemovingId] = useState<{ type: string; id: number } | null>(null)
+
+  // Selection state
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
+  const [moveOrCopyMode, setMoveOrCopyMode] = useState<"move" | "copy">("move")
+  const [moveOrCopyModalOpen, setMoveOrCopyModalOpen] = useState(false)
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false)
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+
+  useEffect(() => {
+    document.title = story ? `${story.name} | Stories | FinAccs` : "Story | FinAccs"
+  }, [story])
+
+  const loadStory = async () => {
+    if (!storyId) return
+    try {
+      const data = await fetchStory(storyId)
+      setStory(data)
+      setEditedName(data.name)
+      setEditedDescription(data.description)
+    } catch (err) {
+      setError("Failed to load story")
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadStory()
+  }, [storyId])
+
+  const handleSaveName = async () => {
+    if (!story || !storyId) return
+    if (!editedName.trim()) return
+
+    setIsSaving(true)
+    try {
+      await updateStory(storyId, { name: editedName.trim() })
+      setStory({ ...story, name: editedName.trim() })
+      setIsEditingName(false)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleSaveDescription = async () => {
+    if (!story || !storyId) return
+
+    setIsSaving(true)
+    try {
+      await updateStory(storyId, { description: editedDescription.trim() })
+      setStory({ ...story, description: editedDescription.trim() })
+      setIsEditingDescription(false)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleDeleteStory = async () => {
+    if (!storyId) return
+
+    setIsDeleting(true)
+    try {
+      await deleteStory(storyId)
+      navigate("/stories")
+    } catch (err) {
+      console.error(err)
+      setIsDeleting(false)
+    }
+  }
+
+  const handleRemoveTransaction = async (txn: StoryTransaction) => {
+    if (!storyId) return
+
+    setRemovingId({ type: txn.type, id: txn.id })
+    try {
+      await removeTransactionsFromStory(storyId, [{ type: txn.type, id: txn.id }])
+      // Reload story to get updated data
+      loadStory()
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setRemovingId(null)
+    }
+  }
+
+  // Selection helpers
+  const getTxnKey = (txn: StoryTransaction) => `${txn.type}-${txn.id}`
+
+  const toggleSelect = (txn: StoryTransaction) => {
+    const key = getTxnKey(txn)
+    setSelectedKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (!story) return
+    if (selectedKeys.size === story.transactions.length) {
+      setSelectedKeys(new Set())
+    } else {
+      setSelectedKeys(new Set(story.transactions.map(getTxnKey)))
+    }
+  }
+
+  const getSelectedTransactions = (): TransactionRef[] => {
+    return Array.from(selectedKeys).map(key => {
+      const [type, id] = key.split("-")
+      return { type: type as "bank" | "credit_card", id: parseInt(id, 10) }
+    })
+  }
+
+  const openMoveModal = () => {
+    setMoveOrCopyMode("move")
+    setMoveOrCopyModalOpen(true)
+  }
+
+  const openCopyModal = () => {
+    setMoveOrCopyMode("copy")
+    setMoveOrCopyModalOpen(true)
+  }
+
+  const handleMoveOrCopyComplete = () => {
+    setSelectedKeys(new Set())
+    loadStory()
+  }
+
+  const handleBulkDelete = async () => {
+    if (!storyId) return
+
+    setIsBulkDeleting(true)
+    try {
+      await removeTransactionsFromStory(storyId, getSelectedTransactions())
+      setSelectedKeys(new Set())
+      setBulkDeleteDialogOpen(false)
+      loadStory()
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsBulkDeleting(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-muted/40">
+        <Header />
+        <main className="max-w-7xl mx-auto px-4 py-8">
+          <div className="flex items-center justify-center py-16">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    )
+  }
+
+  if (error || !story) {
+    return (
+      <div className="min-h-screen bg-muted/40">
+        <Header />
+        <main className="max-w-7xl mx-auto px-4 py-8">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-12 text-center">
+            <p className="text-muted-foreground">{error || "Story not found"}</p>
+            <Link
+              to="/stories"
+              className="mt-4 inline-flex items-center gap-2 text-primary hover:underline"
+            >
+              <ArrowLeftIcon className="h-4 w-4" />
+              Back to Stories
+            </Link>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-muted/40">
+      <Header />
+
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        {/* Back link */}
+        <Link
+          to="/stories"
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6"
+        >
+          <ArrowLeftIcon className="h-4 w-4" />
+          Back to Stories
+        </Link>
+
+        {/* Story Header */}
+        <header className="mb-8">
+          <div className="flex items-start gap-4">
+            <div className="text-5xl">{story.icon}</div>
+            <div className="flex-1 min-w-0">
+              {isEditingName ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={editedName}
+                    onChange={(e) => setEditedName(e.target.value)}
+                    className="text-2xl font-bold bg-background border border-input rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSaveName()
+                      if (e.key === "Escape") {
+                        setEditedName(story.name)
+                        setIsEditingName(false)
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={handleSaveName}
+                    disabled={isSaving}
+                    className="p-2 rounded-lg hover:bg-accent text-green-600"
+                  >
+                    <CheckIcon className="h-5 w-5" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditedName(story.name)
+                      setIsEditingName(false)
+                    }}
+                    className="p-2 rounded-lg hover:bg-accent text-muted-foreground"
+                  >
+                    <XIcon className="h-5 w-5" />
+                  </button>
+                </div>
+              ) : (
+                <h1 className="text-2xl font-bold flex items-center gap-2 group">
+                  {story.name}
+                  <button
+                    onClick={() => setIsEditingName(true)}
+                    className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-accent transition-opacity"
+                  >
+                    <PencilIcon className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                </h1>
+              )}
+
+              {isEditingDescription ? (
+                <div className="mt-2">
+                  <textarea
+                    value={editedDescription}
+                    onChange={(e) => setEditedDescription(e.target.value)}
+                    className="w-full text-sm bg-background border border-input rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                    rows={2}
+                    autoFocus
+                    placeholder="Add a description..."
+                  />
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={handleSaveDescription}
+                      disabled={isSaving}
+                      className="px-3 py-1 text-sm rounded-md bg-primary text-primary-foreground"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditedDescription(story.description)
+                        setIsEditingDescription(false)
+                      }}
+                      className="px-3 py-1 text-sm rounded-md border border-border"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p
+                  onClick={() => setIsEditingDescription(true)}
+                  className="text-muted-foreground mt-1 cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1"
+                >
+                  {story.description || (
+                    <span className="text-muted-foreground/50 italic">
+                      Click to add description...
+                    </span>
+                  )}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setDeleteDialogOpen(true)}
+              className="p-2 rounded-lg hover:bg-red-500/10 text-red-500 transition-colors"
+            >
+              <TrashIcon className="h-5 w-5" />
+            </button>
+          </div>
+        </header>
+
+        {/* Stats Cards */}
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-blue-500/10">
+                <HashIcon className="h-5 w-5 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Transactions</p>
+                <p className="text-xl font-bold">{story.transaction_count}</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-card rounded-xl border border-border shadow-sm p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-green-500/10">
+                <WalletIcon className="h-5 w-5 text-green-500" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Total Spent</p>
+                <FormattedCurrency amount={story.total_spent} className="text-xl font-bold" />
+              </div>
+            </div>
+          </div>
+          <div className="bg-card rounded-xl border border-border shadow-sm p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-purple-500/10">
+                <CalendarIcon className="h-5 w-5 text-purple-500" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Date Range</p>
+                <p className="text-sm font-medium">
+                  {story.min_date === story.max_date
+                    ? formatDate(story.min_date)
+                    : `${formatDate(story.min_date)} - ${formatDate(story.max_date)}`}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Transactions Table */}
+        <section className="bg-card rounded-xl border border-border shadow-sm">
+          <header className="p-6 pb-0 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Transactions</h2>
+          </header>
+
+          {/* Selection Action Bar */}
+          {selectedKeys.size > 0 && (
+            <div className="mx-6 mt-4 p-3 bg-primary/5 border border-primary/20 rounded-lg flex items-center justify-between">
+              <span className="text-sm font-medium">
+                {selectedKeys.size} transaction{selectedKeys.size !== 1 ? "s" : ""} selected
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={openMoveModal}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  <MoveIcon className="h-4 w-4" />
+                  Move
+                </button>
+                <button
+                  onClick={openCopyModal}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border bg-background hover:bg-accent"
+                >
+                  <CopyIcon className="h-4 w-4" />
+                  Copy
+                </button>
+                <button
+                  onClick={() => setBulkDeleteDialogOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-red-600 text-white hover:bg-red-700"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                  Remove
+                </button>
+                <button
+                  onClick={() => setSelectedKeys(new Set())}
+                  className="px-3 py-1.5 text-sm font-medium rounded-md border border-border text-muted-foreground hover:bg-accent"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="p-6">
+            {story.transactions.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <HashIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No transactions in this story yet.</p>
+                <p className="text-sm mt-1">
+                  Go to Transactions and select items to add here.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/30">
+                      <th className="text-center px-4 py-3 w-10">
+                        <input
+                          type="checkbox"
+                          checked={selectedKeys.size === story.transactions.length && story.transactions.length > 0}
+                          onChange={toggleSelectAll}
+                          className="h-4 w-4 rounded border-border"
+                        />
+                      </th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-10">
+                        Type
+                      </th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-28">
+                        Date
+                      </th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Description
+                      </th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-32">
+                        Category
+                      </th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-32">
+                        Source
+                      </th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-28">
+                        Amount
+                      </th>
+                      <th className="text-center px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-16">
+
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {story.transactions.map((txn) => (
+                      <tr
+                        key={`${txn.type}-${txn.id}`}
+                        className={`hover:bg-muted/30 transition-colors ${selectedKeys.has(getTxnKey(txn)) ? "bg-primary/5" : ""}`}
+                      >
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedKeys.has(getTxnKey(txn))}
+                            onChange={() => toggleSelect(txn)}
+                            className="h-4 w-4 rounded border-border"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          {txn.type === "bank" ? (
+                            <span title="Bank Transaction">
+                              <LandmarkIcon className="h-4 w-4 text-blue-500" />
+                            </span>
+                          ) : (
+                            <span title="Credit Card Transaction">
+                              <CreditCardIcon className="h-4 w-4 text-purple-500" />
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                          {formatDate(txn.date)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="truncate block max-w-md" title={txn.description}>
+                            {txn.description}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground">
+                            {txn.category || "Uncategorized"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">
+                          {txn.source}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <FormattedCurrency
+                            amount={Math.abs(txn.amount)}
+                            className={txn.amount >= 0 ? "text-red-500" : "text-green-500"}
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            onClick={() => handleRemoveTransaction(txn)}
+                            disabled={removingId?.type === txn.type && removingId?.id === txn.id}
+                            className="p-1 rounded hover:bg-red-500/10 text-red-500 disabled:opacity-50"
+                            title="Remove from story"
+                          >
+                            {removingId?.type === txn.type && removingId?.id === txn.id ? (
+                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                            ) : (
+                              <XIcon className="h-4 w-4" />
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
+      </main>
+
+      <DeleteConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        onConfirm={handleDeleteStory}
+        isDeleting={isDeleting}
+      />
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog.Root open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+          <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-card rounded-lg shadow-xl p-6 w-full max-w-md z-50">
+            <Dialog.Title className="text-lg font-semibold text-foreground">
+              Remove Transactions
+            </Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm text-muted-foreground">
+              Are you sure you want to remove {selectedKeys.size} transaction{selectedKeys.size !== 1 ? "s" : ""} from this story? The transactions themselves will not be deleted.
+            </Dialog.Description>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => setBulkDeleteDialogOpen(false)}
+                disabled={isBulkDeleting}
+                className="px-4 py-2 text-sm font-medium rounded-md border border-border text-foreground hover:bg-accent disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={isBulkDeleting}
+                className="px-4 py-2 text-sm font-medium rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {isBulkDeleting ? "Removing..." : "Remove"}
+              </button>
+            </div>
+
+            <Dialog.Close asChild>
+              <button
+                className="absolute top-4 right-4 p-1 rounded-full hover:bg-accent"
+                aria-label="Close"
+              >
+                <XIcon className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </Dialog.Close>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* Move/Copy Modal */}
+      {storyId && (
+        <MoveOrCopyToStoryModal
+          open={moveOrCopyModalOpen}
+          onOpenChange={setMoveOrCopyModalOpen}
+          mode={moveOrCopyMode}
+          currentStoryId={storyId}
+          selectedTransactions={getSelectedTransactions()}
+          onComplete={handleMoveOrCopyComplete}
+        />
+      )}
+
+      <Footer />
+    </div>
+  )
+}

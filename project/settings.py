@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'dashboard',
     'credit_cards',
     'extractions',
+    'stories',
 ]
 
 # Development tools

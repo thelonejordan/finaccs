@@ -1233,3 +1233,180 @@ export async function fetchExtractors(): Promise<{ data: ExtractorInfo[] }> {
   const res = await fetch(`${API_BASE}/api/extractions/extractors/`)
   return res.json()
 }
+
+// ==================== Stories API ====================
+
+export interface Story {
+  id: number
+  story_id: string
+  name: string
+  description: string
+  icon: string
+  transaction_count: number
+  total_spent: number
+  min_date: string | null
+  max_date: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface StoryTransaction {
+  id: number
+  type: 'bank' | 'credit_card'
+  date: string
+  description: string
+  amount: number
+  category: string
+  source: string
+}
+
+export interface StoryDetail extends Story {
+  transactions: StoryTransaction[]
+}
+
+export interface TransactionRef {
+  type: 'bank' | 'credit_card'
+  id: number
+}
+
+export interface StoryBadge {
+  story_id: string
+  name: string
+  icon: string
+}
+
+export async function fetchStories(): Promise<{ stories: Story[] }> {
+  const res = await fetch(`${API_BASE}/api/stories/`)
+  if (!res.ok) {
+    throw new Error('Failed to fetch stories')
+  }
+  return res.json()
+}
+
+export async function fetchStory(storyId: string): Promise<StoryDetail> {
+  const res = await fetch(`${API_BASE}/api/stories/${storyId}/`)
+  if (!res.ok) {
+    throw new Error('Failed to fetch story')
+  }
+  return res.json()
+}
+
+export async function createStory(data: {
+  name: string
+  description?: string
+  icon?: string
+}): Promise<Story> {
+  const res = await fetch(`${API_BASE}/api/stories/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to create story')
+  }
+  return res.json()
+}
+
+export async function updateStory(
+  storyId: string,
+  data: Partial<{ name: string; description: string; icon: string }>
+): Promise<Story> {
+  const res = await fetch(`${API_BASE}/api/stories/${storyId}/`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to update story')
+  }
+  return res.json()
+}
+
+export async function deleteStory(storyId: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/api/stories/${storyId}/`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    throw new Error('Failed to delete story')
+  }
+  return res.json()
+}
+
+export async function addTransactionsToStory(
+  storyId: string,
+  transactions: TransactionRef[]
+): Promise<{ success: boolean; added: number }> {
+  const res = await fetch(`${API_BASE}/api/stories/${storyId}/transactions/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transactions }),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to add transactions to story')
+  }
+  return res.json()
+}
+
+export async function removeTransactionsFromStory(
+  storyId: string,
+  transactions: TransactionRef[]
+): Promise<{ success: boolean; removed: number }> {
+  const res = await fetch(`${API_BASE}/api/stories/${storyId}/transactions/`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transactions }),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to remove transactions from story')
+  }
+  return res.json()
+}
+
+export async function getTransactionStories(
+  transactions: TransactionRef[]
+): Promise<{ transaction_stories: Record<string, StoryBadge[]> }> {
+  const res = await fetch(`${API_BASE}/api/stories/transaction-stories/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transactions }),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to get transaction stories')
+  }
+  return res.json()
+}
+
+export interface StoryComparisonSummary {
+  story_id: string
+  name: string
+  icon: string
+  transaction_count: number
+  total_spent: number
+}
+
+export interface StoryComparisonResult {
+  stories: StoryComparisonSummary[]
+  common_transactions: StoryTransaction[]
+  unique_transactions: Record<string, StoryTransaction[]>
+  overlap_stats: {
+    common_count: number
+    total_unique: number
+  }
+}
+
+export async function compareStories(storyIds: string[]): Promise<StoryComparisonResult> {
+  const res = await fetch(`${API_BASE}/api/stories/compare/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ story_ids: storyIds }),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to compare stories')
+  }
+  return res.json()
+}
