@@ -63,7 +63,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-64 min-h-[calc(100vh-2rem)] bg-card border-r border-border flex flex-col shrink-0">
+    <aside className="w-64 h-[calc(100vh-2rem)] bg-card border-r border-border flex flex-col shrink-0 sticky top-8 self-start">
       {/* Logo */}
       <div className="p-4 pb-3">
         <Link to="/dashboard" className="flex items-center gap-2">
@@ -80,11 +80,11 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 px-3 py-1 overflow-y-auto">
         {NAV_SECTIONS.map((section) => (
-          <div key={section.label} className="mb-3">
-            <h3 className="px-3 mb-1 text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">
+          <div key={section.label} className="mb-5">
+            <h3 className="px-3 mb-2 text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">
               {section.label}
             </h3>
-            <ul className="space-y-0.5">
+            <ul className="space-y-1">
               {section.items.map(({ path, label, icon: Icon, badgeKey }) => {
                 const isActive = location.pathname === path ||
                   (path === "/stories" && location.pathname.startsWith("/stories/"))
@@ -94,7 +94,7 @@ export function Sidebar() {
                   <li key={path}>
                     <Link
                       to={path}
-                      className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium transition-all ${
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
                         isActive
                           ? "bg-primary text-primary-foreground"
                           : "text-muted-foreground hover:text-foreground hover:bg-accent"

@@ -766,8 +766,8 @@ function UnmatchedTab() {
 
             {/* Offset Threshold Selector */}
             <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-input bg-background">
-              <span className="text-sm text-muted-foreground whitespace-nowrap">Max offset:</span>
-              <div className="flex items-center gap-1">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">Max offset</span>
+              <div className="flex items-center gap-2">
                 {[0, 20, 40, 60, 80, 100].map((value) => (
                   <button
                     key={value}

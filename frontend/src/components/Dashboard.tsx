@@ -181,7 +181,7 @@ export function Dashboard() {
             <CalendarIcon className="h-4 w-4" />
             {formattedDate}
           </p>
-          <h1 className="text-4xl font-normal">Welcome back, Jordan!</h1>
+          <h1 className="text-5xl font-light">Welcome back, Jordan!</h1>
         </div>
 
         {/* Balance Overview */}
