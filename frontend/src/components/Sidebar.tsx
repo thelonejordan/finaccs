@@ -6,7 +6,7 @@ import {
   ArrowLeftRightIcon,
   BookOpenIcon,
   FileTextIcon,
-  TerminalIcon,
+  SettingsIcon,
   CreditCardIcon,
   AlertTriangleIcon,
   ActivityIcon,
@@ -31,7 +31,7 @@ const NAV_SECTIONS = [
     items: [
       { path: "/extractions", label: "Extractions", icon: FileTextIcon },
       { path: "/extractions-v2", label: "Extractions v2", icon: FileIcon },
-      { path: "/console", label: "Console", icon: TerminalIcon },
+      { path: "/console", label: "Console", icon: SettingsIcon },
     ],
   },
   {

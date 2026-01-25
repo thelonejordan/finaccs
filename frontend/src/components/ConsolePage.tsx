@@ -17,7 +17,6 @@ import {
   EyeOffIcon,
   WalletIcon,
   SparklesIcon,
-  BuildingIcon,
   SettingsIcon,
   ClockIcon,
   TrendingDownIcon,
@@ -1606,47 +1605,44 @@ export function ConsolePage() {
   return (
     <>
       <main className="max-w-7xl mx-auto px-4 py-8" onClick={handleCreditTabClick}>
-        <header className="mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-primary/10">
-                  <SettingsIcon className="h-6 w-6 text-primary" />
-                </div>
-                Console
-              </h1>
-              <p className="text-muted-foreground mt-1">
-                Manage your bank accounts, credit cards, and data sources
-              </p>
+        <header className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <SettingsIcon className="h-6 w-6 text-primary" />
+              </div>
+              Console
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Manage your bank accounts, credit cards, and data sources
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Domain toggle */}
+            <div className="flex items-center bg-muted rounded-lg p-1">
+              <button
+                onClick={() => handleTabChange("bank")}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  activeTab === "bank"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Bank Account
+              </button>
+              <button
+                onClick={() => handleTabChange("credit")}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  activeTab === "credit"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Credit Card
+              </button>
             </div>
           </div>
         </header>
-
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6">
-          <button
-            onClick={() => handleTabChange("bank")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-              activeTab === "bank"
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <BuildingIcon className="h-4 w-4" />
-            Bank Accounts
-          </button>
-          <button
-            onClick={() => handleTabChange("credit")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-              activeTab === "credit"
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <CreditCardIcon className="h-4 w-4" />
-            Credit Cards
-          </button>
-        </div>
 
         {/* Tab Content */}
         {activeTab === "bank" && (

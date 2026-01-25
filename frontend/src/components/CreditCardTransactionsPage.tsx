@@ -40,6 +40,7 @@ import {
   type CreditCardTransaction,
   type CreditCardTransactionStats,
   type CreditCardCategoryData,
+  type CreditCardDateRangeFilters,
   type DateRange,
   type DataSourceArtifact,
 } from "@/lib/api"
@@ -458,6 +459,7 @@ export function CreditCardTransactionsPage() {
 
   // Date range state - initialize from URL
   const [dateRange, setDateRange] = useState<DateRange | null>(null)
+  const [fullDateRange, setFullDateRange] = useState<DateRange | null>(null)
   const [selectedYear, setSelectedYear] = useState<number | null>(getInitialYear)
   const [selectedMonth, setSelectedMonth] = useState<number | null>(getInitialMonth)
   const [showAllYear, setShowAllYear] = useState<boolean>(() => {
@@ -582,12 +584,12 @@ export function CreditCardTransactionsPage() {
     return () => clearTimeout(timer)
   }, [search, setPage])
 
-  // Load date range
+  // Load full date range (unfiltered, for showing all years/months)
   useEffect(() => {
-    async function loadDateRange() {
+    async function loadFullDateRange() {
       try {
         const data = await fetchCreditCardDateRange()
-        setDateRange(data)
+        setFullDateRange(data)
 
         const years = Object.keys(data.years).map(Number).sort((a, b) => b - a)
 
@@ -606,12 +608,40 @@ export function CreditCardTransactionsPage() {
           setLoading(false)
         }
       } catch (error) {
-        console.error("Failed to load date range:", error)
+        console.error("Failed to load full date range:", error)
         setLoading(false)
       }
     }
-    loadDateRange()
+    loadFullDateRange()
   }, [])
+
+  // Load date range (re-fetch when filters change)
+  useEffect(() => {
+    async function loadDateRange() {
+      try {
+        const filters: CreditCardDateRangeFilters = {}
+        if (selectedCreditCard) filters.credit_card = selectedCreditCard
+        if (selectedCategory) filters.category = selectedCategory
+        if (selectedType) filters.type = selectedType
+        if (debouncedSearch) filters.search = debouncedSearch
+
+        const data = await fetchCreditCardDateRange(filters)
+        setDateRange(data)
+
+        // If current selection has no data after filtering, try to find valid selection
+        if (selectedYear && selectedMonth) {
+          const years = Object.keys(data.years).map(Number)
+          if (!years.includes(selectedYear)) {
+            // Current year has no data with these filters
+            // Don't auto-change selection, just let user see greyed out
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load date range:", error)
+      }
+    }
+    loadDateRange()
+  }, [selectedCreditCard, selectedCategory, selectedType, debouncedSearch])
 
   // Scroll pagination slider to show current page
   useEffect(() => {
@@ -802,12 +832,12 @@ export function CreditCardTransactionsPage() {
     setSelectedIds(new Set())
   }
 
-  // Get available years and months
+  // Get available years and months (from filtered date range - used to determine which have data)
   const availableYears = dateRange ? Object.keys(dateRange.years).map(Number).sort((a, b) => b - a) : []
   const availableMonths = selectedYear && dateRange ? (dateRange.years[selectedYear.toString()] || []) : []
 
-  // Generate all years in range (from full/unfiltered date range)
-  const fullYears = dateRange ? Object.keys(dateRange.years).map(Number).sort((a, b) => b - a) : []
+  // Generate all years in range (from full/unfiltered date range - used to show all years)
+  const fullYears = fullDateRange ? Object.keys(fullDateRange.years).map(Number).sort((a, b) => b - a) : []
   const allYearsInRange = fullYears.length > 0
     ? Array.from(
         { length: fullYears[0] - fullYears[fullYears.length - 1] + 1 },

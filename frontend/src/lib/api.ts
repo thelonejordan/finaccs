@@ -601,8 +601,23 @@ export async function fetchCreditCardTransactions(params?: {
   return res.json()
 }
 
-export async function fetchCreditCardDateRange(): Promise<DateRange> {
-  const res = await fetch(`${API_BASE}/api/credit-card-date-range/`)
+export interface CreditCardDateRangeFilters {
+  credit_card?: number
+  category?: string
+  type?: string
+  search?: string
+}
+
+export async function fetchCreditCardDateRange(filters?: CreditCardDateRangeFilters): Promise<DateRange> {
+  const searchParams = new URLSearchParams()
+  if (filters?.credit_card) searchParams.set('credit_card', filters.credit_card.toString())
+  if (filters?.category) searchParams.set('category', filters.category)
+  if (filters?.type) searchParams.set('type', filters.type)
+  if (filters?.search) searchParams.set('search', filters.search)
+
+  const queryString = searchParams.toString()
+  const url = queryString ? `${API_BASE}/api/credit-card-date-range/?${queryString}` : `${API_BASE}/api/credit-card-date-range/`
+  const res = await fetch(url)
   return res.json()
 }
 

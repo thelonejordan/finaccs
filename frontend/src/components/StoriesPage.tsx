@@ -37,41 +37,41 @@ function StoryCard({ story }: { story: Story }) {
   return (
     <Link
       to={`/stories/${story.story_id}`}
-      className="block bg-card rounded-xl border border-border shadow-sm hover:shadow-md hover:border-primary/30 transition-all p-5"
+      className="block bg-card rounded-lg border border-border shadow-sm hover:shadow-md hover:border-primary/30 transition-all p-3"
     >
-      <div className="flex items-start gap-4">
-        <div className="text-4xl flex-shrink-0">{story.icon}</div>
+      <div className="flex items-start gap-2.5">
+        <div className="text-2xl flex-shrink-0">{story.icon}</div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-lg truncate">{story.name}</h3>
+          <h3 className="font-medium text-sm truncate">{story.name}</h3>
           {story.description && (
-            <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
               {story.description}
             </p>
           )}
-          <div className="flex flex-wrap items-center gap-4 mt-3 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <HashIcon className="h-4 w-4" />
-              {story.transaction_count} transactions
-            </span>
-            <span className="flex items-center gap-1.5">
-              <WalletIcon className="h-4 w-4" />
-              {formatCurrency(Math.abs(story.total_spent))}
-              {story.total_spent !== 0 && (
-                story.total_spent < 0
-                  ? <ArrowUpIcon className="h-3.5 w-3.5 text-green-500" />
-                  : <ArrowDownIcon className="h-3.5 w-3.5 text-red-500" />
-              )}
-            </span>
-          </div>
-          {(story.min_date || story.max_date) && (
-            <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
-              <CalendarIcon className="h-3.5 w-3.5" />
-              {story.min_date === story.max_date
-                ? formatDate(story.min_date)
-                : `${formatDate(story.min_date)} - ${formatDate(story.max_date)}`}
-            </div>
-          )}
         </div>
+      </div>
+      {(story.min_date || story.max_date) && (
+        <div className="flex items-center gap-1 mt-3 text-[10px] text-muted-foreground">
+          <CalendarIcon className="h-3 w-3" />
+          {story.min_date === story.max_date
+            ? formatDate(story.min_date)
+            : `${formatDate(story.min_date)} - ${formatDate(story.max_date)}`}
+        </div>
+      )}
+      <div className="flex items-center justify-between mt-1.5 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <HashIcon className="h-3 w-3" />
+          {story.transaction_count}
+        </span>
+        <span className="flex items-center gap-1">
+          <WalletIcon className="h-3 w-3" />
+          {formatCurrency(Math.abs(story.total_spent))}
+          {story.total_spent !== 0 && (
+            story.total_spent < 0
+              ? <ArrowUpIcon className="h-3 w-3 text-green-500" />
+              : <ArrowDownIcon className="h-3 w-3 text-red-500" />
+          )}
+        </span>
       </div>
     </Link>
   )
@@ -161,7 +161,7 @@ export function StoriesPage() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {stories.map((story) => (
               <StoryCard key={story.id} story={story} />
             ))}
