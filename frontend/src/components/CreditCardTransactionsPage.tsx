@@ -912,12 +912,12 @@ export function CreditCardTransactionsPage() {
                   key={year}
                   onClick={() => hasData && handleYearChange(year)}
                   disabled={!hasData}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
                     isSelected
-                      ? "bg-primary text-primary-foreground"
+                      ? "bg-primary text-primary-foreground border-primary"
                       : hasData
-                      ? "bg-card border border-border hover:bg-accent"
-                      : "bg-muted text-muted-foreground/40 cursor-not-allowed"
+                      ? "bg-card border-border hover:bg-accent"
+                      : "bg-muted text-muted-foreground/40 border-muted cursor-not-allowed"
                   }`}
                 >
                   {year}
@@ -946,7 +946,7 @@ export function CreditCardTransactionsPage() {
                         ? "bg-primary text-primary-foreground border-primary"
                         : hasData
                         ? "bg-card border-border hover:bg-accent"
-                        : "bg-muted text-muted-foreground/40 border-transparent cursor-not-allowed"
+                        : "bg-muted text-muted-foreground/40 border-muted cursor-not-allowed"
                     }`}
                   >
                     {name}

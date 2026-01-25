@@ -986,37 +986,35 @@ function DataSourcesSection({
         </div>
 
         {/* Domain tabs */}
-        <div className="flex rounded-lg border border-border overflow-hidden">
+        <div className="flex items-center bg-muted rounded-lg p-1">
           <button
             onClick={() => onDomainFilterChange('all')}
-            className={`px-4 py-2 text-sm font-medium ${
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
               domainFilter === 'all'
-                ? 'bg-blue-600 text-white'
-                : 'bg-card text-foreground hover:bg-accent'
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             All
           </button>
           <button
             onClick={() => onDomainFilterChange('bank_account_transactions')}
-            className={`px-4 py-2 text-sm font-medium border-l border-border ${
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
               domainFilter === 'bank_account_transactions'
-                ? 'bg-blue-600 text-white'
-                : 'bg-card text-foreground hover:bg-accent'
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <BuildingIcon className="h-4 w-4 inline mr-1" />
-            Bank
+            Bank Account
           </button>
           <button
             onClick={() => onDomainFilterChange('credit_card_transactions')}
-            className={`px-4 py-2 text-sm font-medium border-l border-border ${
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
               domainFilter === 'credit_card_transactions'
-                ? 'bg-blue-600 text-white'
-                : 'bg-card text-foreground hover:bg-accent'
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <CreditCardIcon className="h-4 w-4 inline mr-1" />
             Credit Card
           </button>
         </div>
@@ -1659,13 +1657,13 @@ export function ExtractionsV2Page() {
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
         {/* View Toggle */}
         <div className="flex items-center">
-          <div className="flex rounded-lg border border-border overflow-hidden">
+          <div className="flex items-center bg-muted rounded-lg p-1">
             <button
               onClick={() => setViewMode('source_files')}
-              className={`px-4 py-2 text-sm font-medium flex items-center gap-2 ${
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-2 ${
                 viewMode === 'source_files'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-card text-foreground hover:bg-accent'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <FolderIcon className="h-4 w-4" />
@@ -1673,10 +1671,10 @@ export function ExtractionsV2Page() {
             </button>
             <button
               onClick={() => setViewMode('extractions')}
-              className={`px-4 py-2 text-sm font-medium border-l border-border flex items-center gap-2 ${
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-2 ${
                 viewMode === 'extractions'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-card text-foreground hover:bg-accent'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <TableIcon className="h-4 w-4" />
@@ -1684,10 +1682,10 @@ export function ExtractionsV2Page() {
             </button>
             <button
               onClick={() => setViewMode('data_sources')}
-              className={`px-4 py-2 text-sm font-medium border-l border-border flex items-center gap-2 ${
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-2 ${
                 viewMode === 'data_sources'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-card text-foreground hover:bg-accent'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <DatabaseIcon className="h-4 w-4" />

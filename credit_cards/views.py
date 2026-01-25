@@ -438,7 +438,13 @@ def credit_card_transactions(request):
 
 @extend_schema(
     summary="Get credit card date range",
-    description="Get available years and months with credit card transaction data.",
+    description="Get available years and months with credit card transaction data, optionally filtered.",
+    parameters=[
+        OpenApiParameter(name='credit_card', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by credit card ID'),
+        OpenApiParameter(name='category', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Filter by category'),
+        OpenApiParameter(name='type', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Filter by type: payment or charge'),
+        OpenApiParameter(name='search', type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description='Search description'),
+    ],
     responses={200: OpenApiTypes.OBJECT},
     examples=[
         OpenApiExample(
@@ -451,8 +457,30 @@ def credit_card_transactions(request):
 )
 @api_view(['GET'])
 def credit_card_date_range(request):
-    """Get available years and months with credit card transaction data."""
-    dates = get_active_cc_transactions().dates('date', 'month', order='ASC')
+    """Get available years and months with credit card transaction data, optionally filtered."""
+    transactions = get_active_cc_transactions()
+
+    # Apply filters
+    credit_card_id = request.GET.get('credit_card')
+    if credit_card_id:
+        transactions = transactions.filter(credit_card_id=credit_card_id)
+
+    category = request.GET.get('category')
+    if category:
+        transactions = transactions.filter(category=category)
+
+    transaction_type = request.GET.get('type')
+    if transaction_type == 'payment':
+        transactions = transactions.filter(amount__lt=0)
+    elif transaction_type == 'charge':
+        transactions = transactions.filter(amount__gt=0)
+
+    search = request.GET.get('search')
+    if search:
+        transactions = transactions.filter(description__icontains=search)
+
+    # Get all distinct months with matching transactions
+    dates = transactions.dates('date', 'month', order='ASC')
 
     years = {}
     for d in dates:
