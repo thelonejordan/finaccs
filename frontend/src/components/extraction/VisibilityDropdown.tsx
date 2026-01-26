@@ -20,7 +20,7 @@ export function VisibilityDropdown({ value, onChange }: VisibilityDropdownProps)
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <button className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md border border-border bg-card text-foreground hover:bg-accent">
+        <button className="inline-flex items-center gap-2 px-3 py-2.5 text-sm font-medium rounded-lg border border-border bg-card text-foreground hover:bg-accent">
           {current.icon}
           <span>{current.label}</span>
           <ChevronDownIcon className="h-4 w-4" />

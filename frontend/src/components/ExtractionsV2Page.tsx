@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react"
+import { logError } from "@/lib/logger"
 import {
   FileTextIcon,
   PlayIcon,
@@ -204,7 +205,7 @@ function SourceFilesSection({
 
   return (
     <div className="bg-card rounded-xl border border-border shadow-sm">
-      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-wrap gap-4 min-h-[52px]">
         <div className="flex items-center gap-4">
           <VisibilityDropdown value={visibility} onChange={onVisibilityChange} />
         </div>
@@ -225,15 +226,15 @@ function SourceFilesSection({
         onClearSelection={() => onSelectionChange(new Set())}
       />
 
-      <div className="overflow-x-auto">
+      <div className="overflow-auto max-h-[600px]">
         {files.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground">
             No source files found. Click Refresh to scan directories.
           </div>
         ) : (
           <table className="w-full">
-            <thead>
-              <tr className="bg-muted text-xs font-medium text-muted-foreground uppercase">
+            <thead className="sticky top-0 z-10 bg-muted">
+              <tr className="text-xs font-medium text-muted-foreground uppercase">
                 <th className="px-4 py-3 text-left w-10">
                   <input
                     type="checkbox"
@@ -357,24 +358,37 @@ function SourceFilesSection({
 
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => {
-                          setPasswordInputId(file.id)
-                          setPassword(file.password || '')
-                        }}
-                        className={`p-1.5 rounded hover:bg-accent ${
-                          file.password
-                            ? 'text-green-600 dark:text-green-400'
-                            : 'text-muted-foreground hover:text-foreground'
-                        }`}
-                        title={file.password ? 'Password set (click to update)' : 'Set password'}
-                      >
-                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                          <circle cx="12" cy="16" r="1" />
-                          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                        </svg>
-                      </button>
+                      {file.filename.toLowerCase().endsWith('.pdf') ? (
+                        <button
+                          onClick={() => {
+                            setPasswordInputId(file.id)
+                            setPassword(file.password || '')
+                          }}
+                          className={`p-1.5 rounded hover:bg-accent ${
+                            file.password
+                              ? 'text-green-600 dark:text-green-400'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                          title={file.password ? 'Password set (click to update)' : 'Set password'}
+                        >
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                            <circle cx="12" cy="16" r="1" />
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                          </svg>
+                        </button>
+                      ) : (
+                        <span
+                          className="p-1.5 text-muted-foreground/30 cursor-not-allowed"
+                          title="Password not applicable for this file type"
+                        >
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                            <circle cx="12" cy="16" r="1" />
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                          </svg>
+                        </span>
+                      )}
                       <button
                         onClick={() => handleExtract(file)}
                         disabled={extractingId === file.id}
@@ -492,7 +506,7 @@ function ExtractionsSection({
       await transformArtifact(artifactId)
       onDataChange()
     } catch (error) {
-      console.error('Failed to transform artifact:', error)
+      logError("Failed to transform artifact", error)
       alert('Failed to transform artifact')
     } finally {
       setTransformingArtifactId(null)
@@ -516,7 +530,7 @@ function ExtractionsSection({
       await bulkTransformArtifacts(artifactIds)
       onDataChange()
     } catch (error) {
-      console.error('Failed to transform artifacts:', error)
+      logError("Failed to transform artifacts", error)
       alert('Failed to transform artifacts')
     } finally {
       setTransformingArtifactId(null)
@@ -544,7 +558,7 @@ function ExtractionsSection({
         setPreviewData(null)
       }
     } catch (error) {
-      console.error('Failed to load preview:', error)
+      logError("Failed to load preview", error)
       setPreviewData(null)
     } finally {
       setIsLoadingPreview(false)
@@ -575,20 +589,18 @@ function ExtractionsSection({
 
   return (
     <div className="bg-card rounded-xl border border-border shadow-sm">
-      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-wrap gap-4 min-h-[52px]">
         <div className="flex items-center gap-4">
           <VisibilityDropdown value={visibility} onChange={onVisibilityChange} />
         </div>
-        {selectedIds.size > 0 && (
-          <button
-            onClick={() => onTransformAll(getTransformableArtifacts())}
-            disabled={isTransforming || getTransformableArtifacts().length === 0}
-            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
-          >
-            <WandIcon className={`h-4 w-4 ${isTransforming ? 'animate-pulse' : ''}`} />
-            Transform All ({getTransformableArtifacts().length})
-          </button>
-        )}
+        <button
+          onClick={() => onTransformAll(getTransformableArtifacts())}
+          disabled={isTransforming || getTransformableArtifacts().length === 0}
+          className={`inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 ${selectedIds.size === 0 ? 'invisible' : ''}`}
+        >
+          <WandIcon className={`h-4 w-4 ${isTransforming ? 'animate-pulse' : ''}`} />
+          Transform All ({getTransformableArtifacts().length})
+        </button>
       </div>
 
       <BulkActionBar
@@ -598,15 +610,15 @@ function ExtractionsSection({
         onClearSelection={() => onSelectionChange(new Set())}
       />
 
-      <div className="overflow-x-auto">
+      <div className="overflow-auto max-h-[600px]">
         {extractions.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground">
             No extractions found. Extract a source file to get started.
           </div>
         ) : (
           <table className="w-full">
-            <thead>
-              <tr className="bg-muted text-xs font-medium text-muted-foreground uppercase">
+            <thead className="sticky top-0 z-10 bg-muted">
+              <tr className="text-xs font-medium text-muted-foreground uppercase">
                 <th className="px-4 py-3 text-left w-10">
                   <input
                     type="checkbox"
@@ -867,6 +879,8 @@ function DataSourcesSection({
   onToggleEnabled,
   onEntityChange,
   loadingId,
+  onRefresh,
+  isRefreshing,
 }: {
   dataSources: DataSourceArtifact[]
   bankAccounts: BankAccount[]
@@ -883,6 +897,8 @@ function DataSourcesSection({
   onToggleEnabled: (ds: DataSourceArtifact) => void
   onEntityChange: (ds: DataSourceArtifact, entityId: number | null) => void
   loadingId: number | null
+  onRefresh: () => void
+  isRefreshing: boolean
 }) {
   // Preview state
   const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(null)
@@ -959,7 +975,7 @@ function DataSourcesSection({
         total: result.total,
       })
     } catch (error) {
-      console.error('Failed to load preview:', error)
+      logError("Failed to load preview", error)
       setPreviewData(null)
     } finally {
       setIsLoadingPreview(false)
@@ -980,42 +996,52 @@ function DataSourcesSection({
 
   return (
     <div className="bg-card rounded-xl border border-border shadow-sm">
-      <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-wrap gap-4">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-wrap gap-4 min-h-[52px]">
         <div className="flex items-center gap-4">
           <VisibilityDropdown value={visibility} onChange={onVisibilityChange} />
         </div>
 
         {/* Domain tabs */}
-        <div className="flex items-center bg-muted rounded-lg p-1">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-muted rounded-lg p-1">
+            <button
+              onClick={() => onDomainFilterChange('all')}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                domainFilter === 'all'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => onDomainFilterChange('bank_account_transactions')}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                domainFilter === 'bank_account_transactions'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Bank Account
+            </button>
+            <button
+              onClick={() => onDomainFilterChange('credit_card_transactions')}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                domainFilter === 'credit_card_transactions'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Credit Card
+            </button>
+          </div>
           <button
-            onClick={() => onDomainFilterChange('all')}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-              domainFilter === 'all'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
           >
-            All
-          </button>
-          <button
-            onClick={() => onDomainFilterChange('bank_account_transactions')}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-              domainFilter === 'bank_account_transactions'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Bank Account
-          </button>
-          <button
-            onClick={() => onDomainFilterChange('credit_card_transactions')}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-              domainFilter === 'credit_card_transactions'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Credit Card
+            <RefreshCwIcon className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Refresh
           </button>
         </div>
       </div>
@@ -1027,199 +1053,214 @@ function DataSourcesSection({
         onClearSelection={() => onSelectionChange(new Set())}
       />
 
-      <div ref={listRef} className="divide-y divide-border">
+      <div ref={listRef} className="overflow-auto max-h-[600px]">
         {dataSources.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground">
             No data source artifacts found. Transform extraction artifacts to create data sources.
           </div>
         ) : (
-          <>
-            <div className="px-4 py-2 bg-muted flex items-center gap-4 text-xs font-medium text-muted-foreground uppercase">
-              <input
-                type="checkbox"
-                checked={selectedIds.size === dataSources.length && dataSources.length > 0}
-                onChange={handleSelectAll}
-                className="rounded border-border"
-              />
-              <span className="flex-1">Artifact</span>
-              <span className="w-20">Type</span>
-              <span className="w-36">Entity</span>
-              <span className="w-16 text-right">Rows</span>
-              <span className="w-20">Status</span>
-              <span className="w-16">Enabled</span>
-              <span className="w-16">Actions</span>
-              <span className="w-24">Loaded</span>
-            </div>
-
-            {dataSources.map(ds => (
-              <React.Fragment key={ds.id}>
-                <div
-                  onClick={() => handlePreviewArtifact(ds.artifact_id)}
-                  className={`px-4 py-3 flex items-center gap-4 hover:bg-accent cursor-pointer ${
-                    ds.hidden ? 'opacity-50' : ''
-                  } ${!ds.enabled ? 'bg-background/30' : ''} ${
-                    previewArtifactId === ds.artifact_id ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                  }`}
-                >
+          <table className="w-full">
+            <thead className="sticky top-0 z-10 bg-muted">
+              <tr className="text-xs font-medium text-muted-foreground uppercase align-middle">
+                <th className="px-4 py-3 text-left w-10 align-middle">
                   <input
                     type="checkbox"
-                    checked={selectedIds.has(ds.id)}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleSelect(ds.id, e)
-                    }}
-                    onChange={() => {}}
+                    checked={selectedIds.size === dataSources.length && dataSources.length > 0}
+                    onChange={handleSelectAll}
                     className="rounded border-border"
                   />
+                </th>
+                <th className="px-4 py-3 text-left align-middle">Artifact</th>
+                <th className="px-4 py-3 text-left w-20 align-middle">Type</th>
+                <th className="px-4 py-3 text-left w-36 align-middle">Entity</th>
+                <th className="px-4 py-3 text-right w-16 align-middle">Rows</th>
+                <th className="px-4 py-3 text-left w-20 align-middle">Status</th>
+                <th className="px-4 py-3 text-center w-16 align-middle">Enabled</th>
+                <th className="px-4 py-3 text-center w-16 align-middle">Actions</th>
+                <th className="px-4 py-3 text-left w-24 align-middle">Loaded</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {dataSources.map(ds => (
+                <React.Fragment key={ds.id}>
+                  <tr
+                    onClick={() => handlePreviewArtifact(ds.artifact_id)}
+                    className={`hover:bg-accent cursor-pointer ${
+                      ds.hidden ? 'opacity-50' : ''
+                    } ${!ds.enabled ? 'bg-background/30' : ''} ${
+                      previewArtifactId === ds.artifact_id ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                    }`}
+                  >
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(ds.id)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleSelect(ds.id, e)
+                        }}
+                        onChange={() => {}}
+                        className="rounded border-border"
+                      />
+                    </td>
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium font-mono text-foreground">
-                        {ds.artifact_id}
-                      </span>
-                      {ds.hidden && (
-                        <EyeOffIcon className="h-3 w-3 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {ds.source_artifact_type}
-                      {ds.source_artifact_key && (
-                        <span className="text-muted-foreground dark:text-muted-foreground"> ({ds.source_artifact_key})</span>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground dark:text-muted-foreground truncate" title={ds.source_filename}>
-                      {ds.source_filename}
-                    </div>
-                  </div>
-
-                  <span className={`w-20 text-xs px-2 py-1 rounded ${
-                    ds.data_source_target === 'bank_account_transactions'
-                      ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                      : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
-                  }`}>
-                    {ds.data_source_target === 'bank_account_transactions' ? 'Bank' : 'CC'}
-                  </span>
-
-                  <div className="w-36" onClick={(e) => e.stopPropagation()}>
-                    <DomainEntitySelector
-                      type={ds.data_source_target === 'bank_account_transactions' ? 'bank_account' : 'credit_card'}
-                      value={ds.bank_account_id || ds.credit_card_id}
-                      onChange={(value) => onEntityChange(ds, value)}
-                      bankAccounts={bankAccounts}
-                      creditCards={creditCards}
-                      placeholder="Unassigned"
-                    />
-                  </div>
-
-                  <span className="w-16 text-sm text-muted-foreground text-right">
-                    {ds.row_count}
-                  </span>
-
-                  <div className="w-20">
-                    <StatusBadge status={ds.status} />
-                  </div>
-
-                  <div className="w-16" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => onToggleEnabled(ds)}
-                      className={`p-1.5 rounded ${
-                        ds.enabled
-                          ? 'text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30'
-                          : 'text-muted-foreground hover:bg-accent'
-                      }`}
-                      title={ds.enabled ? 'Disable' : 'Enable'}
-                    >
-                      {ds.enabled ? (
-                        <ToggleRightIcon className="h-5 w-5" />
-                      ) : (
-                        <ToggleLeftIcon className="h-5 w-5" />
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="w-16" onClick={(e) => e.stopPropagation()}>
-                    {ds.status === 'loaded' ? (
-                      <button
-                        onClick={() => onUnload(ds)}
-                        disabled={loadingId === ds.id}
-                        className="p-1.5 rounded text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 disabled:opacity-50"
-                        title="Unload"
-                      >
-                        {loadingId === ds.id ? (
-                          <Loader2Icon className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <PauseIcon className="h-4 w-4" />
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium font-mono text-foreground">
+                          {ds.artifact_id}
+                        </span>
+                        {ds.hidden && (
+                          <EyeOffIcon className="h-3 w-3 text-muted-foreground" />
                         )}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => onLoad(ds)}
-                        disabled={loadingId === ds.id || !ds.bank_account_id && !ds.credit_card_id}
-                        className="p-1.5 rounded text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 disabled:opacity-50"
-                        title={!ds.bank_account_id && !ds.credit_card_id ? 'Assign entity first' : 'Load'}
-                      >
-                        {loadingId === ds.id ? (
-                          <Loader2Icon className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <PlayIcon className="h-4 w-4" />
-                        )}
-                      </button>
-                    )}
-                  </div>
-
-                  <span className="w-24 text-xs text-muted-foreground" title={ds.loaded_at ? `Loaded: ${ds.loaded_at}` : ''}>
-                    {ds.loaded_at ? formatDate(ds.loaded_at) : '-'}
-                  </span>
-                </div>
-
-                {/* Preview Row */}
-                {previewArtifactId === ds.artifact_id && (
-                  <div className="px-4 py-4 bg-background/30 border-t border-border">
-                    {isLoadingPreview ? (
-                      <div className="flex items-center justify-center py-4">
-                        <Loader2Icon className="h-5 w-5 animate-spin text-muted-foreground" />
-                        <span className="ml-2 text-muted-foreground">Loading preview...</span>
                       </div>
-                    ) : previewData ? (
-                      <div className="overflow-x-auto border border-border rounded">
-                        <table className="min-w-full text-xs">
-                          <thead className="bg-muted">
-                            <tr>
-                              {previewData.columns.map(col => (
-                                <th key={col} className="px-2 py-1.5 text-left font-medium text-muted-foreground uppercase whitespace-nowrap">
-                                  {col}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border">
-                            {previewData.data.map((row, i) => (
-                              <tr key={i} className="hover:bg-accent bg-card/50">
-                                {previewData.columns.map(col => (
-                                  <td key={col} className="px-2 py-1.5 text-foreground whitespace-nowrap">
-                                    {String(row[col] ?? '')}
-                                  </td>
+                      <div className="text-xs text-muted-foreground">
+                        {ds.source_artifact_type}
+                        {ds.source_artifact_key && (
+                          <span className="text-muted-foreground dark:text-muted-foreground"> ({ds.source_artifact_key})</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground dark:text-muted-foreground truncate" title={ds.source_filename}>
+                        {ds.source_filename}
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        ds.data_source_target === 'bank_account_transactions'
+                          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                          : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+                      }`}>
+                        {ds.data_source_target === 'bank_account_transactions' ? 'Bank' : 'CC'}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <DomainEntitySelector
+                        type={ds.data_source_target === 'bank_account_transactions' ? 'bank_account' : 'credit_card'}
+                        value={ds.bank_account_id || ds.credit_card_id}
+                        onChange={(value) => onEntityChange(ds, value)}
+                        bankAccounts={bankAccounts}
+                        creditCards={creditCards}
+                        placeholder="Unassigned"
+                      />
+                    </td>
+
+                    <td className="px-4 py-3 text-right">
+                      <span className="text-sm text-muted-foreground">
+                        {ds.row_count}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <StatusBadge status={ds.status} />
+                    </td>
+
+                    <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => onToggleEnabled(ds)}
+                        className={`p-1.5 rounded ${
+                          ds.enabled
+                            ? 'text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30'
+                            : 'text-muted-foreground hover:bg-accent'
+                        }`}
+                        title={ds.enabled ? 'Disable' : 'Enable'}
+                      >
+                        {ds.enabled ? (
+                          <ToggleRightIcon className="h-5 w-5" />
+                        ) : (
+                          <ToggleLeftIcon className="h-5 w-5" />
+                        )}
+                      </button>
+                    </td>
+
+                    <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      {ds.status === 'loaded' ? (
+                        <button
+                          onClick={() => onUnload(ds)}
+                          disabled={loadingId === ds.id}
+                          className="p-1.5 rounded text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 disabled:opacity-50"
+                          title="Unload"
+                        >
+                          {loadingId === ds.id ? (
+                            <Loader2Icon className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <PauseIcon className="h-4 w-4" />
+                          )}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => onLoad(ds)}
+                          disabled={loadingId === ds.id || !ds.bank_account_id && !ds.credit_card_id}
+                          className="p-1.5 rounded text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 disabled:opacity-50"
+                          title={!ds.bank_account_id && !ds.credit_card_id ? 'Assign entity first' : 'Load'}
+                        >
+                          {loadingId === ds.id ? (
+                            <Loader2Icon className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <PlayIcon className="h-4 w-4" />
+                          )}
+                        </button>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <span className="text-xs text-muted-foreground" title={ds.loaded_at ? `Loaded: ${ds.loaded_at}` : ''}>
+                        {ds.loaded_at ? formatDate(ds.loaded_at) : '-'}
+                      </span>
+                    </td>
+                  </tr>
+
+                  {/* Preview Row */}
+                  {previewArtifactId === ds.artifact_id && (
+                    <tr className="bg-muted">
+                      <td colSpan={9} className="px-4 py-4">
+                        {isLoadingPreview ? (
+                          <div className="flex items-center justify-center py-4">
+                            <Loader2Icon className="h-5 w-5 animate-spin text-muted-foreground" />
+                            <span className="ml-2 text-muted-foreground">Loading preview...</span>
+                          </div>
+                        ) : previewData ? (
+                          <div className="overflow-x-auto border border-border rounded">
+                            <table className="min-w-full text-xs">
+                              <thead className="bg-muted">
+                                <tr>
+                                  {previewData.columns.map(col => (
+                                    <th key={col} className="px-2 py-1.5 text-left font-medium text-muted-foreground uppercase whitespace-nowrap">
+                                      {col}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-border">
+                                {previewData.data.map((row, i) => (
+                                  <tr key={i} className="hover:bg-accent bg-card/50">
+                                    {previewData.columns.map(col => (
+                                      <td key={col} className="px-2 py-1.5 text-foreground whitespace-nowrap">
+                                        {String(row[col] ?? '')}
+                                      </td>
+                                    ))}
+                                  </tr>
                                 ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        {previewData.total > previewData.data.length && (
-                          <div className="px-2 py-1.5 text-xs text-muted-foreground bg-muted border-t border-border">
-                            Showing {previewData.data.length} of {previewData.total} rows
+                              </tbody>
+                            </table>
+                            {previewData.total > previewData.data.length && (
+                              <div className="px-2 py-1.5 text-xs text-muted-foreground bg-muted border-t border-border">
+                                Showing {previewData.data.length} of {previewData.total} rows
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-center py-4 text-muted-foreground">
+                            Preview not available
                           </div>
                         )}
-                      </div>
-                    ) : (
-                      <div className="text-center py-4 text-muted-foreground">
-                        Preview not available
-                      </div>
-                    )}
-                  </div>
-                )}
-              </React.Fragment>
-            ))}
-          </>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
     </div>
@@ -1243,6 +1284,7 @@ export function ExtractionsV2Page() {
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isDsRefreshing, setIsDsRefreshing] = useState(false)
   const [extractingId, setExtractingId] = useState<number | null>(null)
   const [isTransforming, setIsTransforming] = useState(false)
   const [dsLoadingId, setDsLoadingId] = useState<number | null>(null)
@@ -1302,7 +1344,7 @@ export function ExtractionsV2Page() {
       setBankAccounts(accountsRes.accounts || [])
       setCreditCards(cardsRes.cards || [])
     } catch (error) {
-      console.error('Failed to load data:', error)
+      logError("Failed to load data", error)
       setLoadError(error instanceof Error ? error.message : 'Failed to load data')
     } finally {
       setIsLoading(false)
@@ -1328,6 +1370,15 @@ export function ExtractionsV2Page() {
     }
   }
 
+  const handleDsRefresh = async () => {
+    setIsDsRefreshing(true)
+    try {
+      await loadData()
+    } finally {
+      setIsDsRefreshing(false)
+    }
+  }
+
   const handleExtract = async (file: SourceFile, password?: string, extractor?: string) => {
     setExtractingId(file.id)
     try {
@@ -1340,7 +1391,7 @@ export function ExtractionsV2Page() {
         alert(result.error || 'Extraction failed')
       }
     } catch (error) {
-      console.error('Extraction failed:', error)
+      logError("Extraction failed", error)
       alert('Extraction failed')
     } finally {
       setExtractingId(null)
@@ -1409,7 +1460,7 @@ export function ExtractionsV2Page() {
         setSelectedSourceFiles(new Set())
         alert(`Transformed ${artifactIds.length} artifact(s)`)
       } catch (error) {
-        console.error('Transform failed:', error)
+        logError("Transform failed", error)
         alert('Transform failed')
       } finally {
         setIsTransforming(false)
@@ -1654,9 +1705,22 @@ export function ExtractionsV2Page() {
 
   return (
     <>
-      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-        {/* View Toggle */}
-        <div className="flex items-center">
+      <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+        {/* Header */}
+        <header className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <DatabaseIcon className="h-6 w-6 text-primary" />
+              </div>
+              Extractions v2
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Manage source files, extractions, and data sources
+            </p>
+          </div>
+
+          {/* View Toggle */}
           <div className="flex items-center bg-muted rounded-lg p-1">
             <button
               onClick={() => setViewMode('source_files')}
@@ -1692,7 +1756,7 @@ export function ExtractionsV2Page() {
               Data Sources
             </button>
           </div>
-        </div>
+        </header>
 
         {loadError && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
@@ -1749,6 +1813,8 @@ export function ExtractionsV2Page() {
             onToggleEnabled={handleDsToggleEnabled}
             onEntityChange={handleDsEntityChange}
             loadingId={dsLoadingId}
+            onRefresh={handleDsRefresh}
+            isRefreshing={isDsRefreshing}
           />
         )}
       </main>

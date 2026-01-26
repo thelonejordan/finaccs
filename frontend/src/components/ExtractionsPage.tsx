@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { logError } from "@/lib/logger"
 import { useSearchParams } from "react-router-dom"
 import {
   FileTextIcon,
@@ -118,6 +119,8 @@ function SourceFilesSection({
   onDeleteSourceFile,
   deletingSourceFileId,
   domain,
+  onRefresh,
+  isRefreshing,
 }: {
   files: PDFSourceFile[]
   onExtract: (fileId: number, password?: string) => void
@@ -129,6 +132,8 @@ function SourceFilesSection({
   onDeleteSourceFile: (file: PDFSourceFile) => void
   deletingSourceFileId: number | null
   domain: 'credit_card' | 'bank_account'
+  onRefresh?: () => void
+  isRefreshing?: boolean
 }) {
   const [passwordFileId, setPasswordFileId] = useState<number | null>(null)
   const [password, setPassword] = useState('')
@@ -189,7 +194,7 @@ function SourceFilesSection({
       setShowPassword(false)
       setIsUpdateMode(false)
     } catch (error) {
-      console.error("Failed to save password:", error)
+      logError("Failed to save password", error)
       alert("Failed to save password")
     } finally {
       setSavingPasswordId(null)
@@ -211,7 +216,7 @@ function SourceFilesSection({
       setShowPassword(false)
       setIsUpdateMode(false)
     } catch (error) {
-      console.error("Failed to clear password:", error)
+      logError("Failed to clear password", error)
       alert("Failed to clear password")
     } finally {
       setSavingPasswordId(null)
@@ -226,6 +231,16 @@ function SourceFilesSection({
             <FileTextIcon className="h-5 w-5 text-muted-foreground" />
           </div>
           Source Files
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="ml-auto p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+              title="Refresh source files"
+            >
+              <RefreshCwIcon className={`h-4 w-4 text-muted-foreground ${isRefreshing ? 'animate-spin' : ''}`} />
+            </button>
+          )}
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
           {domain === 'credit_card'
@@ -956,7 +971,7 @@ function ArtifactPreviewSection({
           setRawContent(JSON.stringify(result.data, null, 2))
         }
       } catch (error) {
-        console.error("Failed to load artifact:", error)
+        logError("Failed to load artifact", error)
         setRawContent('')
       } finally {
         setLoading(false)
@@ -1249,7 +1264,7 @@ export function ExtractionsPage() {
       setSourceFiles((filesRes.data || []).map(mapSourceFile))
       setExtractions((extractionsRes.data || []).map(ext => mapExtraction(ext, filesRes.data || [])))
     } catch (error) {
-      console.error("Failed to load data:", error)
+      logError("Failed to load data", error)
     }
 
     setLoading(false)
@@ -1284,7 +1299,7 @@ export function ExtractionsPage() {
         alert(result.error || "Extraction failed")
       }
     } catch (error) {
-      console.error("Extraction failed:", error)
+      logError("Extraction failed", error)
       alert("Extraction failed")
     } finally {
       setExtractingId(null)
@@ -1307,7 +1322,7 @@ export function ExtractionsPage() {
         )
       )
     } catch (error) {
-      console.error("Toggle hidden failed:", error)
+      logError("Toggle hidden failed", error)
       alert("Failed to update")
     }
   }
@@ -1344,7 +1359,7 @@ export function ExtractionsPage() {
       await bulkTransformArtifacts(artifactIds)
       await loadData()
     } catch (error) {
-      console.error("Transform failed:", error)
+      logError("Transform failed", error)
       alert("Transformation failed")
     } finally {
       setIsTransforming(false)
@@ -1373,7 +1388,7 @@ export function ExtractionsPage() {
       setSelectedExtractionId(null)
       await loadData()
     } catch (error) {
-      console.error("Delete all extractions failed:", error)
+      logError("Delete all extractions failed", error)
       alert("Failed to delete all extractions")
     } finally {
       setIsDeletingAll(false)
@@ -1401,7 +1416,7 @@ export function ExtractionsPage() {
           alert("Extraction not found")
         }
       } catch (error) {
-        console.error("Delete extraction failed:", error)
+        logError("Delete extraction failed", error)
         alert("Failed to delete extraction")
       } finally {
         setDeletingExtractionId(null)
@@ -1413,7 +1428,7 @@ export function ExtractionsPage() {
         // Source file deletion not supported yet
         alert("Source file deletion is not supported")
       } catch (error) {
-        console.error("Delete source file failed:", error)
+        logError("Delete source file failed", error)
         alert("Failed to delete source file")
       } finally {
         setDeletingSourceFileId(null)
@@ -1500,14 +1515,6 @@ export function ExtractionsPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
-              title="Refresh"
-            >
-              <RefreshCwIcon className={`h-5 w-5 text-muted-foreground ${isRefreshing ? 'animate-spin' : ''}`} />
-            </button>
             {/* Domain toggle (bank_account/credit_card) */}
             <div className="flex items-center bg-muted rounded-lg p-1">
               <button
@@ -1547,6 +1554,8 @@ export function ExtractionsPage() {
             onDeleteSourceFile={handleDeleteSourceFile}
             deletingSourceFileId={deletingSourceFileId}
             domain={domain}
+            onRefresh={handleRefresh}
+            isRefreshing={isRefreshing}
           />
           <ExtractionsListSection
             extractions={filteredExtractions}

@@ -1,4 +1,5 @@
-import { useEffect, useState, useRef, useCallback } from "react"
+import { useEffect, useState, useRef, useCallback, memo } from "react"
+import { logError } from "@/lib/logger"
 import { useSearchParams, useNavigate } from "react-router-dom"
 import {
   ArrowDownIcon,
@@ -21,6 +22,7 @@ import {
   XIcon,
   BuildingIcon,
   BookOpenIcon,
+  HashIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
@@ -35,14 +37,16 @@ import {
   fetchCreditCardCategories,
   updateCreditCardTransactionCategory,
   deleteCCPaymentMatch,
-  fetchDataSources,
+  fetchSuggestionsForCCTransaction,
+  createCCPaymentMatch,
   type CreditCard,
   type CreditCardTransaction,
   type CreditCardTransactionStats,
   type CreditCardCategoryData,
   type CreditCardDateRangeFilters,
   type DateRange,
-  type DataSourceArtifact,
+  type CCPaymentBankSuggestion,
+  type BankPaymentMatchInfo,
 } from "@/lib/api"
 
 const MONTH_NAMES = [
@@ -196,14 +200,37 @@ function CategorySelect({
 function BankPaymentLinkDialog({
   transaction,
   onUnlink,
+  onMatchConfirmed,
 }: {
   transaction: CreditCardTransaction
   onUnlink: () => void
+  onMatchConfirmed: (bankPaymentMatch: BankPaymentMatchInfo) => void
 }) {
   const [open, setOpen] = useState(false)
   const [unlinking, setUnlinking] = useState(false)
+  const [suggestions, setSuggestions] = useState<CCPaymentBankSuggestion[]>([])
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+  const [confirming, setConfirming] = useState<number | null>(null)
 
   const isLinked = !!transaction.bank_payment_match
+
+  const loadSuggestions = async () => {
+    setLoadingSuggestions(true)
+    try {
+      const data = await fetchSuggestionsForCCTransaction(transaction.id)
+      setSuggestions(data.suggestions)
+    } catch (error) {
+      logError("Failed to load suggestions", error)
+    } finally {
+      setLoadingSuggestions(false)
+    }
+  }
+
+  useEffect(() => {
+    if (open && !isLinked) {
+      loadSuggestions()
+    }
+  }, [open, isLinked, transaction.id])
 
   const handleUnlink = async () => {
     setUnlinking(true)
@@ -212,6 +239,31 @@ function BankPaymentLinkDialog({
       setOpen(false)
     } finally {
       setUnlinking(false)
+    }
+  }
+
+  const handleConfirmMatch = async (suggestion: CCPaymentBankSuggestion) => {
+    setConfirming(suggestion.bank_transaction.id)
+    try {
+      const result = await createCCPaymentMatch({
+        bank_transaction_id: suggestion.bank_transaction.id,
+        credit_card_transaction_id: transaction.id,
+        offset: suggestion.offset,
+        confidence_score: suggestion.confidence_score,
+        match_reasons: suggestion.match_reasons,
+      })
+      onMatchConfirmed({
+        id: result.id,
+        bank_transaction: suggestion.bank_transaction,
+        offset: suggestion.offset,
+        confidence_score: suggestion.confidence_score,
+        match_reasons: suggestion.match_reasons,
+      })
+      setOpen(false)
+    } catch (error) {
+      logError("Failed to confirm match", error)
+    } finally {
+      setConfirming(null)
     }
   }
 
@@ -264,7 +316,7 @@ function BankPaymentLinkDialog({
             </Dialog.Description>
           </div>
 
-          <div className="p-6">
+          <div className="p-6 max-h-[60vh] overflow-y-auto">
             {/* Current CC transaction info */}
             <div className="mb-4 p-3 rounded-lg bg-muted/50 border border-border">
               <p className="text-sm text-muted-foreground mb-1">Credit Card Payment</p>
@@ -318,14 +370,50 @@ function BankPaymentLinkDialog({
                   {unlinking ? "Unlinking..." : "Unlink Bank Payment"}
                 </button>
               </div>
+            ) : loadingSuggestions ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+              </div>
+            ) : suggestions.length > 0 ? (
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Suggested Matches</p>
+                {suggestions.map((s) => (
+                  <div key={s.bank_transaction.id} className="p-3 rounded-lg border border-border hover:border-primary/50 transition-colors">
+                    <div className="flex items-center gap-2 mb-1">
+                      <BuildingIcon className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">{s.bank_transaction.bank_account?.nickname || "Unknown"}</span>
+                      <span className="ml-auto text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                        {Math.round(s.confidence_score * 100)}% match
+                      </span>
+                    </div>
+                    <p className="text-sm">{formatDate(s.bank_transaction.date)}</p>
+                    <p className="text-sm text-muted-foreground line-clamp-2">{s.bank_transaction.narration}</p>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-sm text-red-600 dark:text-red-400 inline-flex items-center gap-0.5">
+                        <FormattedCurrency amount={s.bank_transaction.amount} />
+                        <ArrowDownIcon className="h-3 w-3" />
+                      </span>
+                      <button
+                        onClick={() => handleConfirmMatch(s)}
+                        disabled={confirming !== null}
+                        className="px-3 py-1 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        {confirming === s.bank_transaction.id ? "Confirming..." : "Confirm"}
+                      </button>
+                    </div>
+                    {s.offset !== 0 && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Offset: {s.offset > 0 ? "+" : ""}{formatCurrency(s.offset)}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
             ) : (
-              /* No link */
               <div className="text-center py-8 text-muted-foreground">
                 <Link2OffIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>No bank payment linked</p>
-                <p className="text-sm mt-1">
-                  Go to the Story page to match this payment
-                </p>
+                <p>No suggestions found</p>
+                <p className="text-sm mt-1">No matching bank payments within 7 days</p>
               </div>
             )}
           </div>
@@ -428,6 +516,137 @@ function Pagination({
   )
 }
 
+const TransactionRow = memo(function TransactionRow({
+  transaction,
+  isSelected,
+  isUpdating,
+  categories,
+  onSelect,
+  onCategoryChange,
+  onUnlink,
+  onMatchConfirmed,
+}: {
+  transaction: CreditCardTransaction
+  isSelected: boolean
+  isUpdating: boolean
+  categories: CreditCardCategoryData[]
+  onSelect: (id: number, event: React.MouseEvent) => void
+  onCategoryChange: (transactionId: number, newCategory: string) => void
+  onUnlink: (matchId: number, transactionId: number) => void
+  onMatchConfirmed: (transactionId: number, bankPaymentMatch: BankPaymentMatchInfo) => void
+}) {
+  const t = transaction
+  return (
+    <tr className={`border-b border-border/40 transition-colors hover:bg-muted/50 ${isSelected ? 'bg-primary/5' : ''}`}>
+      <td className="px-3 py-3 align-middle text-center">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onClick={(e) => onSelect(t.id, e)}
+          readOnly
+          className="rounded border-border"
+        />
+      </td>
+      <td className="px-4 py-3 align-middle text-sm text-muted-foreground whitespace-nowrap">
+        {formatDate(t.date)}
+      </td>
+      <td className="px-4 py-3 align-middle overflow-hidden">
+        <Tooltip.Provider>
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <span className="text-sm truncate block cursor-default">
+                {t.description}
+              </span>
+            </Tooltip.Trigger>
+            <Tooltip.Portal>
+              <Tooltip.Content
+                className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm max-w-md"
+                sideOffset={4}
+              >
+                {t.description}
+                <Tooltip.Arrow className="fill-card" />
+              </Tooltip.Content>
+            </Tooltip.Portal>
+          </Tooltip.Root>
+        </Tooltip.Provider>
+      </td>
+      <td className="px-4 py-3 align-middle overflow-hidden">
+        {t.credit_card ? (
+          <span className="text-sm text-muted-foreground truncate block">
+            {t.credit_card.nickname}
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground/50">-</span>
+        )}
+      </td>
+      <td className="px-4 py-3 align-middle overflow-hidden">
+        {t.source_file ? (
+          <Tooltip.Provider>
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
+                <span className="text-sm text-muted-foreground truncate block cursor-default">
+                  {t.source_file.filename}
+                </span>
+              </Tooltip.Trigger>
+              <Tooltip.Portal>
+                <Tooltip.Content
+                  className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm z-50"
+                  sideOffset={4}
+                >
+                  {t.source_file.filename}
+                  <Tooltip.Arrow className="fill-card" />
+                </Tooltip.Content>
+              </Tooltip.Portal>
+            </Tooltip.Root>
+          </Tooltip.Provider>
+        ) : (
+          <span className="text-sm text-muted-foreground/50">-</span>
+        )}
+      </td>
+      <td className="px-4 py-3 align-middle" onClick={(e) => e.stopPropagation()}>
+        <CategorySelect
+          value={t.category}
+          categories={categories}
+          onValueChange={(value) => onCategoryChange(t.id, value)}
+          disabled={isUpdating}
+        />
+      </td>
+      <td className="px-3 py-3 align-middle text-center">
+        {t.bank_payment_match || t.category === 'Credit Card Payment' ? (
+          <BankPaymentLinkDialog
+            transaction={t}
+            onUnlink={() => t.bank_payment_match && onUnlink(t.bank_payment_match.id, t.id)}
+            onMatchConfirmed={(match) => onMatchConfirmed(t.id, match)}
+          />
+        ) : (
+          <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
+        )}
+      </td>
+      <td className="px-4 py-3 align-middle text-right text-sm text-muted-foreground">
+        {t.intl_amount > 0 ? (
+          <div className="flex flex-col items-end">
+            <span>{t.intl_amount.toFixed(2)} {t.intl_currency || 'USD'}</span>
+            {t.exchange_rate && <span className="text-muted-foreground/50 text-xs">@ {t.exchange_rate.toFixed(2)}</span>}
+          </div>
+        ) : "-"}
+      </td>
+      <td className="px-4 py-3 align-middle text-right">
+        {t.amount < 0 ? (
+          <span className="text-(--color-income) font-medium flex items-center justify-end gap-1">
+            <FormattedCurrency amount={Math.abs(t.amount)} />
+            <ArrowUpIcon className="h-3 w-3 flex-shrink-0" />
+          </span>
+        ) : (
+          <span className="text-(--color-expense) font-medium flex items-center justify-end gap-1">
+            <FormattedCurrency amount={t.amount} />
+            <ArrowDownIcon className="h-3 w-3 flex-shrink-0" />
+          </span>
+        )}
+      </td>
+    </tr>
+  )
+})
+
 export function CreditCardTransactionsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -445,12 +664,11 @@ export function CreditCardTransactionsPage() {
   const [transactions, setTransactions] = useState<CreditCardTransaction[]>([])
   const [categories, setCategories] = useState<CreditCardCategoryData[]>([])
   const [creditCards, setCreditCards] = useState<CreditCard[]>([])
-  const [dataSources, setDataSources] = useState<DataSourceArtifact[]>([])
+  const [availableDataSources, setAvailableDataSources] = useState<Array<{ id: number; source_filename: string; credit_card_id: number | null }>>([])
   const [stats, setStats] = useState<CreditCardTransactionStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [total, setTotal] = useState(0)
   const [updatingId, setUpdatingId] = useState<number | null>(null)
-  const [refreshKey, setRefreshKey] = useState(0)
 
   // Selection state for adding to stories
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -608,7 +826,7 @@ export function CreditCardTransactionsPage() {
           setLoading(false)
         }
       } catch (error) {
-        console.error("Failed to load full date range:", error)
+        logError("Failed to load full date range", error)
         setLoading(false)
       }
     }
@@ -637,7 +855,7 @@ export function CreditCardTransactionsPage() {
           }
         }
       } catch (error) {
-        console.error("Failed to load date range:", error)
+        logError("Failed to load date range", error)
       }
     }
     loadDateRange()
@@ -657,26 +875,39 @@ export function CreditCardTransactionsPage() {
     }, 50)
   }, [page, total])
 
-  const handleCategoryChange = async (transactionId: number, newCategory: string) => {
+  const handleCategoryChange = useCallback(async (transactionId: number, newCategory: string) => {
     setUpdatingId(transactionId)
     try {
       await updateCreditCardTransactionCategory(transactionId, newCategory)
-      setRefreshKey((k) => k + 1)
+      // Update local state instead of full refetch
+      setTransactions(prev => prev.map(t =>
+        t.id === transactionId ? { ...t, category: newCategory } : t
+      ))
     } catch (error) {
-      console.error("Failed to update category:", error)
+      logError("Failed to update category", error)
     } finally {
       setUpdatingId(null)
     }
-  }
+  }, [])
 
-  const handleUnlinkBankPayment = async (matchId: number) => {
+  const handleUnlinkBankPayment = useCallback(async (matchId: number, transactionId: number) => {
     try {
       await deleteCCPaymentMatch(matchId)
-      setRefreshKey((k) => k + 1)
+      // Update local state instead of full refetch
+      setTransactions(prev => prev.map(t =>
+        t.id === transactionId ? { ...t, bank_payment_match: null } : t
+      ))
     } catch (error) {
-      console.error("Failed to unlink bank payment:", error)
+      logError("Failed to unlink bank payment", error)
     }
-  }
+  }, [])
+
+  const handleMatchConfirmed = useCallback((transactionId: number, bankPaymentMatch: BankPaymentMatchInfo) => {
+    // Update local state with the new match
+    setTransactions(prev => prev.map(t =>
+      t.id === transactionId ? { ...t, bank_payment_match: bankPaymentMatch } : t
+    ))
+  }, [])
 
   useEffect(() => {
     async function loadCategories() {
@@ -684,7 +915,7 @@ export function CreditCardTransactionsPage() {
         const data = await fetchCreditCardCategories({ include_all: true })
         setCategories(data.data)
       } catch (error) {
-        console.error("Failed to load categories:", error)
+        logError("Failed to load categories", error)
       }
     }
     loadCategories()
@@ -696,23 +927,12 @@ export function CreditCardTransactionsPage() {
         const data = await fetchCreditCards()
         setCreditCards(data.cards)
       } catch (error) {
-        console.error("Failed to load credit cards:", error)
+        logError("Failed to load credit cards", error)
       }
     }
     loadCreditCards()
   }, [])
 
-  useEffect(() => {
-    async function loadDataSources() {
-      try {
-        const data = await fetchDataSources({ domain: 'credit_card_transactions', status: 'loaded' })
-        setDataSources(data.data)
-      } catch (error) {
-        console.error("Failed to load data sources:", error)
-      }
-    }
-    loadDataSources()
-  }, [])
 
   useEffect(() => {
     async function loadTransactions() {
@@ -742,8 +962,9 @@ export function CreditCardTransactionsPage() {
         setTransactions(data.data)
         setTotal(data.total)
         setStats(data.stats)
+        setAvailableDataSources(data.available_data_sources || [])
       } catch (error) {
-        console.error("Failed to load transactions:", error)
+        logError("Failed to load transactions", error)
       } finally {
         setLoading(false)
         // Clear the height lock and page change flag after data loads
@@ -778,12 +999,7 @@ export function CreditCardTransactionsPage() {
       }
     }
     loadTransactions()
-  }, [selectedCategory, selectedType, selectedCreditCard, selectedDataSource, selectedYear, selectedMonth, showAllYear, debouncedSearch, page, refreshKey])
-
-  // Filter data sources by selected credit card
-  const filteredDataSources = selectedCreditCard
-    ? dataSources.filter((ds) => ds.credit_card_id === selectedCreditCard)
-    : dataSources
+  }, [selectedCategory, selectedType, selectedCreditCard, selectedDataSource, selectedYear, selectedMonth, showAllYear, debouncedSearch, page])
 
   const totalPages = Math.ceil(total / pageSize)
 
@@ -803,7 +1019,7 @@ export function CreditCardTransactionsPage() {
     lastSelectedIndexRef.current = null
   }
 
-  const handleSelect = (id: number, event: React.MouseEvent) => {
+  const handleSelect = useCallback((id: number, event: React.MouseEvent) => {
     const currentIndex = transactions.findIndex(t => t.id === id)
 
     if (event.shiftKey && lastSelectedIndexRef.current !== null) {
@@ -826,7 +1042,7 @@ export function CreditCardTransactionsPage() {
       setSelectedIds(newSet)
       lastSelectedIndexRef.current = currentIndex
     }
-  }
+  }, [transactions, selectedIds])
 
   const handleAddedToStory = () => {
     setSelectedIds(new Set())
@@ -1099,11 +1315,9 @@ export function CreditCardTransactionsPage() {
                   onValueChange={(value) => {
                     const newCreditCard = value === "all" ? null : parseInt(value, 10)
                     setSelectedCreditCard(newCreditCard)
-                    if (selectedDataSource && newCreditCard) {
-                      const dataSource = dataSources.find((ds) => ds.id === selectedDataSource)
-                      if (dataSource && dataSource.credit_card_id !== newCreditCard) {
-                        setSelectedDataSource(null)
-                      }
+                    // Clear data source filter when credit card changes - available sources will update
+                    if (selectedDataSource) {
+                      setSelectedDataSource(null)
                     }
                     setPage(1)
                   }}
@@ -1153,7 +1367,7 @@ export function CreditCardTransactionsPage() {
               )}
 
               {/* Data Source Filter */}
-              {filteredDataSources.length > 0 && (
+              {availableDataSources.length > 0 && (
                 <Select.Root
                   value={selectedDataSource?.toString() || "all"}
                   onValueChange={(value) => {
@@ -1182,7 +1396,7 @@ export function CreditCardTransactionsPage() {
                             <CheckIcon className="h-4 w-4" />
                           </Select.ItemIndicator>
                         </Select.Item>
-                        {filteredDataSources.map((ds) => (
+                        {availableDataSources.map((ds) => (
                           <Select.Item
                             key={ds.id}
                             value={ds.id.toString()}
@@ -1205,7 +1419,18 @@ export function CreditCardTransactionsPage() {
 
         {/* Aggregate Stats */}
         {stats && (
-          <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <section className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="rounded-xl border border-border bg-card shadow-sm p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <HashIcon className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Transactions</p>
+                  <p className="text-xl font-bold">{total.toLocaleString("en-IN")}</p>
+                </div>
+              </div>
+            </div>
             <div className="rounded-xl border border-border bg-card shadow-sm p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-red-500/10">
@@ -1334,6 +1559,7 @@ export function CreditCardTransactionsPage() {
                         <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[100px]">Date</th>
                         <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[260px]">Description</th>
                         <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[100px]">Card</th>
+                        <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[140px]">Source</th>
                         <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[120px]">Category</th>
                         <th className="h-12 px-3 text-center align-middle font-medium text-muted-foreground w-[50px]">Link</th>
                         <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground w-[90px]">
@@ -1363,7 +1589,7 @@ export function CreditCardTransactionsPage() {
                     <tbody>
                       {page > 1 && (
                         <tr ref={prevPageRowRef} className="border-b border-border/40 hover:bg-muted/30 transition-colors">
-                          <td colSpan={8} className="px-4 py-3 align-middle text-center">
+                          <td colSpan={9} className="px-4 py-3 align-middle text-center">
                             <button
                               onClick={() => setPage(page - 1)}
                               className="text-sm text-muted-foreground/80 hover:text-foreground transition-colors inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted/50 hover:bg-muted"
@@ -1375,92 +1601,21 @@ export function CreditCardTransactionsPage() {
                         </tr>
                       )}
                       {transactions.map((t) => (
-                        <tr key={t.id} className={`border-b border-border/40 transition-colors hover:bg-muted/50 ${selectedIds.has(t.id) ? 'bg-primary/5' : ''}`}>
-                          <td className="px-3 py-3 align-middle text-center">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(t.id)}
-                              onClick={(e) => handleSelect(t.id, e)}
-                              readOnly
-                              className="rounded border-border"
-                            />
-                          </td>
-                          <td className="px-4 py-3 align-middle text-sm text-muted-foreground whitespace-nowrap">
-                            {formatDate(t.date)}
-                          </td>
-                          <td className="px-4 py-3 align-middle overflow-hidden">
-                            <Tooltip.Provider>
-                              <Tooltip.Root>
-                                <Tooltip.Trigger asChild>
-                                  <span className="text-sm truncate block cursor-default">
-                                    {t.description}
-                                  </span>
-                                </Tooltip.Trigger>
-                                <Tooltip.Portal>
-                                  <Tooltip.Content
-                                    className="bg-card text-card-foreground px-3 py-2 rounded-md shadow-lg border border-border text-sm max-w-md"
-                                    sideOffset={4}
-                                  >
-                                    {t.description}
-                                    <Tooltip.Arrow className="fill-card" />
-                                  </Tooltip.Content>
-                                </Tooltip.Portal>
-                              </Tooltip.Root>
-                            </Tooltip.Provider>
-                          </td>
-                          <td className="px-4 py-3 align-middle overflow-hidden">
-                            {t.credit_card ? (
-                              <span className="text-sm text-muted-foreground truncate block">
-                                {t.credit_card.nickname}
-                              </span>
-                            ) : (
-                              <span className="text-sm text-muted-foreground/50">-</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 align-middle" onClick={(e) => e.stopPropagation()}>
-                            <CategorySelect
-                              value={t.category}
-                              categories={categories}
-                              onValueChange={(value) => handleCategoryChange(t.id, value)}
-                              disabled={updatingId === t.id}
-                            />
-                          </td>
-                          <td className="px-3 py-3 align-middle text-center">
-                            {t.bank_payment_match || t.category === 'Credit Card Payment' ? (
-                              <BankPaymentLinkDialog
-                                transaction={t}
-                                onUnlink={() => t.bank_payment_match && handleUnlinkBankPayment(t.bank_payment_match.id)}
-                              />
-                            ) : (
-                              <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 align-middle text-right text-sm text-muted-foreground">
-                            {t.intl_amount > 0 ? (
-                              <div className="flex flex-col items-end">
-                                <span>{t.intl_amount.toFixed(2)} {t.intl_currency || 'USD'}</span>
-                                {t.exchange_rate && <span className="text-muted-foreground/50 text-xs">@ {t.exchange_rate.toFixed(2)}</span>}
-                              </div>
-                            ) : "-"}
-                          </td>
-                          <td className="px-4 py-3 align-middle text-right">
-                            {t.amount < 0 ? (
-                              <span className="text-(--color-income) font-medium flex items-center justify-end gap-1">
-                                <FormattedCurrency amount={Math.abs(t.amount)} />
-                                <ArrowUpIcon className="h-3 w-3 flex-shrink-0" />
-                              </span>
-                            ) : (
-                              <span className="text-(--color-expense) font-medium flex items-center justify-end gap-1">
-                                <FormattedCurrency amount={t.amount} />
-                                <ArrowDownIcon className="h-3 w-3 flex-shrink-0" />
-                              </span>
-                            )}
-                          </td>
-                        </tr>
+                        <TransactionRow
+                          key={t.id}
+                          transaction={t}
+                          isSelected={selectedIds.has(t.id)}
+                          isUpdating={updatingId === t.id}
+                          categories={categories}
+                          onSelect={handleSelect}
+                          onCategoryChange={handleCategoryChange}
+                          onUnlink={handleUnlinkBankPayment}
+                          onMatchConfirmed={handleMatchConfirmed}
+                        />
                       ))}
                       {page < totalPages && (
                         <tr className="hover:bg-muted/30 transition-colors">
-                          <td colSpan={8} className="px-4 py-3 align-middle text-center">
+                          <td colSpan={9} className="px-4 py-3 align-middle text-center">
                             <button
                               onClick={() => setPage(page + 1)}
                               className="text-sm text-muted-foreground/80 hover:text-foreground transition-colors inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted/50 hover:bg-muted"

@@ -1,5 +1,7 @@
 import json
 from django.core.cache import cache
+from django.core.exceptions import ValidationError, ObjectDoesNotExist
+from django.db import IntegrityError
 from django.http import JsonResponse
 from django.db.models import Min, Max, Sum, Q
 from rest_framework.decorators import api_view
@@ -171,7 +173,7 @@ def credit_card_list(request):
                 'issuer': card.issuer,
                 'credit_limit': float(card.credit_limit) if card.credit_limit else None,
             }, status=201)
-        except Exception as e:
+        except (IntegrityError, ValidationError, ValueError, TypeError) as e:
             return JsonResponse({'error': str(e)}, status=400)
 
 
@@ -270,12 +272,117 @@ def credit_card_detail(request, card_id):
                 'issuer': card.issuer,
                 'credit_limit': float(card.credit_limit) if card.credit_limit else None,
             })
-        except Exception as e:
+        except (IntegrityError, ValidationError, ValueError, TypeError) as e:
             return JsonResponse({'error': str(e)}, status=400)
 
     elif request.method == "DELETE":
         card.delete()
         return JsonResponse({'success': True})
+
+
+def _apply_cc_transaction_filters(transactions, request):
+    """Apply filters to credit card transactions queryset."""
+    card_id = request.GET.get('credit_card')
+    if card_id:
+        transactions = transactions.filter(credit_card_id=card_id)
+
+    category = request.GET.get('category')
+    if category:
+        transactions = transactions.filter(category=category)
+
+    transaction_type = request.GET.get('type')
+    if transaction_type == 'charge':
+        transactions = transactions.filter(amount__gt=0)
+    elif transaction_type == 'payment':
+        transactions = transactions.filter(amount__lt=0)
+
+    year = request.GET.get('year')
+    month = request.GET.get('month')
+    if year:
+        transactions = transactions.filter(date__year=int(year))
+    if month:
+        transactions = transactions.filter(date__month=int(month))
+
+    search = request.GET.get('search')
+    if search:
+        transactions = transactions.filter(
+            Q(description__icontains=search) | Q(category__icontains=search)
+        )
+
+    return transactions
+
+
+def _get_cc_available_data_sources(transactions):
+    """Get available data sources for filtered transactions."""
+    from extractions.models import DataSourceArtifact
+    available_data_sources = []
+    data_source_ids = transactions.values_list('data_source_artifact_id', flat=True).distinct()
+
+    for dsa in DataSourceArtifact.objects.filter(id__in=data_source_ids).select_related(
+        'source_artifact__extraction__source_file'
+    ):
+        try:
+            source_filename = dsa.source_artifact.extraction.source_file.filename
+        except (AttributeError, ObjectDoesNotExist):
+            source_filename = f"Source {dsa.id}"
+        available_data_sources.append({
+            'id': dsa.id,
+            'source_filename': source_filename,
+            'credit_card_id': dsa.credit_card_id,
+        })
+
+    return available_data_sources
+
+
+def _serialize_cc_transaction(t):
+    """Serialize a credit card transaction to dict."""
+    bank_match_data = None
+    try:
+        bank_match = t.bank_payment_match
+        if bank_match and bank_match.is_active:
+            bank_txn = bank_match.bank_transaction
+            if not bank_txn.data_source_artifact_id:
+                raise AttributeError("Orphaned transaction")
+            bank_match_data = {
+                'id': bank_match.id,
+                'bank_transaction': {
+                    'id': bank_txn.id,
+                    'date': bank_txn.date.isoformat(),
+                    'narration': bank_txn.narration,
+                    'amount': float(bank_txn.debit_amount),
+                    'bank_account': {
+                        'id': bank_txn.bank_account.id,
+                        'nickname': bank_txn.bank_account.nickname,
+                    } if bank_txn.bank_account else None,
+                },
+                'offset': float(bank_match.offset),
+                'confidence_score': bank_match.confidence_score,
+                'match_reasons': bank_match.match_reasons,
+            }
+    except (AttributeError, ObjectDoesNotExist):
+        pass
+
+    source_file_data = None
+    try:
+        if t.data_source_artifact and t.data_source_artifact.source_artifact:
+            sf = t.data_source_artifact.source_artifact.extraction.source_file
+            source_file_data = {'id': sf.id, 'filename': sf.filename}
+    except (AttributeError, ObjectDoesNotExist):
+        pass
+
+    return {
+        'id': t.id,
+        'date': t.date.isoformat(),
+        'description': t.description,
+        'amount': float(t.amount),
+        'intl_amount': float(t.intl_amount),
+        'intl_currency': t.intl_currency,
+        'exchange_rate': float(t.exchange_rate) if t.exchange_rate else None,
+        'category': t.category,
+        'credit_card': {'id': t.credit_card.id, 'nickname': t.credit_card.nickname} if t.credit_card else None,
+        'source_file': source_file_data,
+        'bank_payment_match': bank_match_data,
+    }
 
 
 @extend_schema(
@@ -326,45 +433,16 @@ def credit_card_transactions(request):
     transactions = get_active_cc_transactions().select_related(
         'credit_card',
         'data_source_artifact',
+        'data_source_artifact__source_artifact__extraction__source_file',
         'bank_payment_match',
         'bank_payment_match__bank_transaction',
         'bank_payment_match__bank_transaction__bank_account',
     )
 
-    # Filter by credit card
-    card_id = request.GET.get('credit_card')
-    if card_id:
-        transactions = transactions.filter(credit_card_id=card_id)
+    transactions = _apply_cc_transaction_filters(transactions, request)
+    available_data_sources = _get_cc_available_data_sources(transactions)
 
-    # Filter by category
-    category = request.GET.get('category')
-    if category:
-        transactions = transactions.filter(category=category)
-
-    # Filter by type (charge/payment)
-    transaction_type = request.GET.get('type')
-    if transaction_type == 'charge':
-        transactions = transactions.filter(amount__gt=0)
-    elif transaction_type == 'payment':
-        transactions = transactions.filter(amount__lt=0)
-
-    # Filter by year and month
-    year = request.GET.get('year')
-    month = request.GET.get('month')
-    if year:
-        transactions = transactions.filter(date__year=int(year))
-    if month:
-        transactions = transactions.filter(date__month=int(month))
-
-    # Search filter
-    search = request.GET.get('search')
-    if search:
-        transactions = transactions.filter(
-            Q(description__icontains=search) |
-            Q(category__icontains=search)
-        )
-
-    # Filter by data source artifact
+    # Filter by data source artifact (after computing available sources)
     data_source_artifact_id = request.GET.get('data_source_artifact')
     if data_source_artifact_id:
         transactions = transactions.filter(data_source_artifact_id=data_source_artifact_id)
@@ -375,55 +453,9 @@ def credit_card_transactions(request):
 
     limit = int(request.GET.get('limit', 100))
     offset = int(request.GET.get('offset', 0))
-
     total = transactions.count()
-    transactions_page = transactions[offset:offset + limit]
 
-    data = []
-    for t in transactions_page:
-        # Get bank payment match if exists and is active
-        bank_match_data = None
-        try:
-            bank_match = t.bank_payment_match
-            if bank_match and bank_match.is_active:
-                bank_txn = bank_match.bank_transaction
-                # Skip orphaned transactions
-                if not bank_txn.data_source_artifact_id:
-                    raise AttributeError("Orphaned transaction")
-                bank_match_data = {
-                    'id': bank_match.id,
-                    'bank_transaction': {
-                        'id': bank_txn.id,
-                        'date': bank_txn.date.isoformat(),
-                        'narration': bank_txn.narration,
-                        'amount': float(bank_txn.debit_amount),
-                        'bank_account': {
-                            'id': bank_txn.bank_account.id,
-                            'nickname': bank_txn.bank_account.nickname,
-                        } if bank_txn.bank_account else None,
-                    },
-                    'offset': float(bank_match.offset),
-                    'confidence_score': bank_match.confidence_score,
-                    'match_reasons': bank_match.match_reasons,
-                }
-        except Exception:
-            pass
-
-        data.append({
-            'id': t.id,
-            'date': t.date.isoformat(),
-            'description': t.description,
-            'amount': float(t.amount),
-            'intl_amount': float(t.intl_amount),
-            'intl_currency': t.intl_currency,
-            'exchange_rate': float(t.exchange_rate) if t.exchange_rate else None,
-            'category': t.category,
-            'credit_card': {
-                'id': t.credit_card.id,
-                'nickname': t.credit_card.nickname,
-            } if t.credit_card else None,
-            'bank_payment_match': bank_match_data,
-        })
+    data = [_serialize_cc_transaction(t) for t in transactions[offset:offset + limit]]
 
     return JsonResponse({
         'data': data,
@@ -432,7 +464,8 @@ def credit_card_transactions(request):
             'total_charges': float(total_charges),
             'total_payments': float(total_payments),
             'net': float(total_charges - total_payments),
-        }
+        },
+        'available_data_sources': available_data_sources,
     })
 
 
@@ -914,7 +947,7 @@ def dismiss_credit_card_inconsistency(request):
             'type': inconsistency_type,
             'transaction_ids': transaction_ids,
         })
-    except Exception as e:
+    except (IntegrityError, ValidationError, ValueError, TypeError) as e:
         return JsonResponse({'error': str(e)}, status=400)
 
 

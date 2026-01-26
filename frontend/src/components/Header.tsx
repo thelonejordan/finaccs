@@ -45,6 +45,9 @@ export function Header() {
     ? "Story Details"
     : PAGE_TITLES[location.pathname] || "FinAccs"
 
+  // Auto-scroll is only applicable on pages with tables
+  const autoScrollApplicable = location.pathname === "/transactions"
+
   const handleAutoScrollToggle = () => {
     const newValue = !autoScrollEnabled
     setAutoScrollEnabled(newValue)
@@ -64,9 +67,14 @@ export function Header() {
               <Tooltip.Root>
                 <Tooltip.Trigger asChild>
                   <button
-                    onClick={handleAutoScrollToggle}
-                    className={`p-1.5 rounded-md transition-colors hover:bg-accent ${
-                      autoScrollEnabled ? 'text-primary' : 'text-muted-foreground'
+                    onClick={autoScrollApplicable ? handleAutoScrollToggle : undefined}
+                    disabled={!autoScrollApplicable}
+                    className={`p-1.5 rounded-md transition-colors ${
+                      !autoScrollApplicable
+                        ? 'text-muted-foreground/30 cursor-not-allowed'
+                        : autoScrollEnabled
+                        ? 'text-primary hover:bg-accent'
+                        : 'text-muted-foreground hover:bg-accent'
                     }`}
                     aria-label={autoScrollEnabled ? "Disable auto-scroll to table" : "Enable auto-scroll to table"}
                   >
@@ -78,7 +86,7 @@ export function Header() {
                     className="bg-popover text-popover-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm z-50"
                     sideOffset={5}
                   >
-                    Auto-scroll to table
+                    {autoScrollApplicable ? "Auto-scroll to table" : "Auto-scroll (not applicable on this page)"}
                     <Tooltip.Arrow className="fill-popover" />
                   </Tooltip.Content>
                 </Tooltip.Portal>

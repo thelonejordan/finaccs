@@ -55,6 +55,14 @@ SUPPORTED_EXTENSIONS = ['.txt', '.xlsx', '.xls', '.pdf', '.csv']
 
 def _serialize_source_file(sf, include_extractions=False):
     """Serialize a SourceFile to dict."""
+    # Compute extraction_status dynamically based on whether extractions exist
+    # Use prefetched data if available to avoid extra queries
+    if hasattr(sf, '_prefetched_objects_cache') and 'extractions' in sf._prefetched_objects_cache:
+        has_extractions = len(sf.extractions.all()) > 0
+    else:
+        has_extractions = sf.extractions.exists()
+    extraction_status = 'extracted' if has_extractions else 'not_extracted'
+
     result = {
         'id': sf.id,
         'source_file_id': sf.source_file_id,
@@ -66,7 +74,7 @@ def _serialize_source_file(sf, include_extractions=False):
         'domain': sf.domain,
         'password': sf.password,
         'extractor': sf.extractor,
-        'extraction_status': sf.extraction_status,
+        'extraction_status': extraction_status,
         'hidden': sf.hidden,
         'created_at': sf.created_at.isoformat() if sf.created_at else None,
         'updated_at': sf.updated_at.isoformat() if sf.updated_at else None,

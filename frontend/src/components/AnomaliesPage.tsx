@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { logError } from "@/lib/logger"
 import { useSearchParams } from "react-router-dom"
 import {
   AlertTriangleIcon,
@@ -96,7 +97,7 @@ function BankAccountInconsistencies() {
         const data = await fetchBankAccounts()
         setBankAccounts(data.accounts)
       } catch (error) {
-        console.error("Failed to load bank accounts:", error)
+        logError("Failed to load bank accounts", error)
       }
     }
     loadBankAccounts()
@@ -118,7 +119,7 @@ function BankAccountInconsistencies() {
         setTotal(result.total)
         setCounts(result.counts)
       } catch (err) {
-        console.error("Failed to load inconsistencies:", err)
+        logError("Failed to load inconsistencies", err)
       } finally {
         setLoading(false)
       }
@@ -134,7 +135,7 @@ function BankAccountInconsistencies() {
       invalidateInconsistencyCache()
       setRefreshKey((k) => k + 1)
     } catch (error) {
-      console.error("Failed to dismiss:", error)
+      logError("Failed to dismiss", error)
     }
   }
 
@@ -144,7 +145,7 @@ function BankAccountInconsistencies() {
       invalidateInconsistencyCache()
       setRefreshKey((k) => k + 1)
     } catch (error) {
-      console.error("Failed to restore:", error)
+      logError("Failed to restore", error)
     }
   }
 
@@ -619,7 +620,7 @@ function CreditCardInconsistencies() {
         const data = await fetchCreditCards()
         setCreditCards(data.cards)
       } catch (error) {
-        console.error("Failed to load credit cards:", error)
+        logError("Failed to load credit cards", error)
       }
     }
     loadCreditCards()
@@ -638,7 +639,7 @@ function CreditCardInconsistencies() {
         setTotal(result.total)
         setCounts(result.counts)
       } catch (err) {
-        console.error("Failed to load credit card inconsistencies:", err)
+        logError("Failed to load credit card inconsistencies", err)
       } finally {
         setLoading(false)
       }
@@ -660,7 +661,7 @@ function CreditCardInconsistencies() {
       invalidateInconsistencyCache()  // Count decreased
       setRefreshKey((k) => k + 1)
     } catch (error) {
-      console.error("Failed to dismiss:", error)
+      logError("Failed to dismiss", error)
     }
   }
 
@@ -670,7 +671,7 @@ function CreditCardInconsistencies() {
       invalidateInconsistencyCache()  // Count increased
       setRefreshKey((k) => k + 1)
     } catch (error) {
-      console.error("Failed to restore:", error)
+      logError("Failed to restore", error)
     }
   }
 
@@ -1079,32 +1080,47 @@ export function AnomaliesPage() {
 
   return (
     <>
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6">
-          <button
-            onClick={() => handleTabChange("bank")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-              activeTab === "bank"
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <BuildingIcon className="h-4 w-4" />
-            Bank Accounts
-          </button>
-          <button
-            onClick={() => handleTabChange("credit")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-              activeTab === "credit"
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <CreditCardIcon className="h-4 w-4" />
-            Credit Cards
-          </button>
-        </div>
+      <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+        {/* Header */}
+        <header className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <AlertTriangleIcon className="h-6 w-6 text-primary" />
+              </div>
+              Anomalies
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Detect and resolve transaction inconsistencies
+            </p>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex items-center bg-muted rounded-lg p-1">
+            <button
+              onClick={() => handleTabChange("bank")}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-2 ${
+                activeTab === "bank"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <BuildingIcon className="h-4 w-4" />
+              Bank Accounts
+            </button>
+            <button
+              onClick={() => handleTabChange("credit")}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-2 ${
+                activeTab === "credit"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <CreditCardIcon className="h-4 w-4" />
+              Credit Cards
+            </button>
+          </div>
+        </header>
 
         {/* Tab Content */}
         {activeTab === "bank" && <BankAccountInconsistencies />}

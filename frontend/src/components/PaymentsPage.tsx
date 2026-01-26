@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react"
+import { logError } from "@/lib/logger"
 import { AnimatePresence, motion } from "motion/react"
 import { useSearchParams } from "react-router-dom"
 import {
@@ -541,7 +542,7 @@ function UnmatchedTab() {
         setBankAccounts(bankData.accounts)
         setCreditCards(ccData.cards)
       } catch (error) {
-        console.error("Failed to load filters:", error)
+        logError("Failed to load filters", error)
       }
     }
     loadFilters()
@@ -559,7 +560,7 @@ function UnmatchedTab() {
           setTotalCount(result.data.length)
         }
       } catch (err) {
-        console.error("Failed to load total count:", err)
+        logError("Failed to load total count", err)
       }
     }
     loadTotalCount()
@@ -585,7 +586,7 @@ function UnmatchedTab() {
           setSuggestions([])
         }
       } catch (err) {
-        console.error("Failed to load suggestions:", err)
+        logError("Failed to load suggestions", err)
       } finally {
         setLoading(false)
       }
@@ -607,7 +608,7 @@ function UnmatchedTab() {
       // Decrement total count
       setTotalCount((prev) => Math.max(0, prev - 1))
     } catch (error) {
-      console.error("Failed to create match:", error)
+      logError("Failed to create match", error)
     }
   }
 
@@ -625,7 +626,7 @@ function UnmatchedTab() {
       // Decrement total count
       setTotalCount((prev) => Math.max(0, prev - 1))
     } catch (error) {
-      console.error("Failed to create match:", error)
+      logError("Failed to create match", error)
     }
   }
 
@@ -637,7 +638,7 @@ function UnmatchedTab() {
       // Decrement total count
       setTotalCount((prev) => Math.max(0, prev - 1))
     } catch (error) {
-      console.error("Failed to remove tag:", error)
+      logError("Failed to remove tag", error)
     }
   }
 
@@ -650,7 +651,7 @@ function UnmatchedTab() {
       // Decrement total count
       setTotalCount((prev) => Math.max(0, prev - 1))
     } catch (error) {
-      console.error("Failed to remove CC tag:", error)
+      logError("Failed to remove CC tag", error)
     }
   }
 
@@ -883,7 +884,7 @@ function ConfirmedTab() {
         const result = await fetchCCPaymentMatches({})
         setAllMatches(result.data)
       } catch (error) {
-        console.error("Failed to load all matches:", error)
+        logError("Failed to load all matches", error)
       }
     }
     loadAllMatches()
@@ -900,7 +901,7 @@ function ConfirmedTab() {
           setSelectedYear(yearKeys[0])
         }
       } catch (error) {
-        console.error("Failed to load years:", error)
+        logError("Failed to load years", error)
       }
     }
     loadYears()
@@ -921,7 +922,7 @@ function ConfirmedTab() {
         })
         setMatches(result.data)
       } catch (err) {
-        console.error("Failed to load matches:", err)
+        logError("Failed to load matches", err)
       } finally {
         setLoading(false)
       }
@@ -934,7 +935,7 @@ function ConfirmedTab() {
       await deleteCCPaymentMatch(matchId)
       setRefreshKey((k) => k + 1)
     } catch (error) {
-      console.error("Failed to delete match:", error)
+      logError("Failed to delete match", error)
     }
   }
 

@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react"
+import { logError } from "@/lib/logger"
 import { useSearchParams, useNavigate } from "react-router-dom"
 import {
   ArrowDownIcon,
@@ -22,6 +23,7 @@ import {
   CreditCardIcon,
   LandmarkIcon,
   BookOpenIcon,
+  HashIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
@@ -40,6 +42,8 @@ import {
   linkTransaction,
   unlinkTransaction,
   deleteCCPaymentMatch,
+  fetchSuggestionsForBankTransaction,
+  createCCPaymentMatch,
   type Transaction,
   type CategoryData,
   type BankAccount,
@@ -48,6 +52,8 @@ import {
   type PotentialLinkTransaction,
   type DateRange,
   type DateRangeFilters,
+  type CCPaymentSuggestion,
+  type CCPaymentMatchInfo,
 } from "@/lib/api"
 
 const MONTH_NAMES = [
@@ -222,7 +228,7 @@ function LinkDialog({
         const result = await fetchPotentialLinks(transaction.id)
         setPotentialLinks(result.data)
       } catch (error) {
-        console.error("Failed to fetch potential links:", error)
+        logError("Failed to fetch potential links", error)
       } finally {
         setLoading(false)
       }
@@ -410,14 +416,37 @@ function LinkDialog({
 function CCPaymentLinkDialog({
   transaction,
   onUnlink,
+  onMatchConfirmed,
 }: {
   transaction: Transaction
   onUnlink: () => void
+  onMatchConfirmed: (ccPaymentMatch: CCPaymentMatchInfo) => void
 }) {
   const [open, setOpen] = useState(false)
   const [unlinking, setUnlinking] = useState(false)
+  const [suggestions, setSuggestions] = useState<CCPaymentSuggestion[]>([])
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+  const [confirming, setConfirming] = useState<number | null>(null)
 
   const isLinked = !!transaction.cc_payment_match
+
+  const loadSuggestions = async () => {
+    setLoadingSuggestions(true)
+    try {
+      const data = await fetchSuggestionsForBankTransaction(transaction.id)
+      setSuggestions(data.suggestions)
+    } catch (error) {
+      logError("Failed to load suggestions", error)
+    } finally {
+      setLoadingSuggestions(false)
+    }
+  }
+
+  useEffect(() => {
+    if (open && !isLinked) {
+      loadSuggestions()
+    }
+  }, [open, isLinked, transaction.id])
 
   const handleUnlink = async () => {
     setUnlinking(true)
@@ -426,6 +455,31 @@ function CCPaymentLinkDialog({
       setOpen(false)
     } finally {
       setUnlinking(false)
+    }
+  }
+
+  const handleConfirmMatch = async (suggestion: CCPaymentSuggestion) => {
+    setConfirming(suggestion.credit_card_transaction.id)
+    try {
+      const result = await createCCPaymentMatch({
+        bank_transaction_id: transaction.id,
+        credit_card_transaction_id: suggestion.credit_card_transaction.id,
+        offset: suggestion.offset,
+        confidence_score: suggestion.confidence_score,
+        match_reasons: suggestion.match_reasons,
+      })
+      onMatchConfirmed({
+        id: result.id,
+        credit_card_transaction: suggestion.credit_card_transaction,
+        offset: suggestion.offset,
+        confidence_score: suggestion.confidence_score,
+        match_reasons: suggestion.match_reasons,
+      })
+      setOpen(false)
+    } catch (error) {
+      logError("Failed to confirm match", error)
+    } finally {
+      setConfirming(null)
     }
   }
 
@@ -478,14 +532,17 @@ function CCPaymentLinkDialog({
             </Dialog.Description>
           </div>
 
-          <div className="p-6">
+          <div className="p-6 max-h-[60vh] overflow-y-auto">
             {/* Current transaction info */}
             <div className="mb-4 p-3 rounded-lg bg-muted/50 border border-border">
               <p className="text-sm text-muted-foreground mb-1">Bank Transaction</p>
+              <div className="flex items-center gap-2 mb-1">
+                <BuildingIcon className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">{transaction.bank_account?.nickname || "Unknown Account"}</span>
+              </div>
               <p className="font-medium">{formatDate(transaction.date)}</p>
               <p className="text-sm text-muted-foreground line-clamp-1">{transaction.narration}</p>
               <p className="text-sm flex items-center gap-1 flex-wrap">
-                {transaction.bank_account?.nickname} •{" "}
                 <span className="text-red-600 dark:text-red-400 inline-flex items-center gap-0.5">
                   <FormattedCurrency amount={transaction.debit} />
                   <ArrowDownIcon className="h-3 w-3" />
@@ -529,14 +586,50 @@ function CCPaymentLinkDialog({
                   {unlinking ? "Unlinking..." : "Unlink CC Payment"}
                 </button>
               </div>
+            ) : loadingSuggestions ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+              </div>
+            ) : suggestions.length > 0 ? (
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Suggested Matches</p>
+                {suggestions.map((s) => (
+                  <div key={s.credit_card_transaction.id} className="p-3 rounded-lg border border-border hover:border-primary/50 transition-colors">
+                    <div className="flex items-center gap-2 mb-1">
+                      <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">{s.credit_card_transaction.credit_card?.nickname || "Unknown"}</span>
+                      <span className="ml-auto text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                        {Math.round(s.confidence_score * 100)}% match
+                      </span>
+                    </div>
+                    <p className="text-sm">{formatDate(s.credit_card_transaction.date)}</p>
+                    <p className="text-sm text-muted-foreground line-clamp-2">{s.credit_card_transaction.description}</p>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-sm text-green-600 dark:text-green-400 inline-flex items-center gap-0.5">
+                        <FormattedCurrency amount={Math.abs(s.credit_card_transaction.amount)} />
+                        <ArrowUpIcon className="h-3 w-3" />
+                      </span>
+                      <button
+                        onClick={() => handleConfirmMatch(s)}
+                        disabled={confirming !== null}
+                        className="px-3 py-1 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        {confirming === s.credit_card_transaction.id ? "Confirming..." : "Confirm"}
+                      </button>
+                    </div>
+                    {s.offset !== 0 && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Offset: {s.offset > 0 ? "+" : ""}{formatCurrency(s.offset)}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
             ) : (
-              /* No link */
               <div className="text-center py-8 text-muted-foreground">
                 <Link2OffIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>No credit card payment linked</p>
-                <p className="text-sm mt-1">
-                  Go to the Story page to match this payment
-                </p>
+                <p>No suggestions found</p>
+                <p className="text-sm mt-1">No matching CC payments within 7 days</p>
               </div>
             )}
           </div>
@@ -802,7 +895,7 @@ export function BankTransactionsPage() {
         const data = await fetchDateRange()
         setFullDateRange(data)
       } catch (error) {
-        console.error("Failed to load full date range:", error)
+        logError("Failed to load full date range", error)
       }
     }
     loadFullDateRange()
@@ -853,7 +946,7 @@ export function BankTransactionsPage() {
           }
         }
       } catch (error) {
-        console.error("Failed to load date range:", error)
+        logError("Failed to load date range", error)
       }
     }
     loadDateRange()
@@ -879,7 +972,7 @@ export function BankTransactionsPage() {
       await updateTransactionCategory(transactionId, newCategory)
       setRefreshKey((k) => k + 1)
     } catch (error) {
-      console.error("Failed to update category:", error)
+      logError("Failed to update category", error)
     } finally {
       setUpdatingId(null)
     }
@@ -890,7 +983,7 @@ export function BankTransactionsPage() {
       await linkTransaction(transactionId, linkToId)
       setRefreshKey((k) => k + 1)
     } catch (error) {
-      console.error("Failed to link transaction:", error)
+      logError("Failed to link transaction", error)
     }
   }
 
@@ -899,17 +992,27 @@ export function BankTransactionsPage() {
       await unlinkTransaction(transactionId)
       setRefreshKey((k) => k + 1)
     } catch (error) {
-      console.error("Failed to unlink transaction:", error)
+      logError("Failed to unlink transaction", error)
     }
   }
 
-  const handleUnlinkCCPayment = async (matchId: number) => {
+  const handleUnlinkCCPayment = async (matchId: number, transactionId: number) => {
     try {
       await deleteCCPaymentMatch(matchId)
-      setRefreshKey((k) => k + 1)
+      // Update local state instead of full refetch
+      setTransactions(prev => prev.map(t =>
+        t.id === transactionId ? { ...t, cc_payment_match: null } : t
+      ))
     } catch (error) {
-      console.error("Failed to unlink CC payment:", error)
+      logError("Failed to unlink CC payment", error)
     }
+  }
+
+  const handleCCPaymentMatchConfirmed = (transactionId: number, ccPaymentMatch: CCPaymentMatchInfo) => {
+    // Update local state with the new match
+    setTransactions(prev => prev.map(t =>
+      t.id === transactionId ? { ...t, cc_payment_match: ccPaymentMatch } : t
+    ))
   }
 
   useEffect(() => {
@@ -918,7 +1021,7 @@ export function BankTransactionsPage() {
         const data = await fetchCategories({ include_all: true })
         setCategories(data.data)
       } catch (error) {
-        console.error("Failed to load categories:", error)
+        logError("Failed to load categories", error)
       }
     }
     loadCategories()
@@ -930,7 +1033,7 @@ export function BankTransactionsPage() {
         const data = await fetchBankAccounts()
         setBankAccounts(data.accounts)
       } catch (error) {
-        console.error("Failed to load bank accounts:", error)
+        logError("Failed to load bank accounts", error)
       }
     }
     loadBankAccounts()
@@ -946,7 +1049,7 @@ export function BankTransactionsPage() {
         })
         setDataSources(data.data)
       } catch (error) {
-        console.error("Failed to load data sources:", error)
+        logError("Failed to load data sources", error)
       }
     }
     loadDataSources()
@@ -981,7 +1084,7 @@ export function BankTransactionsPage() {
         setTotal(data.total)
         setStats(data.stats)
       } catch (error) {
-        console.error("Failed to load transactions:", error)
+        logError("Failed to load transactions", error)
       } finally {
         setLoading(false)
         // Clear the height lock and page change flag after data loads
@@ -1445,7 +1548,18 @@ export function BankTransactionsPage() {
 
         {/* Aggregate Stats */}
         {stats && (
-          <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <section className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="rounded-xl border border-border bg-card shadow-sm p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <HashIcon className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Transactions</p>
+                  <p className="text-xl font-bold">{total.toLocaleString("en-IN")}</p>
+                </div>
+              </div>
+            </div>
             <div className="rounded-xl border border-border bg-card shadow-sm p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-green-500/10">
@@ -1680,7 +1794,8 @@ export function BankTransactionsPage() {
                             ) : t.category === "Credit Card Payment" ? (
                               <CCPaymentLinkDialog
                                 transaction={t}
-                                onUnlink={() => t.cc_payment_match && handleUnlinkCCPayment(t.cc_payment_match.id)}
+                                onUnlink={() => t.cc_payment_match && handleUnlinkCCPayment(t.cc_payment_match.id, t.id)}
+                                onMatchConfirmed={(match) => handleCCPaymentMatchConfirmed(t.id, match)}
                               />
                             ) : (
                               <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>

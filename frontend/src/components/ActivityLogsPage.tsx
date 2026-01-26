@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { logError } from "@/lib/logger"
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -14,6 +15,7 @@ import {
   PencilIcon,
   TrashIcon,
   BuildingIcon,
+  ActivityIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import { Footer } from "@/components/Footer"
@@ -106,7 +108,7 @@ export function ActivityLogsPage() {
         setLogs(result.data)
         setTotal(result.total)
       } catch (err) {
-        console.error("Failed to load logs:", err)
+        logError("Failed to load logs", err)
       } finally {
         setLoading(false)
       }
@@ -118,11 +120,24 @@ export function ActivityLogsPage() {
 
   return (
     <>
-      {/* Filters */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div className="flex items-center gap-4">
+      <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+        {/* Header */}
+        <header className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <ActivityIcon className="h-6 w-6 text-primary" />
+              </div>
+              Activity
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Track changes and actions across your accounts
+            </p>
+          </div>
+
+          {/* Actions Filter */}
           <Select.Root value={actionFilter} onValueChange={setActionFilter}>
-            <Select.Trigger className="inline-flex items-center justify-between gap-2 px-3 py-2 text-sm rounded-lg border border-input bg-background hover:bg-accent transition-colors min-w-[180px]">
+            <Select.Trigger className="inline-flex items-center justify-between gap-2 px-3 py-2.5 text-sm font-medium rounded-lg border border-border bg-card hover:bg-accent transition-colors min-w-[180px]">
               <Select.Value placeholder="All Actions" />
               <Select.Icon>
                 <ChevronDownIcon className="h-4 w-4 opacity-50" />
@@ -192,11 +207,9 @@ export function ActivityLogsPage() {
               </Select.Content>
             </Select.Portal>
           </Select.Root>
-        </div>
-      </div>
+        </header>
 
-      {/* Logs Table */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
+        {/* Logs Table */}
         <div className="bg-card rounded-xl border border-border overflow-hidden">
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">
@@ -416,7 +429,7 @@ export function ActivityLogsPage() {
             </div>
           )}
         </div>
-      </div>
+      </main>
       <Footer />
     </>
   )

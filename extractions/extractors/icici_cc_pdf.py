@@ -8,7 +8,7 @@ import re
 import csv
 import json
 import io
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, date
 from typing import Optional, Dict, Any, List
 
@@ -61,51 +61,47 @@ def parse_amount(amount_str):
     try:
         amount = Decimal(clean)
         return amount, is_credit
-    except Exception:
+    except (InvalidOperation, ValueError):
         return Decimal('0'), False
 
 
-def extract_transactions_from_text(text):
-    """Extract transactions from raw PDF text using regex.
+def _get_card_for_position(card_headers, pos):
+    """Find which card a transaction at position belongs to."""
+    card_no = None
+    for card_pos, card_num in card_headers:
+        if card_pos < pos:
+            card_no = card_num
+        else:
+            break
+    return card_no
 
-    Returns:
-        dict: {
-            'by_card': {card_number: [transactions], ...},
-            'all': [all_transactions]
-        }
-    """
-    # Find all card number headers with their positions
-    card_pattern = r'\n(\d{4}X{4,}X*\d{4})\n'
-    card_headers = [(m.start(), m.group(1)) for m in re.finditer(card_pattern, text)]
 
-    def get_card_for_position(pos):
-        """Find which card a transaction at position belongs to."""
-        card_no = None
-        for card_pos, card_num in card_headers:
-            if card_pos < pos:
-                card_no = card_num
-            else:
+def _get_currency_from_next_lines(line_positions, match_end, max_lines=5):
+    """Find currency code within the next few lines after a match."""
+    lines_checked = 0
+    for start_pos, line in line_positions:
+        if start_pos >= match_end:
+            stripped = line.strip()
+            if re.match(r'^[A-Z]{3}$', stripped):
+                return stripped
+            lines_checked += 1
+            if lines_checked >= max_lines:
                 break
-        return card_no
+    return None
 
-    # Pattern for international transactions
-    intl_pattern = r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+(.+?)\s+(-?\d+)\s+([\d,]+\.\d{2})\s+([A-Z]{3})\s+([\d,]+\.\d{2})\s*(CR)?'
 
-    # Pattern for domestic transactions
-    domestic_pattern = r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+(.+?)\s+(?:(-?\d+)\s+)?([\d,]+\.\d{2})\s*(CR)?'
+def _extract_inline_intl_transactions(text, card_headers):
+    """Extract inline international transactions (currency on same line)."""
+    pattern = r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+(.+?)\s+(?:(-?\d+)\s+)?([\d,]+(?:\.\d+)?)\s+([A-Z]{3})\s+([\d,]+\.\d{2})\s*(CR)?'
+    matches = []
 
-    matched_positions = set()
-    all_matches = []
-
-    # Find international transactions
-    for match in re.finditer(intl_pattern, text):
-        date_str, serial, description, reward_pts, intl_amount_str, currency, amount_str, is_cr = match.groups()
+    for match in re.finditer(pattern, text):
+        date_str, serial, description, _, intl_amount_str, currency, amount_str, is_cr = match.groups()
 
         txn_date = parse_date(date_str)
         if not txn_date:
             continue
 
-        description = description.strip()
         amount, _ = parse_amount(amount_str)
         intl_amount, _ = parse_amount(intl_amount_str)
 
@@ -115,30 +111,75 @@ def extract_transactions_from_text(text):
         if is_cr:
             amount = -amount
 
-        card_no = get_card_for_position(match.start())
-        all_matches.append((match.start(), {
+        matches.append((match.start(), {
             'date': txn_date,
             'ser_no': serial,
-            'description': description,
+            'description': description.strip(),
             'amount': amount,
             'intl_amount': intl_amount,
             'intl_currency': currency,
-            'card_number': card_no,
+            'card_number': _get_card_for_position(card_headers, match.start()),
         }))
-        matched_positions.add(match.start())
 
-    # Find domestic transactions
-    for match in re.finditer(domestic_pattern, text):
+    return matches
+
+
+def _extract_two_amount_intl_transactions(text, card_headers, line_positions, matched_positions):
+    """Extract two-amount international transactions with currency on next lines."""
+    pattern = r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+(.+?)\s+(?:(-?\d+)\s+)?([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*(CR)?'
+    matches = []
+
+    for match in re.finditer(pattern, text):
         if match.start() in matched_positions:
             continue
 
-        date_str, serial, description, reward_pts, amount_str, is_cr = match.groups()
+        currency = _get_currency_from_next_lines(line_positions, match.end(), max_lines=5)
+        if not currency:
+            continue
+
+        date_str, serial, description, _, intl_amount_str, amount_str, is_cr = match.groups()
 
         txn_date = parse_date(date_str)
         if not txn_date:
             continue
 
-        description = description.strip()
+        amount, _ = parse_amount(amount_str)
+        intl_amount, _ = parse_amount(intl_amount_str)
+
+        if amount == 0:
+            continue
+
+        if is_cr:
+            amount = -amount
+
+        matches.append((match.start(), {
+            'date': txn_date,
+            'ser_no': serial,
+            'description': description.strip(),
+            'amount': amount,
+            'intl_amount': intl_amount,
+            'intl_currency': currency,
+            'card_number': _get_card_for_position(card_headers, match.start()),
+        }))
+
+    return matches
+
+
+def _extract_domestic_transactions(text, card_headers, matched_positions):
+    """Extract domestic transactions (single amount, not already matched)."""
+    pattern = r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+(.+?)\s+(?:(-?\d+)\s+)?([\d,]+\.\d{2})\s*(CR)?'
+    matches = []
+
+    for match in re.finditer(pattern, text):
+        if match.start() in matched_positions:
+            continue
+
+        date_str, serial, description, _, amount_str, is_cr = match.groups()
+
+        txn_date = parse_date(date_str)
+        if not txn_date:
+            continue
+
         amount, _ = parse_amount(amount_str)
 
         if amount == 0:
@@ -147,21 +188,56 @@ def extract_transactions_from_text(text):
         if is_cr:
             amount = -amount
 
-        card_no = get_card_for_position(match.start())
-        all_matches.append((match.start(), {
+        matches.append((match.start(), {
             'date': txn_date,
             'ser_no': serial,
-            'description': description,
+            'description': description.strip(),
             'amount': amount,
             'intl_amount': Decimal('0'),
             'intl_currency': '',
-            'card_number': card_no,
+            'card_number': _get_card_for_position(card_headers, match.start()),
         }))
 
-    # Sort by position in text
+    return matches
+
+
+def extract_transactions_from_text(text):
+    """Extract transactions from raw PDF text using regex.
+
+    Returns:
+        dict: {'by_card': {card_number: [transactions], ...}, 'all': [all_transactions]}
+    """
+    # Find all card number headers with their positions
+    card_pattern = r'\n(\d{4}X{4,}X*\d{4})\n'
+    card_headers = [(m.start(), m.group(1)) for m in re.finditer(card_pattern, text)]
+
+    # Build line positions for currency lookup
+    line_positions = []
+    pos = 0
+    for line in text.split('\n'):
+        line_positions.append((pos, line))
+        pos += len(line) + 1
+
+    matched_positions = set()
+    all_matches = []
+
+    # Pass 1: Inline international transactions
+    inline_matches = _extract_inline_intl_transactions(text, card_headers)
+    all_matches.extend(inline_matches)
+    matched_positions.update(m[0] for m in inline_matches)
+
+    # Pass 2: Two-amount international transactions
+    two_amount_matches = _extract_two_amount_intl_transactions(text, card_headers, line_positions, matched_positions)
+    all_matches.extend(two_amount_matches)
+    matched_positions.update(m[0] for m in two_amount_matches)
+
+    # Pass 3: Domestic transactions
+    domestic_matches = _extract_domestic_transactions(text, card_headers, matched_positions)
+    all_matches.extend(domestic_matches)
+
+    # Sort by position and group by card
     all_matches.sort(key=lambda x: x[0])
 
-    # Group transactions by card
     transactions_by_card = {}
     all_transactions = []
 
@@ -175,10 +251,7 @@ def extract_transactions_from_text(text):
                 transactions_by_card[card_no] = []
             transactions_by_card[card_no].append(txn)
 
-    return {
-        'by_card': transactions_by_card,
-        'all': all_transactions,
-    }
+    return {'by_card': transactions_by_card, 'all': all_transactions}
 
 
 def extract_emi_loans_from_tables(tables):
@@ -359,7 +432,7 @@ class ICICICCPDFExtractor(BaseExtractor):
 
         try:
             pdf = pdfplumber.open(io.BytesIO(file_bytes), password=password)
-        except Exception as e:
+        except (OSError, ValueError, TypeError) as e:
             return ExtractionResult(error=f'Failed to open PDF: {str(e)}')
 
         artifacts = []

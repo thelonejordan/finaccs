@@ -2029,6 +2029,135 @@ def api_cc_payment_suggestions_reverse(request):
 
 
 @extend_schema(
+    summary="Get CC suggestions for a specific bank transaction",
+    description="Get credit card payment suggestions for a specific bank transaction.",
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['CC Payment Matching'],
+)
+@api_view(['GET'])
+def api_cc_suggestions_for_bank_transaction(request, bank_txn_id):
+    """Get CC payment suggestions for a specific bank transaction."""
+    from datetime import timedelta
+    from credit_cards.views import get_active_cc_transactions
+
+    # Get the specific bank transaction
+    try:
+        bank_txn = get_active_transactions().select_related('bank_account').get(id=bank_txn_id)
+    except Transaction.DoesNotExist:
+        return JsonResponse({'error': 'Bank transaction not found'}, status=404)
+
+    # Get unmatched CC payments (amount < 0 = payment) from active sources
+    unmatched_cc_payments = get_active_cc_transactions().filter(
+        amount__lt=0
+    ).exclude(
+        bank_payment_match__is_active=True,
+        bank_payment_match__bank_transaction__data_source_artifact__isnull=False
+    ).select_related('credit_card')
+
+    # Find potential matches within 7 days before and after
+    date_start = bank_txn.date - timedelta(days=7)
+    date_end = bank_txn.date + timedelta(days=7)
+
+    potential_matches = unmatched_cc_payments.filter(
+        date__gte=date_start,
+        date__lte=date_end,
+    )
+
+    suggestions = []
+    target_amount = float(bank_txn.debit_amount) if bank_txn.debit_amount else 0
+    offset_threshold = int(request.GET.get('offset_threshold', 100)) / 100.0  # Default 100% = no filter
+
+    for cc_txn in potential_matches:
+        score, reasons, offset = calculate_match_score(bank_txn, cc_txn)
+        if score > 0 and (offset_threshold >= 1.0 or (target_amount > 0 and abs(offset) <= target_amount * offset_threshold)):
+            suggestions.append({
+                'credit_card_transaction': {
+                    'id': cc_txn.id,
+                    'date': cc_txn.date.isoformat(),
+                    'description': cc_txn.description,
+                    'amount': float(cc_txn.amount),
+                    'credit_card': {
+                        'id': cc_txn.credit_card.id,
+                        'nickname': cc_txn.credit_card.nickname,
+                    } if cc_txn.credit_card else None,
+                },
+                'offset': float(offset),
+                'confidence_score': score,
+                'match_reasons': reasons,
+            })
+
+    # Sort by score descending, then by absolute offset ascending
+    suggestions.sort(key=lambda x: (-x['confidence_score'], abs(x['offset']), x['offset']))
+
+    return JsonResponse({'suggestions': suggestions})
+
+
+@extend_schema(
+    summary="Get bank suggestions for a specific CC transaction",
+    description="Get bank payment suggestions for a specific credit card transaction.",
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['CC Payment Matching'],
+)
+@api_view(['GET'])
+def api_bank_suggestions_for_cc_transaction(request, cc_txn_id):
+    """Get bank payment suggestions for a specific CC transaction."""
+    from datetime import timedelta
+    from credit_cards.models import CreditCardTransaction
+    from credit_cards.views import get_active_cc_transactions
+
+    # Get the specific CC transaction
+    try:
+        cc_txn = get_active_cc_transactions().select_related('credit_card').get(id=cc_txn_id)
+    except CreditCardTransaction.DoesNotExist:
+        return JsonResponse({'error': 'Credit card transaction not found'}, status=404)
+
+    # Get unmatched bank transactions (debit > 0)
+    unmatched_bank_payments = get_active_transactions().filter(
+        debit_amount__gt=0,
+    ).exclude(
+        cc_payment_match__is_active=True
+    ).select_related('bank_account')
+
+    # Find potential matches within 7 days before and after
+    date_start = cc_txn.date - timedelta(days=7)
+    date_end = cc_txn.date + timedelta(days=7)
+
+    potential_matches = unmatched_bank_payments.filter(
+        date__gte=date_start,
+        date__lte=date_end,
+    )
+
+    suggestions = []
+    target_amount = abs(float(cc_txn.amount))
+    offset_threshold = int(request.GET.get('offset_threshold', 100)) / 100.0  # Default 100% = no filter
+
+    for bank_txn in potential_matches:
+        score, reasons, offset = calculate_match_score(bank_txn, cc_txn)
+        if score > 0 and (offset_threshold >= 1.0 or (target_amount > 0 and abs(offset) <= target_amount * offset_threshold)):
+            suggestions.append({
+                'bank_transaction': {
+                    'id': bank_txn.id,
+                    'date': bank_txn.date.isoformat(),
+                    'narration': bank_txn.narration,
+                    'amount': float(bank_txn.debit_amount or bank_txn.credit_amount),
+                    'is_debit': bank_txn.debit_amount > 0,
+                    'bank_account': {
+                        'id': bank_txn.bank_account.id,
+                        'nickname': bank_txn.bank_account.nickname,
+                    } if bank_txn.bank_account else None,
+                },
+                'offset': float(offset),
+                'confidence_score': score,
+                'match_reasons': reasons,
+            })
+
+    # Sort by score descending, then by absolute offset ascending
+    suggestions.sort(key=lambda x: (-x['confidence_score'], abs(x['offset']), x['offset']))
+
+    return JsonResponse({'suggestions': suggestions})
+
+
+@extend_schema(
     methods=['GET'],
     summary="Get confirmed CC payment matches",
     description="Get confirmed credit card payment matches, filterable by year.",

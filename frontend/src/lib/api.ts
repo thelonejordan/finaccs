@@ -585,7 +585,12 @@ export async function fetchCreditCardTransactions(params?: {
   search?: string
   limit?: number
   offset?: number
-}): Promise<{ data: CreditCardTransaction[]; total: number; stats: CreditCardTransactionStats }> {
+}): Promise<{
+  data: CreditCardTransaction[];
+  total: number;
+  stats: CreditCardTransactionStats;
+  available_data_sources: Array<{ id: number; source_filename: string; credit_card_id: number | null }>;
+}> {
   const searchParams = new URLSearchParams()
   if (params?.credit_card) searchParams.set("credit_card", params.credit_card.toString())
   if (params?.category) searchParams.set("category", params.category)
@@ -852,6 +857,20 @@ export async function deleteCCPaymentMatch(matchId: number): Promise<{ success: 
 
 export async function fetchCCPaymentMatchYears(): Promise<{ years: Record<string, number> }> {
   const res = await fetch(`${API_BASE}/api/cc-payment-matches/years/`)
+  return res.json()
+}
+
+export async function fetchSuggestionsForBankTransaction(bankTxnId: number): Promise<{
+  suggestions: CCPaymentSuggestion[]
+}> {
+  const res = await fetch(`${API_BASE}/api/cc-payment-suggestions/for-bank-transaction/${bankTxnId}/`)
+  return res.json()
+}
+
+export async function fetchSuggestionsForCCTransaction(ccTxnId: number): Promise<{
+  suggestions: CCPaymentBankSuggestion[]
+}> {
+  const res = await fetch(`${API_BASE}/api/cc-payment-suggestions/for-cc-transaction/${ccTxnId}/`)
   return res.json()
 }
 

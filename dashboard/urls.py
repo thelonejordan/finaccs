@@ -22,6 +22,8 @@ urlpatterns = [
     # CC Payment Matching
     path('api/cc-payment-suggestions/', views.api_cc_payment_suggestions, name='api_cc_payment_suggestions'),
     path('api/cc-payment-suggestions/reverse/', views.api_cc_payment_suggestions_reverse, name='api_cc_payment_suggestions_reverse'),
+    path('api/cc-payment-suggestions/for-bank-transaction/<int:bank_txn_id>/', views.api_cc_suggestions_for_bank_transaction, name='api_cc_suggestions_for_bank_transaction'),
+    path('api/cc-payment-suggestions/for-cc-transaction/<int:cc_txn_id>/', views.api_bank_suggestions_for_cc_transaction, name='api_bank_suggestions_for_cc_transaction'),
     path('api/cc-payment-matches/', views.api_cc_payment_matches, name='api_cc_payment_matches'),
     path('api/cc-payment-matches/<int:match_id>/', views.api_cc_payment_match_delete, name='api_cc_payment_match_delete'),
     path('api/cc-payment-matches/years/', views.api_cc_payment_match_years, name='api_cc_payment_match_years'),
