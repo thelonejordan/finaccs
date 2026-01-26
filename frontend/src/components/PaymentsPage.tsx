@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo, useRef } from "react"
+import { AnimatePresence, motion } from "motion/react"
 import { useSearchParams } from "react-router-dom"
 import {
   CheckIcon,
@@ -856,10 +857,37 @@ function UnmatchedTab() {
 // Confirmed Tab Component
 function ConfirmedTab() {
   const [matches, setMatches] = useState<CCPaymentMatch[]>([])
+  const [allMatches, setAllMatches] = useState<CCPaymentMatch[]>([])
   const [years, setYears] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [selectedYear, setSelectedYear] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [showTotals, setShowTotals] = useState(false)
+  const statsRef = useRef<HTMLDivElement>(null)
+
+  // Handle click outside to hide totals
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (statsRef.current && !statsRef.current.contains(event.target as Node)) {
+        setShowTotals(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
+  // Load all matches for total calculations
+  useEffect(() => {
+    async function loadAllMatches() {
+      try {
+        const result = await fetchCCPaymentMatches({})
+        setAllMatches(result.data)
+      } catch (error) {
+        console.error("Failed to load all matches:", error)
+      }
+    }
+    loadAllMatches()
+  }, [refreshKey])
 
   useEffect(() => {
     async function loadYears() {
@@ -926,6 +954,34 @@ function ConfirmedTab() {
     return dateB.getTime() - dateA.getTime()
   })
 
+  // Calculate summary stats for selected year
+  const stats = useMemo(() => {
+    const totalCCReceived = matches.reduce(
+      (sum, m) => sum + Math.abs(m.credit_card_transaction.amount), 0
+    )
+    const totalBankSent = matches.reduce(
+      (sum, m) => sum + m.bank_transaction.amount, 0
+    )
+    const totalOffset = matches.reduce(
+      (sum, m) => sum + m.offset, 0
+    )
+    return { totalCCReceived, totalBankSent, totalOffset }
+  }, [matches])
+
+  // Calculate all-time totals
+  const allTimeStats = useMemo(() => {
+    const totalCCReceived = allMatches.reduce(
+      (sum, m) => sum + Math.abs(m.credit_card_transaction.amount), 0
+    )
+    const totalBankSent = allMatches.reduce(
+      (sum, m) => sum + m.bank_transaction.amount, 0
+    )
+    const totalOffset = allMatches.reduce(
+      (sum, m) => sum + m.offset, 0
+    )
+    return { totalCCReceived, totalBankSent, totalOffset }
+  }, [allMatches])
+
   const yearKeys = Object.keys(years).sort((a, b) => parseInt(b) - parseInt(a))
 
   return (
@@ -959,25 +1015,118 @@ function ConfirmedTab() {
         </div>
       </section>
 
-      {/* Summary Card */}
-      <section className="rounded-xl border border-border bg-card shadow-sm p-4 mb-6">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-green-500/10">
-            <LinkIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
+      {/* Summary Stats */}
+      <div ref={statsRef} className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {/* Matches Count */}
+        <div
+          onClick={() => setShowTotals(!showTotals)}
+          className="bg-card rounded-xl p-4 border border-border flex items-center gap-4 cursor-pointer hover:bg-muted/50 transition-colors"
+        >
+          <div className="p-3 rounded-xl bg-primary/10">
+            <LinkIcon className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <p className="text-sm text-muted-foreground">
-              Confirmed Matches {selectedYear ? `(${selectedYear})` : ""}
-            </p>
-            <p className="text-xl font-bold text-green-600 dark:text-green-400">
-              {matches.length}
-              <span className="text-sm font-normal text-muted-foreground ml-2">
-                / {Object.values(years).reduce((sum, count) => sum + count, 0)} total
-              </span>
-            </p>
+            <p className="text-sm text-muted-foreground">Matches</p>
+            <p className="text-2xl font-semibold">{matches.length}</p>
+            <AnimatePresence>
+              {showTotals && (
+                <motion.p
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="text-xs text-muted-foreground"
+                >
+                  out of {Object.values(years).reduce((sum, count) => sum + count, 0)}
+                </motion.p>
+              )}
+            </AnimatePresence>
           </div>
         </div>
-      </section>
+
+        {/* CC Received */}
+        <div
+          onClick={() => setShowTotals(!showTotals)}
+          className="bg-card rounded-xl p-4 border border-border flex items-center gap-4 cursor-pointer hover:bg-muted/50 transition-colors"
+        >
+          <div className="p-3 rounded-xl bg-green-500/10">
+            <CreditCardIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">CC Received</p>
+            <p className="text-2xl font-semibold text-green-600 dark:text-green-400">
+              <FormattedCurrency amount={stats.totalCCReceived} />
+            </p>
+            <AnimatePresence>
+              {showTotals && (
+                <motion.p
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="text-xs text-muted-foreground"
+                >
+                  out of <FormattedCurrency amount={allTimeStats.totalCCReceived} />
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Bank Sent */}
+        <div
+          onClick={() => setShowTotals(!showTotals)}
+          className="bg-card rounded-xl p-4 border border-border flex items-center gap-4 cursor-pointer hover:bg-muted/50 transition-colors"
+        >
+          <div className="p-3 rounded-xl bg-red-500/10">
+            <BuildingIcon className="h-5 w-5 text-red-600 dark:text-red-400" />
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Bank Sent</p>
+            <p className="text-2xl font-semibold text-red-600 dark:text-red-400">
+              <FormattedCurrency amount={stats.totalBankSent} />
+            </p>
+            <AnimatePresence>
+              {showTotals && (
+                <motion.p
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="text-xs text-muted-foreground"
+                >
+                  out of <FormattedCurrency amount={allTimeStats.totalBankSent} />
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Total Offset */}
+        <div
+          onClick={() => setShowTotals(!showTotals)}
+          className="bg-card rounded-xl p-4 border border-border flex items-center gap-4 cursor-pointer hover:bg-muted/50 transition-colors"
+        >
+          <div className={`p-3 rounded-xl ${stats.totalOffset === 0 ? 'bg-green-500/10' : 'bg-yellow-500/10'}`}>
+            <TagIcon className={`h-5 w-5 ${stats.totalOffset === 0 ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`} />
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Offset</p>
+            <p className={`text-2xl font-semibold ${stats.totalOffset === 0 ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
+              <FormattedCurrency amount={stats.totalOffset} />
+            </p>
+            <AnimatePresence>
+              {showTotals && (
+                <motion.p
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="text-xs text-muted-foreground"
+                >
+                  out of <FormattedCurrency amount={allTimeStats.totalOffset} />
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
 
       {/* Match Table */}
       {loading ? (
@@ -1100,8 +1249,8 @@ function ConfirmedTab() {
 export function PaymentsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
-  // Get tab from URL, default to "unmatched"
-  const activeTab = (searchParams.get("tab") as PaymentsTab) || "unmatched"
+  // Get tab from URL, default to "confirmed"
+  const activeTab = (searchParams.get("tab") as PaymentsTab) || "confirmed"
 
   const setActiveTab = useCallback((newTab: PaymentsTab) => {
     setSearchParams(prev => {
@@ -1121,32 +1270,47 @@ export function PaymentsPage() {
 
   return (
     <>
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6">
-          <button
-            onClick={() => setActiveTab("unmatched")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-              activeTab === "unmatched"
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <SparklesIcon className="h-4 w-4" />
-            Unmatched
-          </button>
-          <button
-            onClick={() => setActiveTab("confirmed")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-              activeTab === "confirmed"
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <LinkIcon className="h-4 w-4" />
-            Confirmed
-          </button>
-        </div>
+      <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+        {/* Header */}
+        <header className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <LinkIcon className="h-6 w-6 text-primary" />
+              </div>
+              Payments
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Match credit card payments with bank transactions
+            </p>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex items-center bg-muted rounded-lg p-1">
+            <button
+              onClick={() => setActiveTab("confirmed")}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-2 ${
+                activeTab === "confirmed"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <LinkIcon className="h-4 w-4" />
+              Confirmed
+            </button>
+            <button
+              onClick={() => setActiveTab("unmatched")}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-2 ${
+                activeTab === "unmatched"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <SparklesIcon className="h-4 w-4" />
+              Unmatched
+            </button>
+          </div>
+        </header>
 
         {/* Tab Content */}
         {activeTab === "unmatched" && <UnmatchedTab />}
