@@ -5,6 +5,7 @@ import {
   LayoutDashboardIcon,
   ArrowLeftRightIcon,
   BookOpenIcon,
+  UsersIcon,
   FileTextIcon,
   SettingsIcon,
   CreditCardIcon,
@@ -24,6 +25,7 @@ const NAV_SECTIONS = [
       { path: "/dashboard", label: "Dashboard", icon: LayoutDashboardIcon },
       { path: "/transactions", label: "Transactions", icon: ArrowLeftRightIcon },
       { path: "/stories", label: "Stories", icon: BookOpenIcon },
+      { path: "/entities", label: "Entities", icon: UsersIcon },
     ],
   },
   {
@@ -87,7 +89,8 @@ export function Sidebar() {
             <ul className="space-y-1">
               {section.items.map(({ path, label, icon: Icon, badgeKey }) => {
                 const isActive = location.pathname === path ||
-                  (path === "/stories" && location.pathname.startsWith("/stories/"))
+                  (path === "/stories" && location.pathname.startsWith("/stories/")) ||
+                  (path === "/entities" && location.pathname.startsWith("/entities/"))
                 const badgeCount = getBadgeCount(badgeKey)
 
                 return (

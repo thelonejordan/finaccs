@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react"
 import { logError } from "@/lib/logger"
+import { AnimatePresence, motion } from "motion/react"
 import { useSearchParams, useNavigate } from "react-router-dom"
 import {
   ArrowDownIcon,
@@ -24,6 +25,8 @@ import {
   LandmarkIcon,
   BookOpenIcon,
   HashIcon,
+  UsersIcon,
+  TagIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
@@ -31,6 +34,7 @@ import * as Dialog from "@radix-ui/react-dialog"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import { Footer } from "@/components/Footer"
 import { AddToStoryModal } from "@/components/stories/AddToStoryModal"
+import { AddToEntityModal } from "@/components/entities/AddToEntityModal"
 import {
   fetchTransactions,
   fetchCategories,
@@ -755,14 +759,20 @@ export function BankTransactionsPage() {
     return val ? parseInt(val, 10) : null
   })
   const [stats, setStats] = useState<TransactionStats | null>(null)
+  const [allTimeStats, setAllTimeStats] = useState<{ total: number; stats: TransactionStats } | null>(null)
+  const [showTotals, setShowTotals] = useState(false)
+  const statsRef = useRef<HTMLElement>(null)
   const [loading, setLoading] = useState(true)
   const [total, setTotal] = useState(0)
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
-  // Selection state for adding to stories
+  // Selection state for adding to stories/entities
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [addToStoryModalOpen, setAddToStoryModalOpen] = useState(false)
+  const [addToEntityModalOpen, setAddToEntityModalOpen] = useState(false)
+  const [bulkCategoryOpen, setBulkCategoryOpen] = useState(false)
+  const [bulkCategoryUpdating, setBulkCategoryUpdating] = useState(false)
   const lastSelectedIndexRef = useRef<number | null>(null)
 
   // Date range state - initialize from URL
@@ -853,6 +863,17 @@ export function BankTransactionsPage() {
   useEffect(() => {
     document.title = "Transactions | FinAccs"
     window.scrollTo(0, 0)
+  }, [])
+
+  // Handle click outside to hide totals
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (statsRef.current && !statsRef.current.contains(event.target as Node)) {
+        setShowTotals(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
   // Listen for auto-scroll changes from Header
@@ -1027,6 +1048,19 @@ export function BankTransactionsPage() {
     loadCategories()
   }, [])
 
+  // Load all-time stats once
+  useEffect(() => {
+    async function loadAllTimeStats() {
+      try {
+        const data = await fetchTransactions({ limit: 1 })
+        setAllTimeStats({ total: data.total, stats: data.stats })
+      } catch (error) {
+        logError("Failed to load all-time stats", error)
+      }
+    }
+    loadAllTimeStats()
+  }, [])
+
   useEffect(() => {
     async function loadBankAccounts() {
       try {
@@ -1166,6 +1200,27 @@ export function BankTransactionsPage() {
 
   const handleAddedToStory = () => {
     setSelectedIds(new Set())
+  }
+
+  const handleAddedToEntity = () => {
+    setSelectedIds(new Set())
+  }
+
+  const handleBulkCategoryChange = async (newCategory: string) => {
+    setBulkCategoryUpdating(true)
+    try {
+      // Update all selected transactions in parallel
+      await Promise.all(
+        Array.from(selectedIds).map(id => updateTransactionCategory(id, newCategory))
+      )
+      setRefreshKey((k) => k + 1)
+      setSelectedIds(new Set())
+      setBulkCategoryOpen(false)
+    } catch (error) {
+      logError("Failed to update categories", error)
+    } finally {
+      setBulkCategoryUpdating(false)
+    }
   }
 
   // Get available years and months
@@ -1548,8 +1603,11 @@ export function BankTransactionsPage() {
 
         {/* Aggregate Stats */}
         {stats && (
-          <section className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="rounded-xl border border-border bg-card shadow-sm p-4">
+          <section ref={statsRef} className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div
+              onClick={() => setShowTotals(!showTotals)}
+              className="rounded-xl border border-border bg-card shadow-sm p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+            >
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-primary/10">
                   <HashIcon className="h-5 w-5 text-primary" />
@@ -1557,10 +1615,25 @@ export function BankTransactionsPage() {
                 <div>
                   <p className="text-sm text-muted-foreground">Transactions</p>
                   <p className="text-xl font-bold">{total.toLocaleString("en-IN")}</p>
+                  <AnimatePresence>
+                    {showTotals && allTimeStats && (
+                      <motion.p
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="text-xs text-muted-foreground"
+                      >
+                        out of {allTimeStats.total.toLocaleString("en-IN")}
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
             </div>
-            <div className="rounded-xl border border-border bg-card shadow-sm p-4">
+            <div
+              onClick={() => setShowTotals(!showTotals)}
+              className="rounded-xl border border-border bg-card shadow-sm p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+            >
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-green-500/10">
                   <TrendingUpIcon className="h-5 w-5 text-(--color-income)" />
@@ -1568,10 +1641,25 @@ export function BankTransactionsPage() {
                 <div>
                   <p className="text-sm text-muted-foreground">Total Credits</p>
                   <FormattedCurrency amount={stats.total_credits} className="text-xl font-bold text-(--color-income)" />
+                  <AnimatePresence>
+                    {showTotals && allTimeStats && (
+                      <motion.p
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="text-xs text-muted-foreground"
+                      >
+                        out of <FormattedCurrency amount={allTimeStats.stats.total_credits} />
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
             </div>
-            <div className="rounded-xl border border-border bg-card shadow-sm p-4">
+            <div
+              onClick={() => setShowTotals(!showTotals)}
+              className="rounded-xl border border-border bg-card shadow-sm p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+            >
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-red-500/10">
                   <TrendingDownIcon className="h-5 w-5 text-(--color-expense)" />
@@ -1579,10 +1667,25 @@ export function BankTransactionsPage() {
                 <div>
                   <p className="text-sm text-muted-foreground">Total Debits</p>
                   <FormattedCurrency amount={stats.total_debits} className="text-xl font-bold text-(--color-expense)" />
+                  <AnimatePresence>
+                    {showTotals && allTimeStats && (
+                      <motion.p
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="text-xs text-muted-foreground"
+                      >
+                        out of <FormattedCurrency amount={allTimeStats.stats.total_debits} />
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
             </div>
-            <div className="rounded-xl border border-border bg-card shadow-sm p-4">
+            <div
+              onClick={() => setShowTotals(!showTotals)}
+              className="rounded-xl border border-border bg-card shadow-sm p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+            >
               <div className="flex items-center gap-3">
                 <div className={`p-2 rounded-lg ${stats.net_flow >= 0 ? "bg-green-500/10" : "bg-red-500/10"}`}>
                   {stats.net_flow >= 0
@@ -1600,6 +1703,18 @@ export function BankTransactionsPage() {
                     <FormattedCurrency amount={Math.abs(stats.net_flow)} />
                     {stats.net_flow >= 0 ? <ArrowUpIcon className="h-4 w-4" /> : <ArrowDownIcon className="h-4 w-4" />}
                   </p>
+                  <AnimatePresence>
+                    {showTotals && allTimeStats && (
+                      <motion.p
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="text-xs text-muted-foreground"
+                      >
+                        out of <FormattedCurrency amount={Math.abs(allTimeStats.stats.net_flow)} />
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
             </div>
@@ -1659,6 +1774,38 @@ export function BankTransactionsPage() {
                         <BookOpenIcon className="h-4 w-4" />
                         Add to Story
                       </button>
+                      <button
+                        onClick={() => setAddToEntityModalOpen(true)}
+                        className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 flex items-center gap-1.5"
+                      >
+                        <UsersIcon className="h-4 w-4" />
+                        Add to Entity
+                      </button>
+                      <Popover.Root open={bulkCategoryOpen} onOpenChange={setBulkCategoryOpen}>
+                        <Popover.Trigger asChild>
+                          <button
+                            disabled={bulkCategoryUpdating}
+                            className="px-3 py-1.5 rounded-md bg-secondary text-secondary-foreground text-sm font-medium hover:bg-secondary/80 flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            {bulkCategoryUpdating ? (
+                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                            ) : (
+                              <TagIcon className="h-4 w-4" />
+                            )}
+                            Assign Category
+                          </button>
+                        </Popover.Trigger>
+                        <Popover.Portal>
+                          <Popover.Content sideOffset={4} align="end" className="z-50">
+                            <CategorySelectContent
+                              categories={categories}
+                              currentValue=""
+                              onSelect={handleBulkCategoryChange}
+                              onClose={() => setBulkCategoryOpen(false)}
+                            />
+                          </Popover.Content>
+                        </Popover.Portal>
+                      </Popover.Root>
                       <button
                         onClick={() => setSelectedIds(new Set())}
                         className="px-3 py-1.5 rounded-md border border-border text-sm hover:bg-accent"
@@ -1857,6 +2004,13 @@ export function BankTransactionsPage() {
         onOpenChange={setAddToStoryModalOpen}
         selectedTransactions={Array.from(selectedIds).map(id => ({ type: 'bank' as const, id }))}
         onAdded={handleAddedToStory}
+      />
+
+      <AddToEntityModal
+        open={addToEntityModalOpen}
+        onOpenChange={setAddToEntityModalOpen}
+        selectedTransactions={Array.from(selectedIds).map(id => ({ type: 'bank' as const, id }))}
+        onAdded={handleAddedToEntity}
       />
 
       <Footer />

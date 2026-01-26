@@ -1444,3 +1444,181 @@ export async function compareStories(storyIds: string[]): Promise<StoryCompariso
   }
   return res.json()
 }
+
+// ==================== Entities API ====================
+
+export type EntityType = 'person' | 'business'
+
+export interface Entity {
+  id: number
+  entity_id: string
+  name: string
+  description: string
+  icon: string
+  entity_type: EntityType
+  transaction_count: number
+  total_spent: number
+  min_date: string | null
+  max_date: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface EntityTransaction {
+  id: number
+  type: 'bank' | 'credit_card'
+  date: string
+  description: string
+  amount: number
+  category: string
+  source: string
+}
+
+export interface EntityDetail extends Entity {
+  transactions: EntityTransaction[]
+}
+
+export interface EntityBadge {
+  entity_id: string
+  name: string
+  icon: string
+  entity_type: EntityType
+}
+
+export async function fetchEntities(): Promise<{ entities: Entity[] }> {
+  const res = await fetch(`${API_BASE}/api/entities/`)
+  if (!res.ok) {
+    throw new Error('Failed to fetch entities')
+  }
+  return res.json()
+}
+
+export async function fetchEntity(entityId: string): Promise<EntityDetail> {
+  const res = await fetch(`${API_BASE}/api/entities/${entityId}/`)
+  if (!res.ok) {
+    throw new Error('Failed to fetch entity')
+  }
+  return res.json()
+}
+
+export async function createEntity(data: {
+  name: string
+  description?: string
+  icon?: string
+  entity_type?: EntityType
+}): Promise<Entity> {
+  const res = await fetch(`${API_BASE}/api/entities/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to create entity')
+  }
+  return res.json()
+}
+
+export async function updateEntity(
+  entityId: string,
+  data: Partial<{ name: string; description: string; icon: string; entity_type: EntityType }>
+): Promise<Entity> {
+  const res = await fetch(`${API_BASE}/api/entities/${entityId}/`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to update entity')
+  }
+  return res.json()
+}
+
+export async function deleteEntity(entityId: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/api/entities/${entityId}/`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    throw new Error('Failed to delete entity')
+  }
+  return res.json()
+}
+
+export async function addTransactionsToEntity(
+  entityId: string,
+  transactions: TransactionRef[]
+): Promise<{ success: boolean; added: number }> {
+  const res = await fetch(`${API_BASE}/api/entities/${entityId}/transactions/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transactions }),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to add transactions to entity')
+  }
+  return res.json()
+}
+
+export async function removeTransactionsFromEntity(
+  entityId: string,
+  transactions: TransactionRef[]
+): Promise<{ success: boolean; removed: number }> {
+  const res = await fetch(`${API_BASE}/api/entities/${entityId}/transactions/`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transactions }),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to remove transactions from entity')
+  }
+  return res.json()
+}
+
+export async function getTransactionEntities(
+  transactions: TransactionRef[]
+): Promise<{ transaction_entities: Record<string, EntityBadge[]> }> {
+  const res = await fetch(`${API_BASE}/api/entities/transaction-entities/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transactions }),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to get transaction entities')
+  }
+  return res.json()
+}
+
+export interface EntityComparisonSummary {
+  entity_id: string
+  name: string
+  icon: string
+  entity_type: EntityType
+  transaction_count: number
+  total_spent: number
+}
+
+export interface EntityComparisonResult {
+  entities: EntityComparisonSummary[]
+  common_transactions: EntityTransaction[]
+  unique_transactions: Record<string, EntityTransaction[]>
+  overlap_stats: {
+    common_count: number
+    total_unique: number
+  }
+}
+
+export async function compareEntities(entityIds: string[]): Promise<EntityComparisonResult> {
+  const res = await fetch(`${API_BASE}/api/entities/compare/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entity_ids: entityIds }),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to compare entities')
+  }
+  return res.json()
+}

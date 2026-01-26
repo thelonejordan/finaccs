@@ -1021,110 +1021,118 @@ function ConfirmedTab() {
         {/* Matches Count */}
         <div
           onClick={() => setShowTotals(!showTotals)}
-          className="bg-card rounded-xl p-4 border border-border flex items-center gap-4 cursor-pointer hover:bg-muted/50 transition-colors"
+          className="rounded-xl border border-border bg-card shadow-sm p-4 cursor-pointer hover:bg-muted/50 transition-colors"
         >
-          <div className="p-3 rounded-xl bg-primary/10">
-            <LinkIcon className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Matches</p>
-            <p className="text-2xl font-semibold">{matches.length}</p>
-            <AnimatePresence>
-              {showTotals && (
-                <motion.p
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="text-xs text-muted-foreground"
-                >
-                  out of {Object.values(years).reduce((sum, count) => sum + count, 0)}
-                </motion.p>
-              )}
-            </AnimatePresence>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-primary/10">
+              <LinkIcon className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Matches</p>
+              <p className="text-xl font-bold">{matches.length}</p>
+              <AnimatePresence>
+                {showTotals && (
+                  <motion.p
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="text-xs text-muted-foreground"
+                  >
+                    out of {Object.values(years).reduce((sum, count) => sum + count, 0)}
+                  </motion.p>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
 
         {/* CC Received */}
         <div
           onClick={() => setShowTotals(!showTotals)}
-          className="bg-card rounded-xl p-4 border border-border flex items-center gap-4 cursor-pointer hover:bg-muted/50 transition-colors"
+          className="rounded-xl border border-border bg-card shadow-sm p-4 cursor-pointer hover:bg-muted/50 transition-colors"
         >
-          <div className="p-3 rounded-xl bg-green-500/10">
-            <CreditCardIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">CC Received</p>
-            <p className="text-2xl font-semibold text-green-600 dark:text-green-400">
-              <FormattedCurrency amount={stats.totalCCReceived} />
-            </p>
-            <AnimatePresence>
-              {showTotals && (
-                <motion.p
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="text-xs text-muted-foreground"
-                >
-                  out of <FormattedCurrency amount={allTimeStats.totalCCReceived} />
-                </motion.p>
-              )}
-            </AnimatePresence>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-green-500/10">
+              <CreditCardIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">CC Received</p>
+              <p className="text-xl font-bold text-green-600 dark:text-green-400">
+                <FormattedCurrency amount={stats.totalCCReceived} />
+              </p>
+              <AnimatePresence>
+                {showTotals && (
+                  <motion.p
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="text-xs text-muted-foreground"
+                  >
+                    out of <FormattedCurrency amount={allTimeStats.totalCCReceived} />
+                  </motion.p>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
 
         {/* Bank Sent */}
         <div
           onClick={() => setShowTotals(!showTotals)}
-          className="bg-card rounded-xl p-4 border border-border flex items-center gap-4 cursor-pointer hover:bg-muted/50 transition-colors"
+          className="rounded-xl border border-border bg-card shadow-sm p-4 cursor-pointer hover:bg-muted/50 transition-colors"
         >
-          <div className="p-3 rounded-xl bg-red-500/10">
-            <BuildingIcon className="h-5 w-5 text-red-600 dark:text-red-400" />
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Bank Sent</p>
-            <p className="text-2xl font-semibold text-red-600 dark:text-red-400">
-              <FormattedCurrency amount={stats.totalBankSent} />
-            </p>
-            <AnimatePresence>
-              {showTotals && (
-                <motion.p
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="text-xs text-muted-foreground"
-                >
-                  out of <FormattedCurrency amount={allTimeStats.totalBankSent} />
-                </motion.p>
-              )}
-            </AnimatePresence>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-red-500/10">
+              <BuildingIcon className="h-5 w-5 text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Bank Sent</p>
+              <p className="text-xl font-bold text-red-600 dark:text-red-400">
+                <FormattedCurrency amount={stats.totalBankSent} />
+              </p>
+              <AnimatePresence>
+                {showTotals && (
+                  <motion.p
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="text-xs text-muted-foreground"
+                  >
+                    out of <FormattedCurrency amount={allTimeStats.totalBankSent} />
+                  </motion.p>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
 
         {/* Total Offset */}
         <div
           onClick={() => setShowTotals(!showTotals)}
-          className="bg-card rounded-xl p-4 border border-border flex items-center gap-4 cursor-pointer hover:bg-muted/50 transition-colors"
+          className="rounded-xl border border-border bg-card shadow-sm p-4 cursor-pointer hover:bg-muted/50 transition-colors"
         >
-          <div className={`p-3 rounded-xl ${stats.totalOffset === 0 ? 'bg-green-500/10' : 'bg-yellow-500/10'}`}>
-            <TagIcon className={`h-5 w-5 ${stats.totalOffset === 0 ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`} />
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Offset</p>
-            <p className={`text-2xl font-semibold ${stats.totalOffset === 0 ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
-              <FormattedCurrency amount={stats.totalOffset} />
-            </p>
-            <AnimatePresence>
-              {showTotals && (
-                <motion.p
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="text-xs text-muted-foreground"
-                >
-                  out of <FormattedCurrency amount={allTimeStats.totalOffset} />
-                </motion.p>
-              )}
-            </AnimatePresence>
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${stats.totalOffset === 0 ? 'bg-green-500/10' : 'bg-yellow-500/10'}`}>
+              <TagIcon className={`h-5 w-5 ${stats.totalOffset === 0 ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`} />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Offset</p>
+              <p className={`text-xl font-bold ${stats.totalOffset === 0 ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
+                <FormattedCurrency amount={stats.totalOffset} />
+              </p>
+              <AnimatePresence>
+                {showTotals && (
+                  <motion.p
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="text-xs text-muted-foreground"
+                  >
+                    out of <FormattedCurrency amount={allTimeStats.totalOffset} />
+                  </motion.p>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
       </div>

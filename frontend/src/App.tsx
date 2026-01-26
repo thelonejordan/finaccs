@@ -9,6 +9,8 @@ import { ExtractionsPage } from "@/components/ExtractionsPage"
 import { ExtractionsV2Page } from "@/components/ExtractionsV2Page"
 import { StoriesPage } from "@/components/StoriesPage"
 import { StoryDetailPage } from "@/components/StoryDetailPage"
+import { EntitiesPage } from "@/components/EntitiesPage"
+import { EntityDetailPage } from "@/components/EntityDetailPage"
 import { Layout } from "@/components/Layout"
 import { ThemeProvider } from "@/lib/theme"
 import { FontProvider } from "@/lib/font"
@@ -35,6 +37,8 @@ function App() {
             <Route path="/activity" element={<ActivityLogsPage />} />
             <Route path="/stories" element={<StoriesPage />} />
             <Route path="/stories/:storyId" element={<StoryDetailPage />} />
+            <Route path="/entities" element={<EntitiesPage />} />
+            <Route path="/entities/:entityId" element={<EntityDetailPage />} />
           </Route>
         </Routes>
         </PaymentsCacheProvider>

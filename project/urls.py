@@ -17,8 +17,9 @@ Including another URLconf
 import subprocess
 from django.conf import settings
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
 from django.http import JsonResponse
+from django.views.generic import TemplateView
 
 
 def get_git_commit():
@@ -48,6 +49,7 @@ urlpatterns = [
     path('', include('credit_cards.urls')),
     path('', include('extractions.urls')),
     path('', include('stories.urls')),
+    path('', include('entities.urls')),
 ]
 
 # API docs (dev only)
@@ -57,3 +59,9 @@ if settings.DEV_MODE:
         path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
         path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     ] + urlpatterns
+
+# Catch-all route to serve the frontend SPA
+# This must be at the end so API routes take precedence
+urlpatterns += [
+    re_path(r'^(?!api/|static/).*$', TemplateView.as_view(template_name='index.html'), name='frontend'),
+]
