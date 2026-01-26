@@ -4,4 +4,6 @@ db.sqlite3
 .env
 /bank_accounts/data/
 /credit_cards/data/
+/frontend/dist/
 /frontend_dist/
+/staticfiles/

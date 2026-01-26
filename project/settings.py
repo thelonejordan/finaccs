@@ -80,6 +80,7 @@ MIDDLEWARE = [
 CORS_ALLOWED_ORIGINS = [
     o.strip() for o in os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173').split(',') if o.strip()
 ]
+CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', '').lower() in ('true', '1', 'yes')
 
 ROOT_URLCONF = 'project.urls'
 

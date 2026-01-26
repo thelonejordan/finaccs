@@ -97,6 +97,10 @@ cp .env.example .env
 | `REDIS_PASSWORD` | - | Redis password |
 | `VITE_API_BASE` | `http://localhost:8000` | Frontend API base URL |
 
+**DEBUG vs DEV_MODE:**
+- `DEBUG=True`: Enables Django debug mode (detailed error pages, no caching). Should be `False` in production. Backend only - frontend doesn't use this.
+- `DEV_MODE=1`: Enables developer features (API docs at `/api/docs/`, django-extensions). Can be enabled independently of DEBUG.
+
 ### 6. Enable Redis Caching (Optional)
 
 Redis caching improves API response times for dashboard data and inconsistency detection.
@@ -122,25 +126,9 @@ REDIS_PASSWORD=your_redis_password  # If authentication is enabled
 
 Without Redis, the application works normally but may have slower response times for complex queries.
 
-### 7. Load Transactions
-
-Load transactions from bank statement files:
-
-```bash
-# Load from default file in bank_accs/data/
-uv run python manage.py load_transactions
-
-# Load from specific file
-uv run python manage.py load_transactions --file bank_accs/data/statement.xlsx
-
-# Clear existing and reload
-uv run python manage.py load_transactions --clear
-
-# Provide password for encrypted xlsx
-uv run python manage.py load_transactions --file statement.xlsx --password mypassword
-```
-
 ## Running the Development Servers
+
+**Note:** Vite uses `base: "/"` for dev server and `base: "/static/"` for builds. This is configured in `frontend/vite.config.ts` so routes work correctly in both modes.
 
 ### Option 1: Run Both Servers (Recommended)
 
@@ -157,20 +145,30 @@ cd frontend
 npm run dev
 ```
 
-### Option 2: Run as Background Processes
+Access at http://localhost:5173
+
+### Option 2: Django Only (No Vite Dev Server)
+
+Build frontend and serve from Django:
 
 ```bash
-# Start backend
-uv run python manage.py runserver &
+# Build frontend
+cd frontend && npm run build && cd ..
 
-# Start frontend
-cd frontend && npm run dev &
+# Symlink to frontend_dist (recommended for dev)
+ln -sf frontend/dist frontend_dist
+
+# Or copy instead
+cp -r frontend/dist frontend_dist
+
+# Collect static files
+uv run python manage.py collectstatic --noinput
+
+# Run Django
+uv run python manage.py runserver
 ```
 
-## Accessing the Application
-
-- **Frontend:** http://localhost:5173
-- **Backend API:** http://localhost:8000
+Access at http://localhost:8000
 
 ## API Endpoints
 
@@ -218,6 +216,11 @@ finaccs/
 - **Extraction Pipeline:** Upload and process PDF/CSV bank statements
 - **Console:** Manage bank accounts and credit cards
 - **Dark/Light Mode:** Theme toggle in the header
+
+## Documentation
+
+- **[Development Workflow](docs/CONTRIB.md)** - Setup, running dev servers, available scripts, environment variables
+- **[Operations Guide](docs/RUNBOOK.md)** - Docker deployment, manual deployment, health checks, troubleshooting
 
 ## Development Notes
 
