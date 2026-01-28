@@ -14,7 +14,7 @@ import {
 } from "lucide-react"
 import { Footer } from "@/components/Footer"
 import { CreateEntityModal } from "@/components/entities/CreateEntityModal"
-import { CompareEntitiesModal } from "@/components/entities/CompareEntitiesModal"
+import { UnifiedCompareModal } from "@/components/shared/UnifiedCompareModal"
 import { fetchEntities, type Entity } from "@/lib/api"
 
 function formatCurrency(amount: number): string {
@@ -184,7 +184,7 @@ export function EntitiesPage() {
         onCreated={handleEntityCreated}
       />
 
-      <CompareEntitiesModal
+      <UnifiedCompareModal
         open={compareModalOpen}
         onOpenChange={setCompareModalOpen}
       />

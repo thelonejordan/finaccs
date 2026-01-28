@@ -12,7 +12,7 @@ import {
 } from "lucide-react"
 import { Footer } from "@/components/Footer"
 import { CreateStoryModal } from "@/components/stories/CreateStoryModal"
-import { CompareStoriesModal } from "@/components/stories/CompareStoriesModal"
+import { UnifiedCompareModal } from "@/components/shared/UnifiedCompareModal"
 import { fetchStories, type Story } from "@/lib/api"
 
 function formatCurrency(amount: number): string {
@@ -175,7 +175,7 @@ export function StoriesPage() {
         onCreated={handleStoryCreated}
       />
 
-      <CompareStoriesModal
+      <UnifiedCompareModal
         open={compareModalOpen}
         onOpenChange={setCompareModalOpen}
       />

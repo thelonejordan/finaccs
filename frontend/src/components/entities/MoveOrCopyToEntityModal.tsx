@@ -1,12 +1,16 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import * as Dialog from "@radix-ui/react-dialog"
-import { XIcon, PlusIcon, MoveIcon, CopyIcon, UsersIcon, UserIcon, BuildingIcon } from "lucide-react"
+import { XIcon, PlusIcon, MoveIcon, CopyIcon, UsersIcon, UserIcon, BuildingIcon, BookOpenIcon, SearchIcon } from "lucide-react"
 import {
   fetchEntities,
+  fetchStories,
   addTransactionsToEntity,
+  addTransactionsToStory,
   removeTransactionsFromEntity,
   createEntity,
+  createStory,
   type Entity,
+  type Story,
   type TransactionRef,
   type EntityType,
 } from "@/lib/api"
@@ -20,7 +24,7 @@ interface MoveOrCopyToEntityModalProps {
   onComplete: () => void
 }
 
-const EMOJI_OPTIONS = [
+const ENTITY_EMOJI_OPTIONS = [
   // Row 1 - People
   "👤", "👨", "👩", "👴", "👵", "👶", "🧑", "🧔",
   // Row 2 - Business & Work
@@ -35,6 +39,25 @@ const EMOJI_OPTIONS = [
   "⭐", "❤️", "🔖", "📌", "🏷️", "📋", "🗂️", "📁",
 ]
 
+const STORY_EMOJI_OPTIONS = [
+  // Row 1 - Generic & Organization
+  "📁", "🗂️", "📂", "📋", "🏷️", "🔖", "⭐", "📌",
+  // Row 2 - Income & Finance
+  "💰", "💵", "💸", "💳", "🏦", "📈", "📊", "💼",
+  // Row 3 - Shopping & Food
+  "🛒", "🛍️", "🍔", "☕", "🥗", "🍕", "🛵", "📦",
+  // Row 4 - Home & Utilities
+  "🏠", "🔑", "💡", "⚡", "💧", "🔧", "🧹", "🏢",
+  // Row 5 - Transport & Travel
+  "🚗", "⛽", "✈️", "🚆", "🧳", "🏨", "🌴", "🗺️",
+  // Row 6 - Health, Education & Entertainment
+  "💊", "🏥", "📚", "🎓", "🎬", "🎮", "🎵", "📺",
+  // Row 7 - Tech, Gifts & Misc
+  "📱", "💻", "🎁", "👕", "🐱", "🐶", "🐷", "📝",
+]
+
+type TabType = "entities" | "stories"
+
 export function MoveOrCopyToEntityModal({
   open,
   onOpenChange,
@@ -43,11 +66,14 @@ export function MoveOrCopyToEntityModal({
   selectedTransactions,
   onComplete,
 }: MoveOrCopyToEntityModalProps) {
+  const [activeTab, setActiveTab] = useState<TabType>("entities")
   const [entities, setEntities] = useState<Entity[]>([])
+  const [stories, setStories] = useState<Story[]>([])
   const [loading, setLoading] = useState(true)
-  const [processingEntityId, setProcessingEntityId] = useState<string | null>(null)
+  const [processingId, setProcessingId] = useState<string | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
 
   // Create form state
   const [newName, setNewName] = useState("")
@@ -59,39 +85,63 @@ export function MoveOrCopyToEntityModal({
   const actionLabel = isMove ? "Move" : "Copy"
   const ActionIcon = isMove ? MoveIcon : CopyIcon
 
+  // Filter entities based on search query
+  const filteredEntities = useMemo(() => {
+    if (!searchQuery.trim()) return entities
+    const query = searchQuery.toLowerCase()
+    return entities.filter(entity => entity.name.toLowerCase().includes(query))
+  }, [entities, searchQuery])
+
+  // Filter stories based on search query
+  const filteredStories = useMemo(() => {
+    if (!searchQuery.trim()) return stories
+    const query = searchQuery.toLowerCase()
+    return stories.filter(story => story.name.toLowerCase().includes(query))
+  }, [stories, searchQuery])
+
   useEffect(() => {
     if (open) {
-      loadEntities()
+      loadData()
+      setActiveTab("entities")
       setShowCreateForm(false)
       setNewName("")
       setNewIcon("👤")
       setNewEntityType("person")
       setError(null)
+      setSearchQuery("")
     }
   }, [open])
 
-  // Update default icon when entity type changes
+  // Update default icon when switching tabs or entity type changes
   useEffect(() => {
-    setNewIcon(newEntityType === "person" ? "👤" : "🏢")
-  }, [newEntityType])
+    if (activeTab === "entities") {
+      setNewIcon(newEntityType === "person" ? "👤" : "🏢")
+    } else {
+      setNewIcon("💰")
+    }
+  }, [activeTab, newEntityType])
 
-  const loadEntities = async () => {
+  const loadData = async () => {
     setLoading(true)
     setError(null)
     try {
-      const data = await fetchEntities()
+      const [entitiesData, storiesData] = await Promise.all([
+        fetchEntities(),
+        fetchStories(),
+      ])
       // Exclude current entity from the list
-      setEntities(data.entities.filter(e => e.entity_id !== currentEntityId))
+      setEntities(entitiesData.entities.filter(e => e.entity_id !== currentEntityId))
+      setStories(storiesData.stories)
     } catch (err) {
-      console.error("Failed to load entities:", err)
-      setError("Failed to load entities")
+      console.error("Failed to load data:", err)
+      setError("Failed to load data")
     } finally {
       setLoading(false)
     }
   }
 
-  const handleMoveOrCopy = async (targetEntityId: string) => {
-    setProcessingEntityId(targetEntityId)
+  const handleMoveOrCopyToEntity = async (targetEntityId: string) => {
+    setProcessingId(targetEntityId)
     setError(null)
     try {
       // Add to target entity
@@ -108,7 +158,29 @@ export function MoveOrCopyToEntityModal({
       console.error(`Failed to ${mode} transactions:`, err)
       setError(err instanceof Error ? err.message : `Failed to ${mode} transactions`)
     } finally {
-      setProcessingEntityId(null)
+      setProcessingId(null)
+    }
+  }
+
+  const handleMoveOrCopyToStory = async (targetStoryId: string) => {
+    setProcessingId(targetStoryId)
+    setError(null)
+    try {
+      // Add to target story
+      await addTransactionsToStory(targetStoryId, selectedTransactions)
+
+      // If move, also remove from current entity
+      if (isMove) {
+        await removeTransactionsFromEntity(currentEntityId, selectedTransactions)
+      }
+
+      onComplete()
+      onOpenChange(false)
+    } catch (err) {
+      console.error(`Failed to ${mode} transactions:`, err)
+      setError(err instanceof Error ? err.message : `Failed to ${mode} transactions`)
+    } finally {
+      setProcessingId(null)
     }
   }
 
@@ -119,30 +191,48 @@ export function MoveOrCopyToEntityModal({
     setIsCreating(true)
     setError(null)
     try {
-      // Create new entity
-      const entity = await createEntity({
-        name: newName.trim(),
-        icon: newIcon,
-        entity_type: newEntityType,
-      })
+      if (activeTab === "entities") {
+        // Create new entity
+        const entity = await createEntity({
+          name: newName.trim(),
+          icon: newIcon,
+          entity_type: newEntityType,
+        })
 
-      // Add transactions to the new entity
-      await addTransactionsToEntity(entity.entity_id, selectedTransactions)
+        // Add transactions to the new entity
+        await addTransactionsToEntity(entity.entity_id, selectedTransactions)
 
-      // If move, also remove from current entity
-      if (isMove) {
-        await removeTransactionsFromEntity(currentEntityId, selectedTransactions)
+        // If move, also remove from current entity
+        if (isMove) {
+          await removeTransactionsFromEntity(currentEntityId, selectedTransactions)
+        }
+      } else {
+        // Create new story
+        const story = await createStory({
+          name: newName.trim(),
+          icon: newIcon,
+        })
+
+        // Add transactions to the new story
+        await addTransactionsToStory(story.story_id, selectedTransactions)
+
+        // If move, also remove from current entity
+        if (isMove) {
+          await removeTransactionsFromEntity(currentEntityId, selectedTransactions)
+        }
       }
 
       onComplete()
       onOpenChange(false)
     } catch (err) {
-      console.error(`Failed to create entity and ${mode} transactions:`, err)
-      setError(err instanceof Error ? err.message : `Failed to create entity`)
+      console.error(`Failed to create and ${mode} transactions:`, err)
+      setError(err instanceof Error ? err.message : `Failed to create ${activeTab === "entities" ? "entity" : "story"}`)
     } finally {
       setIsCreating(false)
     }
   }
+
+  const currentEmojiOptions = activeTab === "entities" ? ENTITY_EMOJI_OPTIONS : STORY_EMOJI_OPTIONS
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -151,16 +241,44 @@ export function MoveOrCopyToEntityModal({
         <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-card rounded-lg shadow-xl p-6 w-full max-w-md max-h-[80vh] overflow-hidden z-50 flex flex-col">
           <Dialog.Title className="text-lg font-semibold text-foreground flex items-center gap-2">
             <ActionIcon className="h-5 w-5" />
-            {actionLabel} to Entity
+            {actionLabel} to Entity or Story
           </Dialog.Title>
           <Dialog.Description className="mt-1 text-sm text-muted-foreground">
-            {actionLabel} {selectedTransactions.length} transaction{selectedTransactions.length !== 1 ? "s" : ""} to {isMove ? "another" : "an"} entity.
+            {actionLabel} {selectedTransactions.length} transaction{selectedTransactions.length !== 1 ? "s" : ""} from current entity.
             {isMove && " They will be removed from the current entity."}
           </Dialog.Description>
 
           {error && (
             <div className="mt-3 p-2 rounded-md bg-red-500/10 border border-red-500/20 text-red-500 text-sm">
               {error}
+            </div>
+          )}
+
+          {/* Tab Switcher */}
+          {!showCreateForm && (
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => { setActiveTab("entities"); setSearchQuery("") }}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  activeTab === "entities"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border hover:bg-muted"
+                }`}
+              >
+                <UsersIcon className="h-4 w-4" />
+                Entities ({filteredEntities.length})
+              </button>
+              <button
+                onClick={() => { setActiveTab("stories"); setSearchQuery("") }}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  activeTab === "stories"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border hover:bg-muted"
+                }`}
+              >
+                <BookOpenIcon className="h-4 w-4" />
+                Stories ({filteredStories.length})
+              </button>
             </div>
           )}
 
@@ -171,42 +289,44 @@ export function MoveOrCopyToEntityModal({
               </div>
             ) : showCreateForm ? (
               <form onSubmit={handleCreateAndMoveOrCopy} className="space-y-4">
-                {/* Entity Type Toggle */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">Type</label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setNewEntityType("person")}
-                      className={`flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-                        newEntityType === "person"
-                          ? "border-blue-500 bg-blue-500/10 text-blue-500"
-                          : "border-border hover:bg-muted"
-                      }`}
-                    >
-                      <UserIcon className="h-4 w-4" />
-                      Person
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNewEntityType("business")}
-                      className={`flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-                        newEntityType === "business"
-                          ? "border-purple-500 bg-purple-500/10 text-purple-500"
-                          : "border-border hover:bg-muted"
-                      }`}
-                    >
-                      <BuildingIcon className="h-4 w-4" />
-                      Business
-                    </button>
+                {/* Entity Type Toggle (only for entities) */}
+                {activeTab === "entities" && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Type</label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewEntityType("person")}
+                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+                          newEntityType === "person"
+                            ? "border-blue-500 bg-blue-500/10 text-blue-500"
+                            : "border-border hover:bg-muted"
+                        }`}
+                      >
+                        <UserIcon className="h-4 w-4" />
+                        Person
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewEntityType("business")}
+                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+                          newEntityType === "business"
+                            ? "border-purple-500 bg-purple-500/10 text-purple-500"
+                            : "border-border hover:bg-muted"
+                        }`}
+                      >
+                        <BuildingIcon className="h-4 w-4" />
+                        Business
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Icon Picker (compact) */}
                 <div>
                   <label className="block text-sm font-medium mb-2">Icon</label>
                   <div className="grid grid-cols-8 gap-1.5">
-                    {EMOJI_OPTIONS.map((emoji) => (
+                    {currentEmojiOptions.map((emoji) => (
                       <button
                         key={emoji}
                         type="button"
@@ -225,15 +345,15 @@ export function MoveOrCopyToEntityModal({
 
                 {/* Name */}
                 <div>
-                  <label htmlFor="new-entity-name" className="block text-sm font-medium mb-1">
+                  <label htmlFor="new-item-name" className="block text-sm font-medium mb-1">
                     Name
                   </label>
                   <input
-                    id="new-entity-name"
+                    id="new-item-name"
                     type="text"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
-                    placeholder={newEntityType === "person" ? "e.g., John Doe" : "e.g., Amazon"}
+                    placeholder={activeTab === "entities" ? (newEntityType === "person" ? "e.g., John Doe" : "e.g., Amazon") : "e.g., Japan Trip 2024"}
                     className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                     autoFocus
                   />
@@ -267,7 +387,7 @@ export function MoveOrCopyToEntityModal({
                   </button>
                 </div>
               </form>
-            ) : (
+            ) : activeTab === "entities" ? (
               <div className="space-y-2">
                 {entities.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
@@ -276,34 +396,53 @@ export function MoveOrCopyToEntityModal({
                     <p className="text-sm mt-1">Create a new entity to {mode} transactions.</p>
                   </div>
                 ) : (
-                  entities.map((entity) => (
-                    <button
-                      key={entity.id}
-                      onClick={() => handleMoveOrCopy(entity.entity_id)}
-                      disabled={processingEntityId !== null}
-                      className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors disabled:opacity-50 text-left"
-                    >
-                      <span className="text-2xl">{entity.icon}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate flex items-center gap-1.5">
-                          {entity.name}
-                          {entity.entity_type === "person" ? (
-                            <UserIcon className="h-3.5 w-3.5 text-blue-500" />
-                          ) : (
-                            <BuildingIcon className="h-3.5 w-3.5 text-purple-500" />
-                          )}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {entity.transaction_count} transactions
-                        </p>
+                  <>
+                    {/* Search input */}
+                    <div className="relative mb-3">
+                      <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search entities..."
+                        className="w-full pl-9 pr-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                    {filteredEntities.length === 0 ? (
+                      <div className="text-center py-4 text-muted-foreground text-sm">
+                        No entities match "{searchQuery}"
                       </div>
-                      {processingEntityId === entity.entity_id ? (
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                      ) : (
-                        <ActionIcon className="h-5 w-5 text-muted-foreground" />
-                      )}
-                    </button>
-                  ))
+                    ) : (
+                      filteredEntities.map((entity) => (
+                        <button
+                          key={entity.id}
+                          onClick={() => handleMoveOrCopyToEntity(entity.entity_id)}
+                          disabled={processingId !== null}
+                          className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors disabled:opacity-50 text-left"
+                        >
+                          <span className="text-2xl">{entity.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate flex items-center gap-1.5">
+                              {entity.name}
+                              {entity.entity_type === "person" ? (
+                                <UserIcon className="h-3.5 w-3.5 text-blue-500" />
+                              ) : (
+                                <BuildingIcon className="h-3.5 w-3.5 text-purple-500" />
+                              )}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {entity.transaction_count} transactions
+                            </p>
+                          </div>
+                          {processingId === entity.entity_id ? (
+                            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                          ) : (
+                            <ActionIcon className="h-5 w-5 text-muted-foreground" />
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </>
                 )}
 
                 {/* Create New Entity Button */}
@@ -313,6 +452,66 @@ export function MoveOrCopyToEntityModal({
                 >
                   <PlusIcon className="h-4 w-4" />
                   Create New Entity
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {stories.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <BookOpenIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>No stories</p>
+                    <p className="text-sm mt-1">Create a new story to {mode} transactions.</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Search input */}
+                    <div className="relative mb-3">
+                      <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search stories..."
+                        className="w-full pl-9 pr-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                    {filteredStories.length === 0 ? (
+                      <div className="text-center py-4 text-muted-foreground text-sm">
+                        No stories match "{searchQuery}"
+                      </div>
+                    ) : (
+                      filteredStories.map((story) => (
+                        <button
+                          key={story.id}
+                          onClick={() => handleMoveOrCopyToStory(story.story_id)}
+                          disabled={processingId !== null}
+                          className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors disabled:opacity-50 text-left"
+                        >
+                          <span className="text-2xl">{story.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{story.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {story.transaction_count} transactions
+                            </p>
+                          </div>
+                          {processingId === story.story_id ? (
+                            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                          ) : (
+                            <ActionIcon className="h-5 w-5 text-muted-foreground" />
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </>
+                )}
+
+                {/* Create New Story Button */}
+                <button
+                  onClick={() => setShowCreateForm(true)}
+                  className="w-full flex items-center justify-center gap-2 p-3 rounded-lg border border-dashed border-border hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  Create New Story
                 </button>
               </div>
             )}

@@ -16,19 +16,28 @@ import {
   CopyIcon,
   TrendingUpIcon,
   TrendingDownIcon,
+  GitCompareIcon,
+  BookOpenIcon,
+  UsersIcon,
 } from "lucide-react"
 import * as Dialog from "@radix-ui/react-dialog"
+import * as Tooltip from "@radix-ui/react-tooltip"
 import { Footer } from "@/components/Footer"
 import { MoveOrCopyToStoryModal } from "@/components/stories/MoveOrCopyToStoryModal"
 import { CreateStoryModal } from "@/components/stories/CreateStoryModal"
+import { UnifiedCompareModal } from "@/components/shared/UnifiedCompareModal"
 import {
   fetchStory,
   updateStory,
   deleteStory,
   removeTransactionsFromStory,
+  getTransactionStories,
+  getTransactionEntities,
   type StoryDetail,
   type StoryTransaction,
   type TransactionRef,
+  type StoryBadge,
+  type EntityBadge,
 } from "@/lib/api"
 
 const EMOJI_OPTIONS = [
@@ -110,6 +119,11 @@ export function StoryDetailPage() {
   const [moveOrCopyModalOpen, setMoveOrCopyModalOpen] = useState(false)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false)
   const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+  const [compareModalOpen, setCompareModalOpen] = useState(false)
+
+  // Transaction stories and entities badges
+  const [transactionStories, setTransactionStories] = useState<Record<string, StoryBadge[]>>({})
+  const [transactionEntities, setTransactionEntities] = useState<Record<string, EntityBadge[]>>({})
 
   useEffect(() => {
     document.title = story ? `${story.name} | Stories | FinAccs` : "Story | FinAccs"
@@ -122,6 +136,24 @@ export function StoryDetailPage() {
       setStory(data)
       setEditedName(data.name)
       setEditedDescription(data.description)
+
+      // Fetch stories and entities badges for these transactions
+      if (data.transactions.length > 0) {
+        const transactionRefs = data.transactions.map(t => ({ type: t.type, id: t.id }))
+        try {
+          const [storiesData, entitiesData] = await Promise.all([
+            getTransactionStories(transactionRefs),
+            getTransactionEntities(transactionRefs),
+          ])
+          setTransactionStories(storiesData.transaction_stories)
+          setTransactionEntities(entitiesData.transaction_entities)
+        } catch (error) {
+          console.error("Failed to load transaction stories/entities", error)
+        }
+      } else {
+        setTransactionStories({})
+        setTransactionEntities({})
+      }
     } catch (err) {
       setError("Failed to load story")
       console.error(err)
@@ -321,7 +353,7 @@ export function StoryDetailPage() {
   }
 
   return (
-    <>
+    <Tooltip.Provider>
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Back link */}
         <Link
@@ -460,8 +492,15 @@ export function StoryDetailPage() {
               )}
             </div>
             <button
+              onClick={() => setCompareModalOpen(true)}
+              className="p-2 rounded-lg border border-border hover:bg-accent text-foreground transition-colors"
+              title="Compare with other stories or entities"
+            >
+              <GitCompareIcon className="h-5 w-5" />
+            </button>
+            <button
               onClick={() => setEditModalOpen(true)}
-              className="p-2 rounded-lg hover:bg-accent text-muted-foreground transition-colors"
+              className="p-2 rounded-lg border border-border hover:bg-accent text-foreground transition-colors"
               title="Edit story"
             >
               <PencilIcon className="h-5 w-5" />
@@ -591,8 +630,8 @@ export function StoryDetailPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-border bg-muted/30">
-                      <th className="text-center px-4 py-3 w-10">
+                    <tr className="border-y border-border">
+                      <th className="text-center px-3 py-3 w-10">
                         <input
                           type="checkbox"
                           checked={selectedKeys.size === story.transactions.length && story.transactions.length > 0}
@@ -600,30 +639,28 @@ export function StoryDetailPage() {
                           className="h-4 w-4 rounded border-border"
                         />
                       </th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-10">
+                      <th className="text-left px-3 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-14">
                         Type
                       </th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-28">
+                      <th className="text-left px-3 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-24">
                         Date
                       </th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      <th className="text-left px-3 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Description
                       </th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-32">
+                      <th className="text-left px-3 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-28">
                         Category
                       </th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-32">
+                      <th className="text-left px-3 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-20">
                         Source
                       </th>
-                      <th className="text-center px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-16">
+                      <th className="text-center px-3 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-20">
                         Link
                       </th>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-32">
+                      <th className="text-right px-3 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-28">
                         Amount
                       </th>
-                      <th className="text-center px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-12">
-
-                      </th>
+                      <th className="w-10"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -632,7 +669,7 @@ export function StoryDetailPage() {
                         key={`${txn.type}-${txn.id}`}
                         className={`hover:bg-muted/30 transition-colors ${selectedKeys.has(getTxnKey(txn)) ? "bg-primary/5" : ""}`}
                       >
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-3 py-3 text-center">
                           <input
                             type="checkbox"
                             checked={selectedKeys.has(getTxnKey(txn))}
@@ -641,7 +678,7 @@ export function StoryDetailPage() {
                             className="h-4 w-4 rounded border-border"
                           />
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3">
                           {txn.type === "bank" ? (
                             <span title="Bank Transaction">
                               <LandmarkIcon className="h-4 w-4 text-blue-500" />
@@ -652,26 +689,96 @@ export function StoryDetailPage() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                        <td className="px-3 py-3 text-muted-foreground whitespace-nowrap">
                           {formatDate(txn.date)}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3">
                           <span className="truncate block max-w-md" title={txn.description}>
                             {txn.description}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3">
                           <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground">
                             {txn.category || "Uncategorized"}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs">
+                        <td className="px-3 py-3 text-muted-foreground text-xs">
                           {txn.source}
                         </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
+                        <td className="px-3 py-3 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            {/* Other Stories (excluding current story) */}
+                            {transactionStories[`${txn.type}:${txn.id}`]?.filter(s => s.story_id !== storyId).length > 0 && (
+                              <Tooltip.Root>
+                                <Tooltip.Trigger asChild>
+                                  <button className="p-1 rounded hover:bg-muted transition-colors">
+                                    <BookOpenIcon className="h-4 w-4 text-blue-500" />
+                                  </button>
+                                </Tooltip.Trigger>
+                                <Tooltip.Portal>
+                                  <Tooltip.Content
+                                    className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-sm max-w-xs z-50"
+                                    sideOffset={4}
+                                  >
+                                    <p className="font-medium mb-1">Also in Stories</p>
+                                    <div className="space-y-1">
+                                      {transactionStories[`${txn.type}:${txn.id}`]
+                                        .filter(s => s.story_id !== storyId)
+                                        .map(s => (
+                                          <Link
+                                            key={s.story_id}
+                                            to={`/stories/${s.story_id}`}
+                                            className="flex items-center gap-1.5 hover:text-primary"
+                                          >
+                                            <span>{s.icon}</span>
+                                            <span className="text-muted-foreground hover:text-primary">{s.name}</span>
+                                          </Link>
+                                        ))}
+                                    </div>
+                                    <Tooltip.Arrow className="fill-card" />
+                                  </Tooltip.Content>
+                                </Tooltip.Portal>
+                              </Tooltip.Root>
+                            )}
+                            {/* Entities */}
+                            {transactionEntities[`${txn.type}:${txn.id}`]?.length > 0 && (
+                              <Tooltip.Root>
+                                <Tooltip.Trigger asChild>
+                                  <button className="p-1 rounded hover:bg-muted transition-colors">
+                                    <UsersIcon className="h-4 w-4 text-purple-500" />
+                                  </button>
+                                </Tooltip.Trigger>
+                                <Tooltip.Portal>
+                                  <Tooltip.Content
+                                    className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-sm max-w-xs z-50"
+                                    sideOffset={4}
+                                  >
+                                    <p className="font-medium mb-1">Entities</p>
+                                    <div className="space-y-1">
+                                      {transactionEntities[`${txn.type}:${txn.id}`].map(e => (
+                                        <Link
+                                          key={e.entity_id}
+                                          to={`/entities/${e.entity_id}`}
+                                          className="flex items-center gap-1.5 hover:text-primary"
+                                        >
+                                          <span>{e.icon}</span>
+                                          <span className="text-muted-foreground hover:text-primary">{e.name}</span>
+                                        </Link>
+                                      ))}
+                                    </div>
+                                    <Tooltip.Arrow className="fill-card" />
+                                  </Tooltip.Content>
+                                </Tooltip.Portal>
+                              </Tooltip.Root>
+                            )}
+                            {/* Show dash if no other stories or entities */}
+                            {!transactionStories[`${txn.type}:${txn.id}`]?.filter(s => s.story_id !== storyId).length &&
+                             !transactionEntities[`${txn.type}:${txn.id}`]?.length && (
+                              <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
+                            )}
+                          </div>
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-3 py-3 text-right">
                           {txn.amount >= 0 ? (
                             <span className="text-(--color-expense) font-medium flex items-center justify-end gap-1">
                               <FormattedCurrency amount={Math.abs(txn.amount)} />
@@ -684,7 +791,7 @@ export function StoryDetailPage() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-3 py-3 text-center">
                           <button
                             onClick={() => handleRemoveTransaction(txn)}
                             disabled={removingId?.type === txn.type && removingId?.id === txn.id}
@@ -776,7 +883,14 @@ export function StoryDetailPage() {
         isDeleting={isDeleting}
       />
 
+      {/* Compare Modal */}
+      <UnifiedCompareModal
+        open={compareModalOpen}
+        onOpenChange={setCompareModalOpen}
+        initialStoryId={storyId}
+      />
+
       <Footer />
-    </>
+    </Tooltip.Provider>
   )
 }
