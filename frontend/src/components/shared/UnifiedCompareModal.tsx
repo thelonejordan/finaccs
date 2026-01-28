@@ -228,19 +228,18 @@ export function UnifiedCompareModal({
 
       // Find common transactions (intersection of all sets)
       const allItemKeys = Array.from(itemTransactionSets.keys())
-      let commonKeys: Set<string> | null = null
+      let commonKeys: Set<string> = new Set()
 
-      allItemKeys.forEach(itemKey => {
-        const txnKeys = itemTransactionSets.get(itemKey)!
-        if (commonKeys === null) {
-          commonKeys = new Set(txnKeys)
-        } else {
+      if (allItemKeys.length > 0) {
+        commonKeys = new Set(itemTransactionSets.get(allItemKeys[0])!)
+        for (let i = 1; i < allItemKeys.length; i++) {
+          const txnKeys = itemTransactionSets.get(allItemKeys[i])!
           commonKeys = new Set([...commonKeys].filter(k => txnKeys.has(k)))
         }
-      })
+      }
 
       const commonTransactions: TransactionItem[] = []
-      commonKeys?.forEach(key => {
+      commonKeys.forEach(key => {
         const txn = allTransactions.get(key)
         if (txn) commonTransactions.push(txn)
       })
@@ -250,7 +249,7 @@ export function UnifiedCompareModal({
 
       allItemKeys.forEach(itemKey => {
         const txnKeys = itemTransactionSets.get(itemKey)!
-        const uniqueKeys = [...txnKeys].filter(k => !commonKeys?.has(k))
+        const uniqueKeys = [...txnKeys].filter(k => !commonKeys.has(k))
         uniqueTransactions[itemKey] = uniqueKeys
           .map(k => allTransactions.get(k)!)
           .filter(Boolean)
