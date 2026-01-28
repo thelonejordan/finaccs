@@ -647,10 +647,13 @@ export function EntityDetailPage() {
                       <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-32">
                         Source
                       </th>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-28">
+                      <th className="text-center px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-16">
+                        Link
+                      </th>
+                      <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-32">
                         Amount
                       </th>
-                      <th className="text-center px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-16">
+                      <th className="text-center px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-12">
 
                       </th>
                     </tr>
@@ -697,17 +700,27 @@ export function EntityDetailPage() {
                         <td className="px-4 py-3 text-muted-foreground text-xs">
                           {txn.source}
                         </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
+                        </td>
                         <td className="px-4 py-3 text-right">
-                          <FormattedCurrency
-                            amount={Math.abs(txn.amount)}
-                            className={txn.amount >= 0 ? "text-red-500" : "text-green-500"}
-                          />
+                          {txn.amount >= 0 ? (
+                            <span className="text-(--color-expense) font-medium flex items-center justify-end gap-1">
+                              <FormattedCurrency amount={Math.abs(txn.amount)} />
+                              <ArrowDownIcon className="h-3 w-3 flex-shrink-0" />
+                            </span>
+                          ) : (
+                            <span className="text-(--color-income) font-medium flex items-center justify-end gap-1">
+                              <FormattedCurrency amount={Math.abs(txn.amount)} />
+                              <ArrowUpIcon className="h-3 w-3 flex-shrink-0" />
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <button
                             onClick={() => handleRemoveTransaction(txn)}
                             disabled={removingId?.type === txn.type && removingId?.id === txn.id}
-                            className="p-1 rounded hover:bg-red-500/10 text-red-500 disabled:opacity-50"
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors disabled:opacity-50"
                             title="Remove from entity"
                           >
                             {removingId?.type === txn.type && removingId?.id === txn.id ? (
