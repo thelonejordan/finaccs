@@ -150,3 +150,4 @@ def bulk_transform_artifacts(extraction_artifacts, transformer_name: Optional[st
 from . import icici_cc_transactions
 from . import bank_transactions
 from . import legacy_cc_transactions
+from . import slice_cc_transactions
