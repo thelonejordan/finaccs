@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import * as Dialog from "@radix-ui/react-dialog"
-import { XIcon, PlusIcon, CheckIcon, UsersIcon, UserIcon, BuildingIcon } from "lucide-react"
+import { XIcon, PlusIcon, CheckIcon, UsersIcon, UserIcon, BuildingIcon, SearchIcon } from "lucide-react"
 import {
   fetchEntities,
   addTransactionsToEntity,
@@ -43,12 +43,20 @@ export function AddToEntityModal({
   const [addingToEntityId, setAddingToEntityId] = useState<string | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
 
   // Create form state
   const [newName, setNewName] = useState("")
   const [newIcon, setNewIcon] = useState("👤")
   const [newEntityType, setNewEntityType] = useState<EntityType>("person")
   const [isCreating, setIsCreating] = useState(false)
+
+  // Filter entities based on search query
+  const filteredEntities = useMemo(() => {
+    if (!searchQuery.trim()) return entities
+    const query = searchQuery.toLowerCase()
+    return entities.filter(entity => entity.name.toLowerCase().includes(query))
+  }, [entities, searchQuery])
 
   useEffect(() => {
     if (open) {
@@ -58,6 +66,7 @@ export function AddToEntityModal({
       setNewIcon("👤")
       setNewEntityType("person")
       setError(null)
+      setSearchQuery("")
     }
   }, [open])
 
@@ -249,34 +258,53 @@ export function AddToEntityModal({
                     <p className="text-sm mt-1">Create your first entity below.</p>
                   </div>
                 ) : (
-                  entities.map((entity) => (
-                    <button
-                      key={entity.id}
-                      onClick={() => handleAddToEntity(entity.entity_id)}
-                      disabled={addingToEntityId !== null}
-                      className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors disabled:opacity-50 text-left"
-                    >
-                      <span className="text-2xl">{entity.icon}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate flex items-center gap-1.5">
-                          {entity.name}
-                          {entity.entity_type === "person" ? (
-                            <UserIcon className="h-3.5 w-3.5 text-blue-500" />
-                          ) : (
-                            <BuildingIcon className="h-3.5 w-3.5 text-purple-500" />
-                          )}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {entity.transaction_count} transactions
-                        </p>
+                  <>
+                    {/* Search input */}
+                    <div className="relative mb-3">
+                      <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search entities..."
+                        className="w-full pl-9 pr-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                    {filteredEntities.length === 0 ? (
+                      <div className="text-center py-4 text-muted-foreground text-sm">
+                        No entities match "{searchQuery}"
                       </div>
-                      {addingToEntityId === entity.entity_id ? (
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                      ) : (
-                        <CheckIcon className="h-5 w-5 text-muted-foreground" />
-                      )}
-                    </button>
-                  ))
+                    ) : (
+                      filteredEntities.map((entity) => (
+                        <button
+                          key={entity.id}
+                          onClick={() => handleAddToEntity(entity.entity_id)}
+                          disabled={addingToEntityId !== null}
+                          className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors disabled:opacity-50 text-left"
+                        >
+                          <span className="text-2xl">{entity.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate flex items-center gap-1.5">
+                              {entity.name}
+                              {entity.entity_type === "person" ? (
+                                <UserIcon className="h-3.5 w-3.5 text-blue-500" />
+                              ) : (
+                                <BuildingIcon className="h-3.5 w-3.5 text-purple-500" />
+                              )}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {entity.transaction_count} transactions
+                            </p>
+                          </div>
+                          {addingToEntityId === entity.entity_id ? (
+                            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                          ) : (
+                            <CheckIcon className="h-5 w-5 text-muted-foreground" />
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </>
                 )}
 
                 {/* Create New Entity Button */}

@@ -48,6 +48,8 @@ import {
   deleteCCPaymentMatch,
   fetchSuggestionsForBankTransaction,
   createCCPaymentMatch,
+  getTransactionStories,
+  getTransactionEntities,
   type Transaction,
   type CategoryData,
   type BankAccount,
@@ -58,6 +60,8 @@ import {
   type DateRangeFilters,
   type CCPaymentSuggestion,
   type CCPaymentMatchInfo,
+  type StoryBadge,
+  type EntityBadge,
 } from "@/lib/api"
 
 const MONTH_NAMES = [
@@ -775,6 +779,10 @@ export function BankTransactionsPage() {
   const [bulkCategoryUpdating, setBulkCategoryUpdating] = useState(false)
   const lastSelectedIndexRef = useRef<number | null>(null)
 
+  // Transaction stories and entities
+  const [transactionStories, setTransactionStories] = useState<Record<string, StoryBadge[]>>({})
+  const [transactionEntities, setTransactionEntities] = useState<Record<string, EntityBadge[]>>({})
+
   // Date range state - initialize from URL
   const [dateRange, setDateRange] = useState<DateRange | null>(null)
   const [fullDateRange, setFullDateRange] = useState<DateRange | null>(null)
@@ -1117,6 +1125,24 @@ export function BankTransactionsPage() {
         setTransactions(data.data)
         setTotal(data.total)
         setStats(data.stats)
+
+        // Fetch stories and entities for these transactions
+        if (data.data.length > 0) {
+          const transactionRefs = data.data.map(t => ({ type: 'bank' as const, id: t.id }))
+          try {
+            const [storiesData, entitiesData] = await Promise.all([
+              getTransactionStories(transactionRefs),
+              getTransactionEntities(transactionRefs),
+            ])
+            setTransactionStories(storiesData.transaction_stories)
+            setTransactionEntities(entitiesData.transaction_entities)
+          } catch (error) {
+            logError("Failed to load transaction stories/entities", error)
+          }
+        } else {
+          setTransactionStories({})
+          setTransactionEntities({})
+        }
       } catch (error) {
         logError("Failed to load transactions", error)
       } finally {
@@ -1198,12 +1224,32 @@ export function BankTransactionsPage() {
     }
   }
 
-  const handleAddedToStory = () => {
+  const handleAddedToStory = async () => {
     setSelectedIds(new Set())
+    // Refresh stories for current transactions
+    if (transactions.length > 0) {
+      const transactionRefs = transactions.map(t => ({ type: 'bank' as const, id: t.id }))
+      try {
+        const storiesData = await getTransactionStories(transactionRefs)
+        setTransactionStories(storiesData.transaction_stories)
+      } catch (error) {
+        logError("Failed to refresh transaction stories", error)
+      }
+    }
   }
 
-  const handleAddedToEntity = () => {
+  const handleAddedToEntity = async () => {
     setSelectedIds(new Set())
+    // Refresh entities for current transactions
+    if (transactions.length > 0) {
+      const transactionRefs = transactions.map(t => ({ type: 'bank' as const, id: t.id }))
+      try {
+        const entitiesData = await getTransactionEntities(transactionRefs)
+        setTransactionEntities(entitiesData.transaction_entities)
+      } catch (error) {
+        logError("Failed to refresh transaction entities", error)
+      }
+    }
   }
 
   const handleBulkCategoryChange = async (newCategory: string) => {
@@ -1258,7 +1304,7 @@ export function BankTransactionsPage() {
   }
 
   return (
-    <>
+    <Tooltip.Provider>
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Page Header */}
         <header className="mb-8 flex items-center justify-between">
@@ -1931,22 +1977,81 @@ export function BankTransactionsPage() {
                               disabled={updatingId === t.id}
                             />
                           </td>
-                          <td className="px-3 py-3 align-middle text-center">
-                            {t.category === "Self Transfer" ? (
-                              <LinkDialog
-                                transaction={t}
-                                onLink={(linkToId) => handleLink(t.id, linkToId)}
-                                onUnlink={() => handleUnlink(t.id)}
-                              />
-                            ) : t.category === "Credit Card Payment" ? (
-                              <CCPaymentLinkDialog
-                                transaction={t}
-                                onUnlink={() => t.cc_payment_match && handleUnlinkCCPayment(t.cc_payment_match.id, t.id)}
-                                onMatchConfirmed={(match) => handleCCPaymentMatchConfirmed(t.id, match)}
-                              />
-                            ) : (
-                              <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
-                            )}
+                          <td className="px-3 py-3 align-middle">
+                            <div className="flex items-center justify-center gap-1">
+                              {t.category === "Self Transfer" ? (
+                                <LinkDialog
+                                  transaction={t}
+                                  onLink={(linkToId) => handleLink(t.id, linkToId)}
+                                  onUnlink={() => handleUnlink(t.id)}
+                                />
+                              ) : t.category === "Credit Card Payment" ? (
+                                <CCPaymentLinkDialog
+                                  transaction={t}
+                                  onUnlink={() => t.cc_payment_match && handleUnlinkCCPayment(t.cc_payment_match.id, t.id)}
+                                  onMatchConfirmed={(match) => handleCCPaymentMatchConfirmed(t.id, match)}
+                                />
+                              ) : null}
+                              {/* Stories icon */}
+                              {transactionStories[`bank:${t.id}`]?.length > 0 && (
+                                <Tooltip.Root>
+                                  <Tooltip.Trigger asChild>
+                                    <button className="p-1 rounded hover:bg-muted transition-colors">
+                                      <BookOpenIcon className="h-4 w-4 text-blue-500" />
+                                    </button>
+                                  </Tooltip.Trigger>
+                                  <Tooltip.Portal>
+                                    <Tooltip.Content
+                                      className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-sm max-w-xs z-50"
+                                      sideOffset={4}
+                                    >
+                                      <p className="font-medium mb-1">Stories</p>
+                                      <div className="space-y-1">
+                                        {transactionStories[`bank:${t.id}`].map(s => (
+                                          <div key={s.story_id} className="flex items-center gap-1.5">
+                                            <span>{s.icon}</span>
+                                            <span className="text-muted-foreground">{s.name}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                      <Tooltip.Arrow className="fill-card" />
+                                    </Tooltip.Content>
+                                  </Tooltip.Portal>
+                                </Tooltip.Root>
+                              )}
+                              {/* Entities icon */}
+                              {transactionEntities[`bank:${t.id}`]?.length > 0 && (
+                                <Tooltip.Root>
+                                  <Tooltip.Trigger asChild>
+                                    <button className="p-1 rounded hover:bg-muted transition-colors">
+                                      <UsersIcon className="h-4 w-4 text-purple-500" />
+                                    </button>
+                                  </Tooltip.Trigger>
+                                  <Tooltip.Portal>
+                                    <Tooltip.Content
+                                      className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-sm max-w-xs z-50"
+                                      sideOffset={4}
+                                    >
+                                      <p className="font-medium mb-1">Entities</p>
+                                      <div className="space-y-1">
+                                        {transactionEntities[`bank:${t.id}`].map(e => (
+                                          <div key={e.entity_id} className="flex items-center gap-1.5">
+                                            <span>{e.icon}</span>
+                                            <span className="text-muted-foreground">{e.name}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                      <Tooltip.Arrow className="fill-card" />
+                                    </Tooltip.Content>
+                                  </Tooltip.Portal>
+                                </Tooltip.Root>
+                              )}
+                              {/* Show dash if no links, stories, or entities */}
+                              {t.category !== "Self Transfer" && t.category !== "Credit Card Payment" &&
+                               !transactionStories[`bank:${t.id}`]?.length && !transactionEntities[`bank:${t.id}`]?.length && (
+                                <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-4 py-3 align-middle text-right">
                             {t.credit > 0 ? (
@@ -2014,6 +2119,6 @@ export function BankTransactionsPage() {
       />
 
       <Footer />
-    </>
+    </Tooltip.Provider>
   )
 }

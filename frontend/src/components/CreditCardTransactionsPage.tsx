@@ -43,6 +43,8 @@ import {
   deleteCCPaymentMatch,
   fetchSuggestionsForCCTransaction,
   createCCPaymentMatch,
+  getTransactionStories,
+  getTransactionEntities,
   type CreditCard,
   type CreditCardTransaction,
   type CreditCardTransactionStats,
@@ -51,6 +53,8 @@ import {
   type DateRange,
   type CCPaymentBankSuggestion,
   type BankPaymentMatchInfo,
+  type StoryBadge,
+  type EntityBadge,
 } from "@/lib/api"
 
 const MONTH_NAMES = [
@@ -525,6 +529,8 @@ const TransactionRow = memo(function TransactionRow({
   isSelected,
   isUpdating,
   categories,
+  stories,
+  entities,
   onSelect,
   onCategoryChange,
   onUnlink,
@@ -534,6 +540,8 @@ const TransactionRow = memo(function TransactionRow({
   isSelected: boolean
   isUpdating: boolean
   categories: CreditCardCategoryData[]
+  stories: StoryBadge[]
+  entities: EntityBadge[]
   onSelect: (id: number, event: React.MouseEvent) => void
   onCategoryChange: (transactionId: number, newCategory: string) => void
   onUnlink: (matchId: number, transactionId: number) => void
@@ -615,16 +623,75 @@ const TransactionRow = memo(function TransactionRow({
           disabled={isUpdating}
         />
       </td>
-      <td className="px-3 py-3 align-middle text-center">
-        {t.bank_payment_match || t.category === 'Credit Card Payment' ? (
-          <BankPaymentLinkDialog
-            transaction={t}
-            onUnlink={() => t.bank_payment_match && onUnlink(t.bank_payment_match.id, t.id)}
-            onMatchConfirmed={(match) => onMatchConfirmed(t.id, match)}
-          />
-        ) : (
-          <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
-        )}
+      <td className="px-3 py-3 align-middle">
+        <div className="flex items-center justify-center gap-1">
+          {(t.bank_payment_match || t.category === 'Credit Card Payment') && (
+            <BankPaymentLinkDialog
+              transaction={t}
+              onUnlink={() => t.bank_payment_match && onUnlink(t.bank_payment_match.id, t.id)}
+              onMatchConfirmed={(match) => onMatchConfirmed(t.id, match)}
+            />
+          )}
+          {/* Stories icon */}
+          {stories.length > 0 && (
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
+                <button className="p-1 rounded hover:bg-muted transition-colors">
+                  <BookOpenIcon className="h-4 w-4 text-blue-500" />
+                </button>
+              </Tooltip.Trigger>
+              <Tooltip.Portal>
+                <Tooltip.Content
+                  className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-sm max-w-xs z-50"
+                  sideOffset={4}
+                >
+                  <p className="font-medium mb-1">Stories</p>
+                  <div className="space-y-1">
+                    {stories.map(s => (
+                      <div key={s.story_id} className="flex items-center gap-1.5">
+                        <span>{s.icon}</span>
+                        <span className="text-muted-foreground">{s.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <Tooltip.Arrow className="fill-card" />
+                </Tooltip.Content>
+              </Tooltip.Portal>
+            </Tooltip.Root>
+          )}
+          {/* Entities icon */}
+          {entities.length > 0 && (
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
+                <button className="p-1 rounded hover:bg-muted transition-colors">
+                  <UsersIcon className="h-4 w-4 text-purple-500" />
+                </button>
+              </Tooltip.Trigger>
+              <Tooltip.Portal>
+                <Tooltip.Content
+                  className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-sm max-w-xs z-50"
+                  sideOffset={4}
+                >
+                  <p className="font-medium mb-1">Entities</p>
+                  <div className="space-y-1">
+                    {entities.map(e => (
+                      <div key={e.entity_id} className="flex items-center gap-1.5">
+                        <span>{e.icon}</span>
+                        <span className="text-muted-foreground">{e.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <Tooltip.Arrow className="fill-card" />
+                </Tooltip.Content>
+              </Tooltip.Portal>
+            </Tooltip.Root>
+          )}
+          {/* Show dash if no links, stories, or entities */}
+          {!t.bank_payment_match && t.category !== 'Credit Card Payment' &&
+           stories.length === 0 && entities.length === 0 && (
+            <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
+          )}
+        </div>
       </td>
       <td className="px-4 py-3 align-middle text-right text-sm text-muted-foreground">
         {t.intl_amount > 0 ? (
@@ -684,6 +751,10 @@ export function CreditCardTransactionsPage() {
   const [bulkCategoryOpen, setBulkCategoryOpen] = useState(false)
   const [bulkCategoryUpdating, setBulkCategoryUpdating] = useState(false)
   const lastSelectedIndexRef = useRef<number | null>(null)
+
+  // Transaction stories and entities
+  const [transactionStories, setTransactionStories] = useState<Record<string, StoryBadge[]>>({})
+  const [transactionEntities, setTransactionEntities] = useState<Record<string, EntityBadge[]>>({})
 
   // Date range state - initialize from URL
   const [dateRange, setDateRange] = useState<DateRange | null>(null)
@@ -997,6 +1068,24 @@ export function CreditCardTransactionsPage() {
         setTotal(data.total)
         setStats(data.stats)
         setAvailableDataSources(data.available_data_sources || [])
+
+        // Fetch stories and entities for these transactions
+        if (data.data.length > 0) {
+          const transactionRefs = data.data.map(t => ({ type: 'credit_card' as const, id: t.id }))
+          try {
+            const [storiesData, entitiesData] = await Promise.all([
+              getTransactionStories(transactionRefs),
+              getTransactionEntities(transactionRefs),
+            ])
+            setTransactionStories(storiesData.transaction_stories)
+            setTransactionEntities(entitiesData.transaction_entities)
+          } catch (error) {
+            logError("Failed to load transaction stories/entities", error)
+          }
+        } else {
+          setTransactionStories({})
+          setTransactionEntities({})
+        }
       } catch (error) {
         logError("Failed to load transactions", error)
       } finally {
@@ -1078,12 +1167,32 @@ export function CreditCardTransactionsPage() {
     }
   }, [transactions, selectedIds])
 
-  const handleAddedToStory = () => {
+  const handleAddedToStory = async () => {
     setSelectedIds(new Set())
+    // Refresh stories for current transactions
+    if (transactions.length > 0) {
+      const transactionRefs = transactions.map(t => ({ type: 'credit_card' as const, id: t.id }))
+      try {
+        const storiesData = await getTransactionStories(transactionRefs)
+        setTransactionStories(storiesData.transaction_stories)
+      } catch (error) {
+        logError("Failed to refresh transaction stories", error)
+      }
+    }
   }
 
-  const handleAddedToEntity = () => {
+  const handleAddedToEntity = async () => {
     setSelectedIds(new Set())
+    // Refresh entities for current transactions
+    if (transactions.length > 0) {
+      const transactionRefs = transactions.map(t => ({ type: 'credit_card' as const, id: t.id }))
+      try {
+        const entitiesData = await getTransactionEntities(transactionRefs)
+        setTransactionEntities(entitiesData.transaction_entities)
+      } catch (error) {
+        logError("Failed to refresh transaction entities", error)
+      }
+    }
   }
 
   const handleBulkCategoryChange = async (newCategory: string) => {
@@ -1141,7 +1250,7 @@ export function CreditCardTransactionsPage() {
   }
 
   return (
-    <>
+    <Tooltip.Provider>
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Page Header */}
         <header className="mb-8 flex items-center justify-between">
@@ -1757,6 +1866,8 @@ export function CreditCardTransactionsPage() {
                           isSelected={selectedIds.has(t.id)}
                           isUpdating={updatingId === t.id}
                           categories={categories}
+                          stories={transactionStories[`credit_card:${t.id}`] || []}
+                          entities={transactionEntities[`credit_card:${t.id}`] || []}
                           onSelect={handleSelect}
                           onCategoryChange={handleCategoryChange}
                           onUnlink={handleUnlinkBankPayment}
@@ -1811,6 +1922,6 @@ export function CreditCardTransactionsPage() {
       />
 
       <Footer />
-    </>
+    </Tooltip.Provider>
   )
 }

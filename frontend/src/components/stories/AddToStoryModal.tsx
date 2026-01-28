@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import * as Dialog from "@radix-ui/react-dialog"
-import { XIcon, PlusIcon, CheckIcon, BookOpenIcon } from "lucide-react"
+import { XIcon, PlusIcon, CheckIcon, BookOpenIcon, SearchIcon } from "lucide-react"
 import {
   fetchStories,
   addTransactionsToStory,
@@ -44,11 +44,19 @@ export function AddToStoryModal({
   const [addingToStoryId, setAddingToStoryId] = useState<string | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
 
   // Create form state
   const [newName, setNewName] = useState("")
   const [newIcon, setNewIcon] = useState("💰")
   const [isCreating, setIsCreating] = useState(false)
+
+  // Filter stories based on search query
+  const filteredStories = useMemo(() => {
+    if (!searchQuery.trim()) return stories
+    const query = searchQuery.toLowerCase()
+    return stories.filter(story => story.name.toLowerCase().includes(query))
+  }, [stories, searchQuery])
 
   useEffect(() => {
     if (open) {
@@ -57,6 +65,7 @@ export function AddToStoryModal({
       setNewName("")
       setNewIcon("💰")
       setError(null)
+      setSearchQuery("")
     }
   }, [open])
 
@@ -211,27 +220,46 @@ export function AddToStoryModal({
                     <p className="text-sm mt-1">Create your first story below.</p>
                   </div>
                 ) : (
-                  stories.map((story) => (
-                    <button
-                      key={story.id}
-                      onClick={() => handleAddToStory(story.story_id)}
-                      disabled={addingToStoryId !== null}
-                      className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors disabled:opacity-50 text-left"
-                    >
-                      <span className="text-2xl">{story.icon}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{story.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {story.transaction_count} transactions
-                        </p>
+                  <>
+                    {/* Search input */}
+                    <div className="relative mb-3">
+                      <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search stories..."
+                        className="w-full pl-9 pr-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                    {filteredStories.length === 0 ? (
+                      <div className="text-center py-4 text-muted-foreground text-sm">
+                        No stories match "{searchQuery}"
                       </div>
-                      {addingToStoryId === story.story_id ? (
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                      ) : (
-                        <CheckIcon className="h-5 w-5 text-muted-foreground" />
-                      )}
-                    </button>
-                  ))
+                    ) : (
+                      filteredStories.map((story) => (
+                        <button
+                          key={story.id}
+                          onClick={() => handleAddToStory(story.story_id)}
+                          disabled={addingToStoryId !== null}
+                          className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors disabled:opacity-50 text-left"
+                        >
+                          <span className="text-2xl">{story.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{story.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {story.transaction_count} transactions
+                            </p>
+                          </div>
+                          {addingToStoryId === story.story_id ? (
+                            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                          ) : (
+                            <CheckIcon className="h-5 w-5 text-muted-foreground" />
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </>
                 )}
 
                 {/* Create New Story Button */}
