@@ -115,6 +115,7 @@ export function UnifiedCompareModal({
     if (open) {
       loadData()
       setSearchQuery("")
+      setSelectedItems([])
       setComparisonResult(null)
       setActiveResultTab("common")
     }
@@ -122,7 +123,7 @@ export function UnifiedCompareModal({
 
   // Pre-select initial item when data loads
   useEffect(() => {
-    if (!loading && (initialStoryId || initialEntityId)) {
+    if (open && !loading && (initialStoryId || initialEntityId)) {
       const items: SelectedItem[] = []
 
       if (initialStoryId) {
@@ -153,7 +154,7 @@ export function UnifiedCompareModal({
         setSelectedItems(items)
       }
     }
-  }, [loading, initialStoryId, initialEntityId, stories, entities])
+  }, [open, loading, initialStoryId, initialEntityId, stories, entities])
 
   const loadData = async () => {
     setLoading(true)
