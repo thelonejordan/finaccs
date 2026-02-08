@@ -23,6 +23,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/payments": "Payments",
   "/anomalies": "Anomalies",
   "/activity": "Activity",
+  "/entities": "Entities",
 }
 
 const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
