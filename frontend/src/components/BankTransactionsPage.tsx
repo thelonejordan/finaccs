@@ -339,9 +339,10 @@ function LinkDialog({
                   <p className="text-sm text-muted-foreground line-clamp-3 mb-1">{transaction.linked_transaction?.narration}</p>
                   <p className="text-sm flex items-center gap-1">
                     {transaction.linked_transaction?.bank_account} •{" "}
-                    <span className="text-green-600 dark:text-green-400 inline-flex items-center gap-0.5">
+                    {/* Linked transaction should be opposite of current: if current is credit, linked is debit (and vice versa) */}
+                    <span className={`inline-flex items-center gap-0.5 ${transaction.credit > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
                       <FormattedCurrency amount={transaction.linked_transaction?.amount || 0} />
-                      <ArrowUpIcon className="h-3 w-3" />
+                      {transaction.credit > 0 ? <ArrowDownIcon className="h-3 w-3" /> : <ArrowUpIcon className="h-3 w-3" />}
                     </span>
                   </p>
                 </div>
