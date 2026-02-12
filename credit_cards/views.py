@@ -288,7 +288,11 @@ def _apply_cc_transaction_filters(transactions, request):
 
     category = request.GET.get('category')
     if category:
-        transactions = transactions.filter(category=category)
+        # For resolved transactions, check if ANY member has the category
+        transactions = transactions.filter(
+            Q(category=category) |
+            Q(resolved_transaction__credit_card_transactions__category=category)
+        ).distinct()
 
     transaction_type = request.GET.get('type')
     if transaction_type == 'charge':
@@ -305,9 +309,12 @@ def _apply_cc_transaction_filters(transactions, request):
 
     search = request.GET.get('search')
     if search:
+        # For resolved transactions, also search in member transaction categories
         transactions = transactions.filter(
-            Q(description__icontains=search) | Q(category__icontains=search)
-        )
+            Q(description__icontains=search) |
+            Q(category__icontains=search) |
+            Q(resolved_transaction__credit_card_transactions__category__icontains=search)
+        ).distinct()
 
     return transactions
 
@@ -370,6 +377,17 @@ def _serialize_cc_transaction(t):
     except (AttributeError, ObjectDoesNotExist):
         pass
 
+    # Aggregate category from resolved member transactions if primary has none
+    aggregated_category = t.category
+    if not aggregated_category and t.resolved_transaction:
+        try:
+            for member in t.resolved_transaction.credit_card_transactions.all():
+                if member.category:
+                    aggregated_category = member.category
+                    break
+        except (AttributeError, ObjectDoesNotExist):
+            pass
+
     return {
         'id': t.id,
         'date': t.date.isoformat(),
@@ -378,7 +396,7 @@ def _serialize_cc_transaction(t):
         'intl_amount': float(t.intl_amount),
         'intl_currency': t.intl_currency,
         'exchange_rate': float(t.exchange_rate) if t.exchange_rate else None,
-        'category': t.category,
+        'category': aggregated_category,
         'credit_card': {'id': t.credit_card.id, 'nickname': t.credit_card.nickname} if t.credit_card else None,
         'source_file': source_file_data,
         'bank_payment_match': bank_match_data,
@@ -437,6 +455,9 @@ def credit_card_transactions(request):
         'bank_payment_match',
         'bank_payment_match__bank_transaction',
         'bank_payment_match__bank_transaction__bank_account',
+        'resolved_transaction',
+    ).prefetch_related(
+        'resolved_transaction__credit_card_transactions',
     )
 
     transactions = _apply_cc_transaction_filters(transactions, request)
@@ -500,7 +521,11 @@ def credit_card_date_range(request):
 
     category = request.GET.get('category')
     if category:
-        transactions = transactions.filter(category=category)
+        # For resolved transactions, check if ANY member has the category
+        transactions = transactions.filter(
+            Q(category=category) |
+            Q(resolved_transaction__credit_card_transactions__category=category)
+        ).distinct()
 
     transaction_type = request.GET.get('type')
     if transaction_type == 'payment':
@@ -510,7 +535,12 @@ def credit_card_date_range(request):
 
     search = request.GET.get('search')
     if search:
-        transactions = transactions.filter(description__icontains=search)
+        # For resolved transactions, also search in member transaction categories
+        transactions = transactions.filter(
+            Q(description__icontains=search) |
+            Q(category__icontains=search) |
+            Q(resolved_transaction__credit_card_transactions__category__icontains=search)
+        ).distinct()
 
     # Get all distinct months with matching transactions
     dates = transactions.dates('date', 'month', order='ASC')
@@ -570,9 +600,9 @@ PREDEFINED_CC_CATEGORIES = [
 @api_view(['GET'])
 def credit_card_categories(request):
     """Get credit card categories with counts."""
-    from django.db.models import Count
-
-    transactions = get_active_cc_transactions()
+    transactions = get_active_cc_transactions().select_related(
+        'resolved_transaction'
+    ).prefetch_related('resolved_transaction__credit_card_transactions')
 
     # Filter by credit card if specified
     card_id = request.GET.get('credit_card')
@@ -581,22 +611,32 @@ def credit_card_categories(request):
 
     include_all = request.GET.get('include_all', 'false').lower() == 'true'
 
-    # Aggregate by category
-    categories = transactions.values('category').annotate(
-        count=Count('id'),
-        total_charges=Sum('amount', filter=Q(amount__gt=0)),
-        total_payments=Sum('amount', filter=Q(amount__lt=0)),
-    ).order_by('-count')
-
-    # Build dict of existing categories
+    # Build category stats using aggregated (effective) category
     existing_categories = {}
-    for cat in categories:
-        category_name = cat['category'] or 'Uncategorized'
-        existing_categories[category_name] = {
-            'count': cat['count'],
-            'total_charges': float(cat['total_charges'] or 0),
-            'total_payments': float(abs(cat['total_payments'] or 0)),
-        }
+    for txn in transactions:
+        # Get effective category (aggregate from resolved members if primary has none)
+        effective_category = txn.category
+        if not effective_category and txn.resolved_transaction:
+            for member in txn.resolved_transaction.credit_card_transactions.all():
+                if member.category:
+                    effective_category = member.category
+                    break
+
+        category_name = effective_category or 'Uncategorized'
+
+        if category_name not in existing_categories:
+            existing_categories[category_name] = {
+                'count': 0,
+                'total_charges': 0.0,
+                'total_payments': 0.0,
+            }
+
+        existing_categories[category_name]['count'] += 1
+        amount = float(txn.amount)
+        if amount > 0:
+            existing_categories[category_name]['total_charges'] += amount
+        else:
+            existing_categories[category_name]['total_payments'] += abs(amount)
 
     # Add predefined categories with zero counts if they don't exist
     for cat_name in PREDEFINED_CC_CATEGORIES:

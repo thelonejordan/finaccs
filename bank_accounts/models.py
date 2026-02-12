@@ -52,6 +52,16 @@ class BankTransaction(models.Model):
     )
     row_number = models.IntegerField(default=0)  # Position in extracted CSV for ordering
 
+    # Transaction Resolution fields
+    resolved_transaction = models.ForeignKey(
+        'extractions.ResolvedTransaction',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bank_transactions'
+    )
+    is_primary = models.BooleanField(default=False)  # Is this the display source?
+
     class Meta:
         ordering = ['-date', '-row_number']
         db_table = 'bank_accounts_banktransaction'

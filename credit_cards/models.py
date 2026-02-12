@@ -44,6 +44,16 @@ class CreditCardTransaction(models.Model):
     artifact_row_id = models.CharField(max_length=50, blank=True)  # For link snapshot matching
     row_number = models.IntegerField(default=0)  # Position in extracted CSV for ordering
 
+    # Transaction Resolution fields
+    resolved_transaction = models.ForeignKey(
+        'extractions.ResolvedTransaction',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='credit_card_transactions'
+    )
+    is_primary = models.BooleanField(default=False)  # Is this the display source?
+
     class Meta:
         ordering = ['-date', '-row_number']
 

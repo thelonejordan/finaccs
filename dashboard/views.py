@@ -66,12 +66,21 @@ def get_active_transactions():
     - status='loaded' means the artifact data is loaded into transactions
     - enabled=True means the artifact is shown in views (not disabled)
     - hidden=False means the artifact is visible in UI lists
+
+    For resolved transactions:
+    - Only shows transactions where resolved_transaction is NULL (not yet resolved)
+    - OR where is_primary=True (the primary transaction of a resolved group)
+    - This hides duplicate transactions that were merged during resolution
     """
+    from django.db.models import Q
+
     return BankTransaction.objects.filter(
         data_source_artifact__isnull=False,
         data_source_artifact__status='loaded',
         data_source_artifact__enabled=True,
         data_source_artifact__hidden=False,
+    ).filter(
+        Q(resolved_transaction__isnull=True) | Q(is_primary=True)
     )
 
 
@@ -112,6 +121,17 @@ def get_active_transactions():
     ],
     tags=['Dashboard'],
 )
+def _get_effective_category(txn):
+    """Get effective category for a transaction, aggregating from resolved members if needed."""
+    if txn.category:
+        return txn.category
+    if txn.resolved_transaction:
+        for member in txn.resolved_transaction.bank_transactions.all():
+            if member.category:
+                return member.category
+    return None
+
+
 @api_view(['GET'])
 def api_summary(request):
     # Get active transactions (excludes disabled source files)
@@ -128,25 +148,41 @@ def api_summary(request):
         )
     )
 
-    # Income breakdown (excluding linked self transfers)
+    # Also exclude transactions where aggregated category is in EXCLUDED_CATEGORIES
+    # and they have links (need to check resolved members too)
+    filtered_with_resolved = filtered_transactions.select_related(
+        'resolved_transaction'
+    ).prefetch_related('resolved_transaction__bank_transactions')
+
+    # Income breakdown using aggregated category
     income_categories = ['Salary/Income']
-    salary_income = (
-        filtered_transactions
-        .filter(category__in=income_categories)
-        .aggregate(total=Sum('credit_amount'))['total'] or 0
-    )
+    salary_income = 0.0
+    other_income = 0.0
+    expenses = 0.0
+    total_credits = 0.0
+    total_debits = 0.0
 
-    other_income = (
-        filtered_transactions
-        .exclude(category__in=income_categories)
-        .aggregate(total=Sum('credit_amount'))['total'] or 0
-    )
+    for txn in filtered_with_resolved:
+        effective_category = _get_effective_category(txn)
 
-    expenses = filtered_transactions.aggregate(total=Sum('debit_amount'))['total'] or 0
+        # Check if this is an excluded self transfer that wasn't caught by the query filter
+        # (i.e., member has Self Transfer category but primary doesn't)
+        is_linked = txn.linked_transaction_id is not None or hasattr(txn, 'linked_from') and txn.linked_from
+        if effective_category in EXCLUDED_CATEGORIES and is_linked:
+            continue
 
-    # For balance equation, exclude linked self transfers (consistent with income/expense)
-    total_credits = filtered_transactions.aggregate(total=Sum('credit_amount'))['total'] or 0
-    total_debits = filtered_transactions.aggregate(total=Sum('debit_amount'))['total'] or 0
+        credit_amt = float(txn.credit_amount)
+        debit_amt = float(txn.debit_amount)
+
+        total_credits += credit_amt
+        total_debits += debit_amt
+        expenses += debit_amt
+
+        if effective_category in income_categories:
+            salary_income += credit_amt
+        else:
+            other_income += credit_amt
+
     net_flow = total_credits - total_debits
 
     # Calculate per-account breakdown
@@ -156,12 +192,11 @@ def api_summary(request):
     current_balance = 0
 
     for account in accounts:
-        account_txns = list(all_transactions.filter(bank_account=account).order_by('date', 'row_number'))
+        account_txns = list(all_transactions.filter(bank_account=account).order_by('date', 'row_number').select_related(
+            'resolved_transaction'
+        ).prefetch_related('resolved_transaction__bank_transactions'))
         if not account_txns:
             continue
-
-        # Filtered transactions for this account (excluding linked self transfers)
-        account_filtered = filtered_transactions.filter(bank_account=account)
 
         # Latest transaction for current balance
         latest_txn = account_txns[-1]
@@ -171,22 +206,34 @@ def api_summary(request):
         earliest_txn = account_txns[0]
         acc_starting = float(earliest_txn.closing_balance) - float(earliest_txn.credit_amount) + float(earliest_txn.debit_amount)
 
-        # Credits and debits for this account (excluding linked self transfers)
-        credits_agg = account_filtered.aggregate(total=Sum('credit_amount'))['total']
-        acc_credits = float(credits_agg) if credits_agg is not None else 0.0
+        # Income/expense breakdown per account using aggregated category
+        acc_salary_income = 0.0
+        acc_other_income = 0.0
+        acc_expenses = 0.0
+        acc_credits = 0.0
+        acc_debits = 0.0
+        filtered_count = 0
 
-        debits_agg = account_filtered.aggregate(total=Sum('debit_amount'))['total']
-        acc_debits = float(debits_agg) if debits_agg is not None else 0.0
+        for txn in account_txns:
+            effective_category = _get_effective_category(txn)
 
-        # Income breakdown per account
-        salary_agg = account_filtered.filter(category__in=income_categories).aggregate(total=Sum('credit_amount'))['total']
-        acc_salary_income = float(salary_agg) if salary_agg is not None else 0.0
+            # Check if this is an excluded self transfer
+            is_linked = txn.linked_transaction_id is not None or hasattr(txn, 'linked_from') and txn.linked_from
+            if effective_category in EXCLUDED_CATEGORIES and is_linked:
+                continue
 
-        other_agg = account_filtered.exclude(category__in=income_categories).aggregate(total=Sum('credit_amount'))['total']
-        acc_other_income = float(other_agg) if other_agg is not None else 0.0
+            filtered_count += 1
+            credit_amt = float(txn.credit_amount)
+            debit_amt = float(txn.debit_amount)
 
-        expenses_agg = account_filtered.aggregate(total=Sum('debit_amount'))['total']
-        acc_expenses = float(expenses_agg) if expenses_agg is not None else 0.0
+            acc_credits += credit_amt
+            acc_debits += debit_amt
+            acc_expenses += debit_amt
+
+            if effective_category in income_categories:
+                acc_salary_income += credit_amt
+            else:
+                acc_other_income += credit_amt
 
         # Unaccounted = sum of actual balance discontinuities (real missing transactions)
         # Self transfers don't cause discontinuities since their amounts are correct
@@ -210,7 +257,7 @@ def api_summary(request):
             'other_income': acc_other_income,
             'expenses': acc_expenses,
             'unaccounted': acc_unaccounted,
-            'transaction_count': account_filtered.count(),
+            'transaction_count': filtered_count,
         })
 
         starting_balance += acc_starting
@@ -322,25 +369,31 @@ def api_categories(request):
     # Check if we should include all categories (for filtering purposes)
     include_all = request.GET.get('include_all', 'false').lower() == 'true'
 
-    # Get active transactions with debits
-    queryset = get_active_transactions().filter(debit_amount__gt=0)
+    # Get active transactions with debits, including resolved transaction data
+    queryset = get_active_transactions().filter(debit_amount__gt=0).select_related(
+        'resolved_transaction'
+    ).prefetch_related('resolved_transaction__bank_transactions')
 
-    # Exclude self transfers from category breakdown unless include_all is set
-    if not include_all:
-        queryset = queryset.exclude(category__in=EXCLUDED_CATEGORIES)
-
-    category_data = (
-        queryset
-        .values('category')
-        .annotate(total=Sum('debit_amount'))
-        .order_by('-total')
-    )
-
-    # Build a dict of existing categories with their amounts
+    # Build category totals using aggregated (effective) category
     existing_categories = {}
-    for item in category_data:
-        cat_name = item['category'] or 'Other'
-        existing_categories[cat_name] = float(item['total'] or 0)
+    for txn in queryset:
+        # Get effective category (aggregate from resolved members if primary has none)
+        effective_category = txn.category
+        if not effective_category and txn.resolved_transaction:
+            for member in txn.resolved_transaction.bank_transactions.all():
+                if member.category:
+                    effective_category = member.category
+                    break
+
+        cat_name = effective_category or 'Other'
+
+        # Skip excluded categories unless include_all is set
+        if not include_all and cat_name in EXCLUDED_CATEGORIES:
+            continue
+
+        if cat_name not in existing_categories:
+            existing_categories[cat_name] = 0.0
+        existing_categories[cat_name] += float(txn.debit_amount)
 
     # Add predefined categories with zero amount if not present
     for cat_name in PREDEFINED_CATEGORIES:
@@ -420,7 +473,18 @@ def api_transactions(request):
         'data_source_artifact__source_artifact',
         'data_source_artifact__source_artifact__extraction',
         'data_source_artifact__source_artifact__extraction__source_file',
-    ).prefetch_related('linked_from')
+        'resolved_transaction',
+    ).prefetch_related(
+        'linked_from',
+        # Prefetch all member transactions of resolved groups for link aggregation
+        'resolved_transaction__bank_transactions',
+        'resolved_transaction__bank_transactions__linked_transaction',
+        'resolved_transaction__bank_transactions__linked_transaction__bank_account',
+        'resolved_transaction__bank_transactions__cc_payment_match',
+        'resolved_transaction__bank_transactions__cc_payment_match__credit_card_transaction',
+        'resolved_transaction__bank_transactions__cc_payment_match__credit_card_transaction__credit_card',
+        'resolved_transaction__bank_transactions__cc_payment_match__credit_card_transaction__data_source_artifact',
+    )
 
     # Filter by bank account
     bank_account_id = request.GET.get('bank_account')
@@ -434,7 +498,11 @@ def api_transactions(request):
 
     category = request.GET.get('category')
     if category:
-        transactions = transactions.filter(category=category)
+        # For resolved transactions, check if ANY member has the category
+        transactions = transactions.filter(
+            Q(category=category) |
+            Q(resolved_transaction__bank_transactions__category=category)
+        ).distinct()
 
     transaction_type = request.GET.get('type')
     if transaction_type == 'credit':
@@ -451,13 +519,15 @@ def api_transactions(request):
         transactions = transactions.filter(date__month=int(month))
 
     # Search filter (narration, category, reference)
+    # For resolved transactions, also search in member transaction categories
     search = request.GET.get('search')
     if search:
         transactions = transactions.filter(
             Q(narration__icontains=search) |
             Q(category__icontains=search) |
-            Q(reference_number__icontains=search)
-        )
+            Q(reference_number__icontains=search) |
+            Q(resolved_transaction__bank_transactions__category__icontains=search)
+        ).distinct()
 
     # Calculate aggregate stats based on filtered results
     total_credits = transactions.aggregate(total=Sum('credit_amount'))['total'] or 0
@@ -509,13 +579,26 @@ def api_transactions(request):
 
     data = []
     for t in transactions_page:
+        # For resolved transactions, aggregate links from ALL member transactions
+        # This ensures links aren't lost when switching primary source
+        member_txns = [t]
+        if t.resolved_transaction:
+            # Use prefetched data - no additional queries needed
+            member_txns = list(t.resolved_transaction.bank_transactions.all())
+
         # Get linked transaction (either via linked_transaction or linked_from)
-        linked = t.linked_transaction
-        if not linked:
+        # Check all member transactions for links
+        linked = None
+        for member in member_txns:
+            linked = member.linked_transaction
+            if linked:
+                break
             try:
-                linked = t.linked_from
+                linked = member.linked_from
+                if linked:
+                    break
             except BankTransaction.DoesNotExist:
-                linked = None
+                pass
 
         linked_data = None
         if linked:
@@ -531,38 +614,50 @@ def api_transactions(request):
         # Only show match if:
         # 1. Match exists and is_active=True
         # 2. CC transaction is from an active data source (enabled, not hidden, status=loaded)
+        # Check all member transactions for CC payment matches
         cc_match_data = None
-        try:
-            cc_match = t.cc_payment_match
-            if cc_match and cc_match.is_active:
-                cc_txn = cc_match.credit_card_transaction
-                # Check if CC transaction is from an active data source
-                cc_source = cc_txn.data_source_artifact
-                is_active_cc_source = (
-                    cc_source is not None and
-                    cc_source.status == 'loaded' and
-                    cc_source.enabled and
-                    not cc_source.hidden
-                )
-                if is_active_cc_source:
-                    cc_match_data = {
-                        'id': cc_match.id,
-                        'credit_card_transaction': {
-                            'id': cc_txn.id,
-                            'date': cc_txn.date.isoformat(),
-                            'description': cc_txn.description,
-                            'amount': float(cc_txn.amount),
-                            'credit_card': {
-                                'id': cc_txn.credit_card.id,
-                                'nickname': cc_txn.credit_card.nickname,
-                            } if cc_txn.credit_card else None,
-                        },
-                        'offset': float(cc_match.offset),
-                        'confidence_score': cc_match.confidence_score,
-                        'match_reasons': cc_match.match_reasons,
-                    }
-        except CreditCardPaymentMatch.DoesNotExist:
-            pass
+        for member in member_txns:
+            try:
+                cc_match = member.cc_payment_match
+                if cc_match and cc_match.is_active:
+                    cc_txn = cc_match.credit_card_transaction
+                    # Check if CC transaction is from an active data source
+                    cc_source = cc_txn.data_source_artifact
+                    is_active_cc_source = (
+                        cc_source is not None and
+                        cc_source.status == 'loaded' and
+                        cc_source.enabled and
+                        not cc_source.hidden
+                    )
+                    if is_active_cc_source:
+                        cc_match_data = {
+                            'id': cc_match.id,
+                            'credit_card_transaction': {
+                                'id': cc_txn.id,
+                                'date': cc_txn.date.isoformat(),
+                                'description': cc_txn.description,
+                                'amount': float(cc_txn.amount),
+                                'credit_card': {
+                                    'id': cc_txn.credit_card.id,
+                                    'nickname': cc_txn.credit_card.nickname,
+                                } if cc_txn.credit_card else None,
+                            },
+                            'offset': float(cc_match.offset),
+                            'confidence_score': cc_match.confidence_score,
+                            'match_reasons': cc_match.match_reasons,
+                        }
+                        break  # Found a match, stop searching
+            except CreditCardPaymentMatch.DoesNotExist:
+                pass
+
+        # Aggregate category from member transactions
+        # Use the first non-empty category found (primary transaction's category takes precedence)
+        aggregated_category = t.category
+        if not aggregated_category:
+            for member in member_txns:
+                if member.category:
+                    aggregated_category = member.category
+                    break
 
         # Get source file info from data_source_artifact
         source_file_data = None
@@ -583,7 +678,7 @@ def api_transactions(request):
             'debit': float(t.debit_amount),
             'credit': float(t.credit_amount),
             'balance': float(t.closing_balance),
-            'category': t.category,
+            'category': aggregated_category,  # Use aggregated category from all member transactions
             'reference': t.reference_number,
             'bank_account': {
                 'id': t.bank_account.id,
@@ -639,7 +734,8 @@ def api_top_expenses(request):
     # Exclude self transfers from top expenses
     top_expenses = (
         get_active_transactions()
-        .select_related('bank_account')
+        .select_related('bank_account', 'resolved_transaction')
+        .prefetch_related('resolved_transaction__bank_transactions')
         .filter(debit_amount__gt=0)
         .exclude(category__in=EXCLUDED_CATEGORIES)
         .order_by('-debit_amount')[:limit]
@@ -647,12 +743,21 @@ def api_top_expenses(request):
 
     data = []
     for t in top_expenses:
+        # Aggregate category from member transactions
+        # Use the first non-empty category found (primary transaction's category takes precedence)
+        aggregated_category = t.category
+        if not aggregated_category and t.resolved_transaction:
+            for member in t.resolved_transaction.bank_transactions.all():
+                if member.category:
+                    aggregated_category = member.category
+                    break
+
         data.append({
             'id': t.id,
             'date': t.date.isoformat(),
             'narration': t.narration,
             'amount': float(t.debit_amount),
-            'category': t.category,
+            'category': aggregated_category,
             'bank_account': {
                 'id': t.bank_account.id,
                 'nickname': t.bank_account.nickname,
@@ -762,9 +867,12 @@ def api_potential_links(request, transaction_id):
 
     # Find matching transactions:
     # - Different bank account
-    # - Not already linked
+    # - Not already linked (either directly or via resolved members)
     # - Amount matches (debit of one = credit of other)
     # - Within date proximity
+    from django.db.models import Q, Exists, OuterRef
+    from bank_accounts.models import BankTransaction as BT
+
     potential_matches = get_active_transactions().filter(
         date__gte=date_start,
         date__lte=date_end,
@@ -775,9 +883,16 @@ def api_potential_links(request, transaction_id):
     ).exclude(
         id=transaction.id
     ).filter(
+        # Direct links must be null
         linked_transaction__isnull=True,
         linked_from__isnull=True
-    ).select_related('bank_account')
+    ).exclude(
+        # Exclude resolved transactions where ANY member has a link
+        Q(resolved_transaction__isnull=False) & (
+            Q(resolved_transaction__bank_transactions__linked_transaction__isnull=False) |
+            Q(resolved_transaction__bank_transactions__linked_from__isnull=False)
+        )
+    ).select_related('bank_account').distinct()
 
     # Match amounts: if this is a debit, look for credits with matching amount
     if transaction.debit_amount > 0:
@@ -1139,7 +1254,11 @@ def api_date_range(request):
 
     category = request.GET.get('category')
     if category:
-        transactions = transactions.filter(category=category)
+        # For resolved transactions, check if ANY member has the category
+        transactions = transactions.filter(
+            Q(category=category) |
+            Q(resolved_transaction__bank_transactions__category=category)
+        ).distinct()
 
     transaction_type = request.GET.get('type')
     if transaction_type == 'credit':
@@ -1149,11 +1268,13 @@ def api_date_range(request):
 
     search = request.GET.get('search')
     if search:
+        # For resolved transactions, also search in member transaction categories
         transactions = transactions.filter(
             Q(narration__icontains=search) |
             Q(category__icontains=search) |
-            Q(reference_number__icontains=search)
-        )
+            Q(reference_number__icontains=search) |
+            Q(resolved_transaction__bank_transactions__category__icontains=search)
+        ).distinct()
 
     # Get all distinct months with matching transactions
     dates = transactions.dates('date', 'month', order='ASC')
@@ -1791,11 +1912,17 @@ def api_cc_payment_suggestions(request):
 
     # Get unlinked bank transactions tagged as "Credit Card Payment"
     # No amount filter - show all tagged transactions so incorrectly tagged ones can be re-categorized
+    from django.db.models import Q
     bank_txns = get_active_transactions().filter(
         category='Credit Card Payment',
     ).exclude(
+        # Direct active CC match
         cc_payment_match__is_active=True
-    ).select_related('bank_account')
+    ).exclude(
+        # Exclude resolved transactions where ANY member has active CC match
+        Q(resolved_transaction__isnull=False) &
+        Q(resolved_transaction__bank_transactions__cc_payment_match__is_active=True)
+    ).select_related('bank_account').distinct()
 
     # Apply filters
     bank_account_id = request.GET.get('bank_account')

@@ -1793,3 +1793,770 @@ def extractor_list(request):
             'supported_extensions': cls.supported_extensions,
         })
     return JsonResponse({'data': extractors})
+
+
+# =============================================================================
+# Transaction Resolution API Views
+# =============================================================================
+
+from .models import (
+    ResolvedTransaction,
+    OverlappingSourceGroup,
+    ResolutionSession,
+    ResolutionSuggestion,
+)
+
+
+def _serialize_overlapping_group(group):
+    """Serialize an OverlappingSourceGroup to dict."""
+    # Get active session if exists (in-progress)
+    active_session = group.sessions.exclude(status__in=['completed', 'cancelled']).first()
+    # Get completed session if exists
+    completed_session = group.sessions.filter(status='completed').order_by('-completed_at').first()
+
+    return {
+        'id': group.id,
+        'group_id': group.group_id,
+        'name': group.name,
+        'resolution_status': group.resolution_status,
+        'bank_account_id': group.bank_account_id,
+        'credit_card_id': group.credit_card_id,
+        'artifact_count': group.data_source_artifacts.count(),
+        'artifacts': [
+            {
+                'artifact_id': a.artifact_id,
+                'filename': a.source_artifact.extraction.source_file.filename if a.source_artifact else None,
+                'row_count': a.row_count,
+            }
+            for a in group.data_source_artifacts.all()
+        ],
+        'active_session_id': active_session.session_id if active_session else None,
+        'completed_session_id': completed_session.session_id if completed_session else None,
+        'created_at': group.created_at.isoformat() if group.created_at else None,
+        'updated_at': group.updated_at.isoformat() if group.updated_at else None,
+    }
+
+
+def _serialize_resolved_transaction(resolved, include_sources=True):
+    """Serialize a ResolvedTransaction to dict."""
+    result = {
+        'id': resolved.id,
+        'uuid': str(resolved.uuid),
+        'short_id': resolved.short_id,
+        'transaction_type': resolved.transaction_type,
+        'primary_transaction_id': resolved.primary_transaction_id,
+        'date': resolved.date.isoformat() if resolved.date else None,
+        'amount': str(resolved.amount),
+        'bank_account_id': resolved.bank_account_id,
+        'credit_card_id': resolved.credit_card_id,
+        'source_count': resolved.source_count,
+        'created_at': resolved.created_at.isoformat() if resolved.created_at else None,
+    }
+
+    if include_sources:
+        if resolved.transaction_type == 'bank':
+            sources = []
+            for txn in resolved.bank_transactions.all():
+                sources.append({
+                    'id': txn.id,
+                    'narration': txn.narration,
+                    'reference_number': txn.reference_number,
+                    'value_date': txn.value_date.isoformat() if txn.value_date else None,
+                    'closing_balance': str(txn.closing_balance),
+                    'is_primary': txn.is_primary,
+                    'source_file': txn.data_source_artifact.source_artifact.extraction.source_file.filename if txn.data_source_artifact and txn.data_source_artifact.source_artifact else None,
+                })
+            result['sources'] = sources
+        else:
+            sources = []
+            for txn in resolved.credit_card_transactions.all():
+                sources.append({
+                    'id': txn.id,
+                    'description': txn.description,
+                    'is_primary': txn.is_primary,
+                    'source_file': txn.data_source_artifact.source_artifact.extraction.source_file.filename if txn.data_source_artifact and txn.data_source_artifact.source_artifact else None,
+                })
+            result['sources'] = sources
+
+        # Aggregated linkages
+        result['stories'] = [{'id': s.id, 'name': s.name, 'icon': s.icon} for s in resolved.get_stories()]
+        result['entities'] = [{'id': e.id, 'name': e.name, 'icon': e.icon} for e in resolved.get_entities()]
+
+        # Linked transaction
+        linked = resolved.get_linked_resolved_transaction()
+        if linked:
+            result['linked_resolved_transaction'] = {
+                'uuid': str(linked.uuid),
+                'short_id': linked.short_id,
+                'date': linked.date.isoformat() if linked.date else None,
+                'amount': str(linked.amount),
+            }
+        else:
+            result['linked_resolved_transaction'] = None
+
+    return result
+
+
+@api_view(['GET', 'POST'])
+def overlapping_group_list_create(request):
+    """
+    GET /api/sources/overlapping-groups/?bank_account_id=X or credit_card_id=X
+    List overlapping groups for an account.
+
+    POST /api/sources/overlapping-groups/
+    Create a new overlapping group.
+    """
+    if request.method == 'GET':
+        bank_account_id = request.GET.get('bank_account_id')
+        credit_card_id = request.GET.get('credit_card_id')
+
+        groups = OverlappingSourceGroup.objects.all()
+        if bank_account_id:
+            groups = groups.filter(bank_account_id=bank_account_id)
+        if credit_card_id:
+            groups = groups.filter(credit_card_id=credit_card_id)
+
+        return JsonResponse({'groups': [_serialize_overlapping_group(g) for g in groups]})
+
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        artifact_ids = data.get('artifact_ids', [])
+        name = data.get('name', 'Untitled Group')
+
+        if len(artifact_ids) < 2:
+            return JsonResponse({'error': 'At least 2 artifacts required'}, status=400)
+
+        # Fetch artifacts
+        artifacts = list(DataSourceArtifact.objects.filter(artifact_id__in=artifact_ids))
+        if len(artifacts) != len(artifact_ids):
+            return JsonResponse({'error': 'Some artifacts not found'}, status=404)
+
+        # Validate all same account
+        bank_accounts = set(a.bank_account_id for a in artifacts if a.bank_account_id)
+        credit_cards = set(a.credit_card_id for a in artifacts if a.credit_card_id)
+
+        if len(bank_accounts) > 1 or len(credit_cards) > 1:
+            return JsonResponse({'error': 'All artifacts must be for the same account'}, status=400)
+
+        if bank_accounts and credit_cards:
+            return JsonResponse({'error': 'Cannot mix bank and credit card artifacts'}, status=400)
+
+        # Check artifacts not already in a group
+        for artifact in artifacts:
+            if artifact.overlapping_groups.exists():
+                return JsonResponse({
+                    'error': f'Artifact {artifact.artifact_id} is already in another overlapping group'
+                }, status=400)
+
+        # Create group
+        group = OverlappingSourceGroup.objects.create(
+            name=name,
+            bank_account_id=list(bank_accounts)[0] if bank_accounts else None,
+            credit_card_id=list(credit_cards)[0] if credit_cards else None,
+        )
+        group.data_source_artifacts.add(*artifacts)
+
+        return JsonResponse(_serialize_overlapping_group(group), status=201)
+
+
+@api_view(['GET', 'DELETE'])
+def overlapping_group_detail(request, group_id):
+    """
+    GET /api/sources/overlapping-groups/{group_id}/
+    Get overlapping group details.
+
+    DELETE /api/sources/overlapping-groups/{group_id}/
+    Delete an overlapping group (only if pending).
+    """
+    try:
+        group = OverlappingSourceGroup.objects.get(group_id=group_id)
+    except OverlappingSourceGroup.DoesNotExist:
+        return JsonResponse({'error': 'Group not found'}, status=404)
+
+    if request.method == 'GET':
+        return JsonResponse(_serialize_overlapping_group(group))
+
+    elif request.method == 'DELETE':
+        if group.resolution_status == 'completed':
+            return JsonResponse({'error': 'Cannot delete a completed resolution group'}, status=400)
+        group.delete()
+        return JsonResponse({}, status=204)
+
+
+@api_view(['POST'])
+def overlapping_group_resolve(request, group_id):
+    """
+    POST /api/sources/overlapping-groups/{group_id}/resolve/
+    Start a resolution session for this group.
+    """
+    try:
+        group = OverlappingSourceGroup.objects.get(group_id=group_id)
+    except OverlappingSourceGroup.DoesNotExist:
+        return JsonResponse({'error': 'Group not found'}, status=404)
+
+    if group.resolution_status == 'completed':
+        return JsonResponse({'error': 'Group already resolved'}, status=400)
+
+    # Create session
+    session = ResolutionSession.objects.create(overlapping_group=group)
+    group.resolution_status = 'in_progress'
+    group.save()
+
+    return JsonResponse({
+        'session_id': session.session_id,
+        'status': session.status,
+    }, status=201)
+
+
+@api_view(['GET'])
+def resolution_session_detail(request, session_id):
+    """
+    GET /api/transactions/resolve/{session_id}/
+    Get resolution session details.
+    """
+    try:
+        session = ResolutionSession.objects.get(session_id=session_id)
+    except ResolutionSession.DoesNotExist:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+
+    return JsonResponse({
+        'session_id': session.session_id,
+        'status': session.status,
+        'stats': session.stats,
+        'group_id': session.overlapping_group.group_id,
+        'created_at': session.created_at.isoformat() if session.created_at else None,
+    })
+
+
+@api_view(['POST'])
+def resolution_session_suggest(request, session_id):
+    """
+    POST /api/transactions/resolve/{session_id}/suggest/
+    Generate match suggestions for the session.
+    """
+    try:
+        session = ResolutionSession.objects.get(session_id=session_id)
+    except ResolutionSession.DoesNotExist:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+
+    group = session.overlapping_group
+
+    # Get all transactions from the artifacts in this group
+    if group.bank_account_id:
+        from bank_accounts.models import BankTransaction
+        transactions = list(BankTransaction.objects.filter(
+            data_source_artifact__in=group.data_source_artifacts.all()
+        ).select_related('data_source_artifact'))
+        txn_type = 'bank'
+    else:
+        from credit_cards.models import CreditCardTransaction
+        transactions = list(CreditCardTransaction.objects.filter(
+            data_source_artifact__in=group.data_source_artifacts.all()
+        ).select_related('data_source_artifact'))
+        txn_type = 'credit_card'
+
+    # Group by date + amount
+    from collections import defaultdict
+    groups_by_key = defaultdict(list)
+    for txn in transactions:
+        if txn_type == 'bank':
+            key = (txn.date, txn.debit_amount - txn.credit_amount)
+        else:
+            key = (txn.date, txn.amount)
+        groups_by_key[key].append(txn)
+
+    # Create suggestions for groups with multiple transactions FROM DIFFERENT SOURCES
+    suggestions_created = 0
+    for (date, amount), txns in groups_by_key.items():
+        if len(txns) > 1:
+            # Group transactions by their source artifact
+            by_source = defaultdict(list)
+            for t in txns:
+                source_id = t.data_source_artifact_id if t.data_source_artifact_id else 'unknown'
+                by_source[source_id].append(t)
+
+            # Only create suggestion if transactions come from DIFFERENT sources
+            if len(by_source) < 2:
+                # All transactions from same source - not a duplicate match
+                continue
+
+            # Pick one transaction from each source for matching
+            match_candidates = []
+            for source_txns in by_source.values():
+                match_candidates.append(source_txns[0])  # Take first from each source
+
+            # Check closing balance match (for bank transactions)
+            # date + amount + closing_balance = nearly perfect match
+            balance_match = False
+            if txn_type == 'bank':
+                balances = [t.closing_balance for t in match_candidates]
+                if all(b is not None for b in balances):
+                    balance_match = len(set(balances)) == 1
+
+            # Score: 1.0 if all signals match, 0.7 for date+amount only
+            score = 1.0 if balance_match else 0.7
+
+            suggestion = ResolutionSuggestion.objects.create(
+                session=session,
+                suggested_transaction_ids=[{'type': txn_type, 'id': t.id} for t in match_candidates],
+                suggestion_score=score,
+                match_signals={
+                    'date': True,
+                    'amount': True,
+                    'closing_balance': balance_match,
+                }
+            )
+            suggestions_created += 1
+
+    session.status = 'review'
+    session.stats = {
+        'total_transactions': len(transactions),
+        'suggestions_created': suggestions_created,
+        'unmatched': len([g for g in groups_by_key.values() if len(g) == 1]),
+    }
+    session.save()
+
+    return JsonResponse({
+        'session_id': session.session_id,
+        'status': session.status,
+        'stats': session.stats,
+    })
+
+
+@api_view(['GET'])
+def resolution_session_review(request, session_id):
+    """
+    GET /api/transactions/resolve/{session_id}/review/
+    Get suggestions for review with transaction details.
+    """
+    try:
+        session = ResolutionSession.objects.get(session_id=session_id)
+    except ResolutionSession.DoesNotExist:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+
+    group = session.overlapping_group
+    is_bank = group.bank_account_id is not None
+
+    # Preload transactions
+    if is_bank:
+        from bank_accounts.models import BankTransaction
+        all_txn_ids = []
+        for s in session.suggestions.all():
+            for t in s.suggested_transaction_ids:
+                if t['type'] == 'bank':
+                    all_txn_ids.append(t['id'])
+        txn_map = {t.id: t for t in BankTransaction.objects.filter(id__in=all_txn_ids).select_related(
+            'data_source_artifact__source_artifact__extraction__source_file'
+        )}
+    else:
+        from credit_cards.models import CreditCardTransaction
+        all_txn_ids = []
+        for s in session.suggestions.all():
+            for t in s.suggested_transaction_ids:
+                if t['type'] == 'credit_card':
+                    all_txn_ids.append(t['id'])
+        txn_map = {t.id: t for t in CreditCardTransaction.objects.filter(id__in=all_txn_ids).select_related(
+            'data_source_artifact__source_artifact__extraction__source_file'
+        )}
+
+    def get_source_filename(txn):
+        """Get filename from nested relationship."""
+        try:
+            if txn.data_source_artifact and txn.data_source_artifact.source_artifact:
+                return txn.data_source_artifact.source_artifact.extraction.source_file.filename
+        except AttributeError:
+            pass
+        return None
+
+    suggestions = []
+    for s in session.suggestions.all():
+        # Build transaction details
+        transactions = []
+        for t in s.suggested_transaction_ids:
+            txn = txn_map.get(t['id'])
+            if txn:
+                if is_bank:
+                    transactions.append({
+                        'id': txn.id,
+                        'type': 'bank',
+                        'date': txn.date.isoformat() if txn.date else None,
+                        'narration': txn.narration,
+                        'amount': float(txn.debit_amount - txn.credit_amount),
+                        'reference': txn.reference_number,
+                        'source_file': get_source_filename(txn),
+                    })
+                else:
+                    transactions.append({
+                        'id': txn.id,
+                        'type': 'credit_card',
+                        'date': txn.date.isoformat() if txn.date else None,
+                        'narration': txn.description,
+                        'amount': float(txn.amount),
+                        'reference': None,
+                        'source_file': get_source_filename(txn),
+                    })
+
+        suggestions.append({
+            'id': s.id,
+            'suggested_transaction_ids': s.suggested_transaction_ids,
+            'transactions': transactions,
+            'suggestion_score': s.suggestion_score,
+            'match_signals': s.match_signals,
+            'status': s.status,
+            'confirmed_primary_id': s.confirmed_primary_id,
+        })
+
+    return JsonResponse({
+        'session_id': session.session_id,
+        'status': session.status,
+        'suggestions': suggestions,
+    })
+
+
+@api_view(['POST'])
+def resolution_session_confirm(request, session_id):
+    """
+    POST /api/transactions/resolve/{session_id}/confirm-group/
+    Confirm a suggestion with selected primary.
+    For completed sessions, also updates the underlying resolved transaction.
+    """
+    try:
+        session = ResolutionSession.objects.get(session_id=session_id)
+    except ResolutionSession.DoesNotExist:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    suggestion_id = data.get('suggestion_id')
+    primary_id = data.get('primary_transaction_id')
+
+    try:
+        suggestion = ResolutionSuggestion.objects.get(id=suggestion_id, session=session)
+    except ResolutionSuggestion.DoesNotExist:
+        return JsonResponse({'error': 'Suggestion not found'}, status=404)
+
+    suggestion.status = 'confirmed'
+    suggestion.confirmed_primary_id = primary_id
+    suggestion.confirmed_transaction_ids = suggestion.suggested_transaction_ids
+    suggestion.save()
+
+    # For completed sessions, also update the actual resolved transaction primary
+    if session.status == 'completed' and primary_id:
+        group = session.overlapping_group
+        is_bank = group.bank_account_id is not None
+
+        if is_bank:
+            from bank_accounts.models import BankTransaction
+            # Find the resolved transaction that contains this primary
+            try:
+                txn = BankTransaction.objects.get(id=primary_id)
+                if txn.resolved_transaction:
+                    # Update is_primary flags
+                    txn.resolved_transaction.bank_transactions.update(is_primary=False)
+                    BankTransaction.objects.filter(id=primary_id).update(is_primary=True)
+            except BankTransaction.DoesNotExist:
+                pass
+        else:
+            from credit_cards.models import CreditCardTransaction
+            try:
+                txn = CreditCardTransaction.objects.get(id=primary_id)
+                if txn.resolved_transaction:
+                    txn.resolved_transaction.credit_card_transactions.update(is_primary=False)
+                    CreditCardTransaction.objects.filter(id=primary_id).update(is_primary=True)
+            except CreditCardTransaction.DoesNotExist:
+                pass
+
+    return JsonResponse({'status': 'confirmed'})
+
+
+@api_view(['POST'])
+def resolution_session_execute(request, session_id):
+    """
+    POST /api/transactions/resolve/{session_id}/execute/
+    Execute the resolution - create ResolvedTransaction records.
+    """
+    try:
+        session = ResolutionSession.objects.get(session_id=session_id)
+    except ResolutionSession.DoesNotExist:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+
+    group = session.overlapping_group
+    is_bank = group.bank_account_id is not None
+
+    if is_bank:
+        from bank_accounts.models import BankTransaction
+        TxnModel = BankTransaction
+    else:
+        from credit_cards.models import CreditCardTransaction
+        TxnModel = CreditCardTransaction
+
+    session.status = 'executing'
+    session.save()
+
+    resolved_created = 0
+
+    # Process confirmed suggestions
+    for suggestion in session.suggestions.filter(status='confirmed'):
+        txn_ids = [t['id'] for t in suggestion.confirmed_transaction_ids or suggestion.suggested_transaction_ids]
+        primary_id = suggestion.confirmed_primary_id or txn_ids[0]
+
+        transactions = list(TxnModel.objects.filter(id__in=txn_ids))
+        if not transactions:
+            continue
+
+        primary_txn = next((t for t in transactions if t.id == primary_id), transactions[0])
+
+        # Create ResolvedTransaction
+        resolved = ResolvedTransaction.objects.create(
+            transaction_type='bank' if is_bank else 'credit_card',
+            primary_transaction_id=primary_id,
+            date=primary_txn.date,
+            amount=primary_txn.amount if not is_bank else (primary_txn.credit_amount - primary_txn.debit_amount),
+            bank_account_id=group.bank_account_id,
+            credit_card_id=group.credit_card_id,
+        )
+
+        # Link transactions
+        for txn in transactions:
+            txn.resolved_transaction = resolved
+            txn.is_primary = (txn.id == primary_id)
+            txn.save()
+
+        resolved_created += 1
+
+    session.status = 'completed'
+    session.stats['resolved_created'] = resolved_created
+    session.save()
+
+    group.resolution_status = 'completed'
+    group.save()
+
+    return JsonResponse({
+        'session_id': session.session_id,
+        'status': session.status,
+        'stats': session.stats,
+    })
+
+
+def _find_resolved_by_uuid_or_short(uuid_or_short):
+    """Find ResolvedTransaction by full UUID or short ID prefix."""
+    # Try full UUID first
+    try:
+        import uuid as uuid_module
+        uuid_obj = uuid_module.UUID(uuid_or_short)
+        return ResolvedTransaction.objects.get(uuid=uuid_obj)
+    except (ValueError, ResolvedTransaction.DoesNotExist):
+        pass
+
+    # Try short ID (prefix match)
+    matches = ResolvedTransaction.objects.filter(uuid__startswith=uuid_or_short)
+    if matches.count() == 1:
+        return matches.first()
+    elif matches.count() > 1:
+        raise ValueError('Multiple matches found')
+
+    raise ResolvedTransaction.DoesNotExist()
+
+
+@api_view(['GET'])
+def resolved_transaction_detail(request, uuid_or_short):
+    """
+    GET /api/transactions/resolved/{uuid}/
+    Get resolved transaction details.
+    """
+    try:
+        resolved = _find_resolved_by_uuid_or_short(uuid_or_short)
+    except ResolvedTransaction.DoesNotExist:
+        return JsonResponse({'error': 'Transaction not found'}, status=404)
+    except ValueError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+    return JsonResponse(_serialize_resolved_transaction(resolved))
+
+
+@api_view(['PATCH'])
+def resolved_transaction_primary(request, uuid_or_short):
+    """
+    PATCH /api/transactions/resolved/{uuid}/primary/
+    Change the primary source for display.
+    """
+    try:
+        resolved = _find_resolved_by_uuid_or_short(uuid_or_short)
+    except ResolvedTransaction.DoesNotExist:
+        return JsonResponse({'error': 'Transaction not found'}, status=404)
+    except ValueError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    new_primary_id = data.get('primary_transaction_id')
+    if not new_primary_id:
+        return JsonResponse({'error': 'primary_transaction_id required'}, status=400)
+
+    if resolved.transaction_type == 'bank':
+        from bank_accounts.models import BankTransaction
+        # Verify the transaction belongs to this resolved group
+        if not resolved.bank_transactions.filter(id=new_primary_id).exists():
+            return JsonResponse({'error': 'Transaction not in this group'}, status=400)
+
+        # Update is_primary flags
+        resolved.bank_transactions.update(is_primary=False)
+        BankTransaction.objects.filter(id=new_primary_id).update(is_primary=True)
+    else:
+        from credit_cards.models import CreditCardTransaction
+        if not resolved.credit_card_transactions.filter(id=new_primary_id).exists():
+            return JsonResponse({'error': 'Transaction not in this group'}, status=400)
+
+        resolved.credit_card_transactions.update(is_primary=False)
+        CreditCardTransaction.objects.filter(id=new_primary_id).update(is_primary=True)
+
+    resolved.primary_transaction_id = new_primary_id
+    resolved.save()
+
+    return JsonResponse(_serialize_resolved_transaction(resolved))
+
+
+@api_view(['POST'])
+def resolved_transaction_unlink(request, uuid_or_short):
+    """
+    POST /api/transactions/resolved/{uuid}/unlink/
+    Remove a source transaction from the group.
+    """
+    try:
+        resolved = _find_resolved_by_uuid_or_short(uuid_or_short)
+    except ResolvedTransaction.DoesNotExist:
+        return JsonResponse({'error': 'Transaction not found'}, status=404)
+    except ValueError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    txn_id = data.get('transaction_id')
+    if not txn_id:
+        return JsonResponse({'error': 'transaction_id required'}, status=400)
+
+    if resolved.transaction_type == 'bank':
+        from bank_accounts.models import BankTransaction
+        try:
+            txn = BankTransaction.objects.get(id=txn_id, resolved_transaction=resolved)
+        except BankTransaction.DoesNotExist:
+            return JsonResponse({'error': 'Transaction not in this group'}, status=400)
+
+        # Create new single-member resolved transaction for this txn
+        new_resolved = ResolvedTransaction.objects.create(
+            transaction_type='bank',
+            primary_transaction_id=txn.id,
+            date=txn.date,
+            amount=txn.credit_amount - txn.debit_amount,
+            bank_account=resolved.bank_account,
+        )
+        txn.resolved_transaction = new_resolved
+        txn.is_primary = True
+        txn.save()
+
+        # If original was primary, promote another
+        if resolved.primary_transaction_id == txn_id:
+            remaining = resolved.bank_transactions.first()
+            if remaining:
+                resolved.primary_transaction_id = remaining.id
+                remaining.is_primary = True
+                remaining.save()
+                resolved.save()
+    else:
+        from credit_cards.models import CreditCardTransaction
+        try:
+            txn = CreditCardTransaction.objects.get(id=txn_id, resolved_transaction=resolved)
+        except CreditCardTransaction.DoesNotExist:
+            return JsonResponse({'error': 'Transaction not in this group'}, status=400)
+
+        new_resolved = ResolvedTransaction.objects.create(
+            transaction_type='credit_card',
+            primary_transaction_id=txn.id,
+            date=txn.date,
+            amount=txn.amount,
+            credit_card=resolved.credit_card,
+        )
+        txn.resolved_transaction = new_resolved
+        txn.is_primary = True
+        txn.save()
+
+        if resolved.primary_transaction_id == txn_id:
+            remaining = resolved.credit_card_transactions.first()
+            if remaining:
+                resolved.primary_transaction_id = remaining.id
+                remaining.is_primary = True
+                remaining.save()
+                resolved.save()
+
+    return JsonResponse({
+        'unlinked_transaction_id': txn_id,
+        'new_resolved_uuid': str(new_resolved.uuid),
+    })
+
+
+@api_view(['GET'])
+def resolved_transaction_search(request):
+    """
+    GET /api/transactions/resolved/search/?q=prefix
+    Search resolved transactions by UUID prefix.
+    """
+    query = request.GET.get('q', '')
+    if not query:
+        return JsonResponse({'error': 'q parameter required'}, status=400)
+
+    # Search by UUID prefix
+    results = ResolvedTransaction.objects.filter(
+        uuid__startswith=query
+    )[:20]
+
+    return JsonResponse([
+        _serialize_resolved_transaction(r, include_sources=False)
+        for r in results
+    ], safe=False)
+
+
+@api_view(['GET'])
+def resolved_transaction_list(request):
+    """
+    GET /api/transactions/resolved/
+    List all resolved transactions with pagination.
+    Optional filters: bank_account_id, credit_card_id
+    """
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 50))
+    bank_account_id = request.GET.get('bank_account_id')
+    credit_card_id = request.GET.get('credit_card_id')
+
+    queryset = ResolvedTransaction.objects.all().order_by('-created_at')
+
+    if bank_account_id:
+        queryset = queryset.filter(bank_account_id=bank_account_id)
+    if credit_card_id:
+        queryset = queryset.filter(credit_card_id=credit_card_id)
+
+    total = queryset.count()
+    offset = (page - 1) * page_size
+    results = queryset[offset:offset + page_size]
+
+    return JsonResponse({
+        'total': total,
+        'page': page,
+        'page_size': page_size,
+        'results': [
+            _serialize_resolved_transaction(r, include_sources=False)
+            for r in results
+        ]
+    })

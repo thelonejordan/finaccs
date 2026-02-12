@@ -1622,3 +1622,243 @@ export async function compareEntities(entityIds: string[]): Promise<EntityCompar
   }
   return res.json()
 }
+
+// ==================== Transaction Resolution API ====================
+
+export interface OverlappingSourceGroup {
+  id: number
+  group_id: string
+  name: string
+  artifact_count: number
+  artifacts: Array<{ artifact_id: string; filename: string | null; row_count: number }>
+  bank_account_id: number | null
+  credit_card_id: number | null
+  resolution_status: 'pending' | 'in_progress' | 'completed'
+  active_session_id: string | null
+  completed_session_id: string | null
+  created_at: string
+}
+
+export interface ResolutionSession {
+  session_id: string
+  overlapping_group: string
+  status: 'suggesting' | 'review' | 'executing' | 'completed' | 'cancelled'
+  stats: Record<string, number>
+  created_at: string
+}
+
+export interface SuggestionTransaction {
+  id: number
+  type: 'bank' | 'credit_card'
+  date: string | null
+  narration: string
+  amount: number
+  reference: string | null
+  source_file: string | null
+}
+
+export interface ResolutionSuggestion {
+  id: number
+  suggested_transaction_ids: Array<{ type: 'bank' | 'credit_card'; id: number }>
+  transactions: SuggestionTransaction[]
+  suggestion_score: number
+  match_signals: Record<string, unknown>
+  status: 'pending' | 'confirmed' | 'modified' | 'rejected'
+  confirmed_primary_id: number | null
+}
+
+export interface SourceTransaction {
+  id: number
+  type: 'bank' | 'credit_card'
+  date: string
+  narration: string
+  amount: number
+  is_primary: boolean
+  source_file: { id: number; filename: string } | null
+}
+
+export interface ResolvedTransaction {
+  uuid: string
+  short_id: string
+  transaction_type: 'bank' | 'credit_card'
+  date: string
+  amount: number
+  primary_narration: string
+  bank_account: { id: number; nickname: string } | null
+  credit_card: { id: number; nickname: string } | null
+  source_count: number
+  sources: SourceTransaction[]
+  stories: StoryBadge[]
+  entities: EntityBadge[]
+  linked_resolved_transaction: { uuid: string; short_id: string } | null
+}
+
+export async function fetchOverlappingGroups(): Promise<{ groups: OverlappingSourceGroup[] }> {
+  const res = await fetch(`${API_BASE}/api/sources/overlapping-groups/`)
+  if (!res.ok) {
+    throw new Error('Failed to fetch overlapping groups')
+  }
+  return res.json()
+}
+
+export async function createOverlappingGroup(data: {
+  name: string
+  artifact_ids: string[]
+}): Promise<OverlappingSourceGroup> {
+  const res = await fetch(`${API_BASE}/api/sources/overlapping-groups/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to create overlapping group')
+  }
+  return res.json()
+}
+
+export async function deleteOverlappingGroup(groupId: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/api/sources/overlapping-groups/${groupId}/`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    throw new Error('Failed to delete overlapping group')
+  }
+  // 204 No Content - don't try to parse JSON
+  return { success: true }
+}
+
+export async function startResolution(groupId: string): Promise<ResolutionSession> {
+  const res = await fetch(`${API_BASE}/api/sources/overlapping-groups/${groupId}/resolve/`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to start resolution')
+  }
+  return res.json()
+}
+
+export async function fetchResolutionSession(sessionId: string): Promise<ResolutionSession> {
+  const res = await fetch(`${API_BASE}/api/transactions/resolve/${sessionId}/`)
+  if (!res.ok) {
+    throw new Error('Failed to fetch resolution session')
+  }
+  return res.json()
+}
+
+export async function generateSuggestions(sessionId: string): Promise<{ suggestions: ResolutionSuggestion[] }> {
+  const res = await fetch(`${API_BASE}/api/transactions/resolve/${sessionId}/suggest/`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    throw new Error('Failed to generate suggestions')
+  }
+  return res.json()
+}
+
+export async function fetchSuggestions(sessionId: string): Promise<{ suggestions: ResolutionSuggestion[] }> {
+  const res = await fetch(`${API_BASE}/api/transactions/resolve/${sessionId}/review/`)
+  if (!res.ok) {
+    throw new Error('Failed to fetch suggestions')
+  }
+  return res.json()
+}
+
+export async function confirmSuggestion(
+  sessionId: string,
+  suggestionId: number,
+  data: { status: 'pending' | 'confirmed' | 'modified' | 'rejected'; primary_id?: number; transaction_ids?: Array<{ type: string; id: number }> }
+): Promise<{ success: boolean }> {
+  // Backend expects primary_transaction_id, not primary_id
+  const { primary_id, ...rest } = data
+  const payload = { suggestion_id: suggestionId, ...rest, ...(primary_id !== undefined && { primary_transaction_id: primary_id }) }
+  const res = await fetch(`${API_BASE}/api/transactions/resolve/${sessionId}/confirm-group/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to confirm suggestion')
+  }
+  return res.json()
+}
+
+export async function executeResolution(sessionId: string): Promise<{ success: boolean; resolved_count: number }> {
+  const res = await fetch(`${API_BASE}/api/transactions/resolve/${sessionId}/execute/`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    throw new Error('Failed to execute resolution')
+  }
+  return res.json()
+}
+
+export async function fetchResolvedTransaction(uuidOrShort: string): Promise<ResolvedTransaction> {
+  const res = await fetch(`${API_BASE}/api/transactions/resolved/${uuidOrShort}/`)
+  if (!res.ok) {
+    throw new Error('Failed to fetch resolved transaction')
+  }
+  return res.json()
+}
+
+export async function fetchResolvedTransactions(params?: {
+  page?: number
+  page_size?: number
+  bank_account_id?: number
+  credit_card_id?: number
+}): Promise<{ total: number; page: number; page_size: number; results: ResolvedTransaction[] }> {
+  const searchParams = new URLSearchParams()
+  if (params?.page) searchParams.set('page', String(params.page))
+  if (params?.page_size) searchParams.set('page_size', String(params.page_size))
+  if (params?.bank_account_id) searchParams.set('bank_account_id', String(params.bank_account_id))
+  if (params?.credit_card_id) searchParams.set('credit_card_id', String(params.credit_card_id))
+
+  const url = searchParams.toString()
+    ? `${API_BASE}/api/transactions/resolved/?${searchParams}`
+    : `${API_BASE}/api/transactions/resolved/`
+
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error('Failed to fetch resolved transactions')
+  }
+  return res.json()
+}
+
+export async function changePrimarySource(
+  uuidOrShort: string,
+  data: { transaction_type: 'bank' | 'credit_card'; transaction_id: number }
+): Promise<ResolvedTransaction> {
+  const res = await fetch(`${API_BASE}/api/transactions/resolved/${uuidOrShort}/primary/`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to change primary source')
+  }
+  return res.json()
+}
+
+export async function unlinkFromResolved(
+  uuidOrShort: string,
+  data: { transaction_type: 'bank' | 'credit_card'; transaction_id: number }
+): Promise<{ success: boolean; deleted_resolved: boolean }> {
+  const res = await fetch(`${API_BASE}/api/transactions/resolved/${uuidOrShort}/unlink/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to unlink transaction')
+  }
+  return res.json()
+}
+
+export async function searchResolvedTransactions(query: string): Promise<{ results: ResolvedTransaction[] }> {
+  const res = await fetch(`${API_BASE}/api/transactions/resolved/search/?q=${encodeURIComponent(query)}`)
+  if (!res.ok) {
+    throw new Error('Failed to search resolved transactions')
+  }
+  return res.json()
+}

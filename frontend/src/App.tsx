@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { Dashboard } from "@/components/Dashboard"
 import { TransactionsPage } from "@/components/TransactionsPage"
+import { TransactionDetailPage } from "@/components/TransactionDetailPage"
+import { ResolutionPage } from "@/components/ResolutionPage"
 import { ConsolePage } from "@/components/ConsolePage"
 import { AnomaliesPage } from "@/components/AnomaliesPage"
 import { ActivityLogsPage } from "@/components/ActivityLogsPage"
@@ -39,6 +41,9 @@ function App() {
             <Route path="/stories/:storyId" element={<StoryDetailPage />} />
             <Route path="/entities" element={<EntitiesPage />} />
             <Route path="/entities/:entityId" element={<EntityDetailPage />} />
+            <Route path="/resolution" element={<ResolutionPage />} />
+            <Route path="/transactions/resolved" element={<TransactionDetailPage />} />
+            <Route path="/transactions/resolved/:uuid" element={<TransactionDetailPage />} />
           </Route>
         </Routes>
         </PaymentsCacheProvider>
