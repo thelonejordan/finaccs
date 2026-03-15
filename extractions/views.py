@@ -2312,8 +2312,8 @@ def resolution_session_execute(request, session_id):
             continue
 
         primary_txn = next((t for t in transactions if t.id == primary_id), transactions[0])
+        old_resolved_ids = set(t.resolved_transaction_id for t in transactions if t.resolved_transaction_id)
 
-        # Create ResolvedTransaction
         resolved = ResolvedTransaction.objects.create(
             transaction_type='bank' if is_bank else 'credit_card',
             primary_transaction_id=primary_id,
@@ -2323,11 +2323,35 @@ def resolution_session_execute(request, session_id):
             credit_card_id=group.credit_card_id,
         )
 
-        # Link transactions
         for txn in transactions:
             txn.resolved_transaction = resolved
             txn.is_primary = (txn.id == primary_id)
             txn.save()
+
+        try:
+            from links.models import CategoryLink, StoryLink, EntityLink, SelfTransferLink, CreditCardPaymentLink
+            for old_rid in old_resolved_ids:
+                if old_rid == resolved.id:
+                    continue
+                CategoryLink.objects.filter(resolved_transaction_id=old_rid).update(resolved_transaction_id=resolved.id)
+                for sl in StoryLink.objects.filter(resolved_transaction_id=old_rid):
+                    if not StoryLink.objects.filter(resolved_transaction_id=resolved.id, story_id=sl.story_id).exists():
+                        sl.resolved_transaction_id = resolved.id
+                        sl.save()
+                    else:
+                        sl.delete()
+                for el in EntityLink.objects.filter(resolved_transaction_id=old_rid):
+                    if not EntityLink.objects.filter(resolved_transaction_id=resolved.id, entity_id=el.entity_id).exists():
+                        el.resolved_transaction_id = resolved.id
+                        el.save()
+                    else:
+                        el.delete()
+                SelfTransferLink.objects.filter(resolved_transaction_a_id=old_rid).update(resolved_transaction_a_id=resolved.id)
+                SelfTransferLink.objects.filter(resolved_transaction_b_id=old_rid).update(resolved_transaction_b_id=resolved.id)
+                CreditCardPaymentLink.objects.filter(bank_resolved_transaction_id=old_rid).update(bank_resolved_transaction_id=resolved.id)
+                CreditCardPaymentLink.objects.filter(cc_resolved_transaction_id=old_rid).update(cc_resolved_transaction_id=resolved.id)
+        except ImportError:
+            pass
 
         resolved_created += 1
 

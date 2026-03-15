@@ -397,6 +397,22 @@ def entity_transactions(request, entity_id):
                 )
                 if created:
                     added += 1
+                    try:
+                        from links.models import EntityLink
+                        if txn_type == 'bank':
+                            from bank_accounts.models import BankTransaction
+                            t = BankTransaction.objects.filter(id=txn_id).first()
+                        else:
+                            from credit_cards.models import CreditCardTransaction
+                            t = CreditCardTransaction.objects.filter(id=txn_id).first()
+                        if t and t.resolved_transaction_id:
+                            EntityLink.objects.get_or_create(
+                                resolved_transaction_id=t.resolved_transaction_id,
+                                entity=entity,
+                                defaults={'origin_transaction_type': txn_type, 'origin_transaction_id': txn_id},
+                            )
+                    except ImportError:
+                        pass
         return JsonResponse({'success': True, 'added': added})
 
     elif request.method == "DELETE":
@@ -405,6 +421,21 @@ def entity_transactions(request, entity_id):
             txn_type = txn.get('type')
             txn_id = txn.get('id')
             if txn_type in ('bank', 'credit_card') and txn_id:
+                try:
+                    from links.models import EntityLink
+                    if txn_type == 'bank':
+                        from bank_accounts.models import BankTransaction
+                        t = BankTransaction.objects.filter(id=txn_id).first()
+                    else:
+                        from credit_cards.models import CreditCardTransaction
+                        t = CreditCardTransaction.objects.filter(id=txn_id).first()
+                    if t and t.resolved_transaction_id:
+                        EntityLink.objects.filter(
+                            resolved_transaction_id=t.resolved_transaction_id,
+                            entity=entity,
+                        ).delete()
+                except ImportError:
+                    pass
                 deleted, _ = EntityTransaction.objects.filter(
                     entity=entity,
                     transaction_type=txn_type,

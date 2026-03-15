@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'extractions',
     'stories',
     'entities',
+    'links',
 ]
 
 # Development tools

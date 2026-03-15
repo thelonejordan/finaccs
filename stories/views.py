@@ -388,6 +388,22 @@ def story_transactions(request, story_id):
                 )
                 if created:
                     added += 1
+                    try:
+                        from links.models import StoryLink
+                        if txn_type == 'bank':
+                            from bank_accounts.models import BankTransaction
+                            t = BankTransaction.objects.filter(id=txn_id).first()
+                        else:
+                            from credit_cards.models import CreditCardTransaction
+                            t = CreditCardTransaction.objects.filter(id=txn_id).first()
+                        if t and t.resolved_transaction_id:
+                            StoryLink.objects.get_or_create(
+                                resolved_transaction_id=t.resolved_transaction_id,
+                                story=story,
+                                defaults={'origin_transaction_type': txn_type, 'origin_transaction_id': txn_id},
+                            )
+                    except ImportError:
+                        pass
         return JsonResponse({'success': True, 'added': added})
 
     elif request.method == "DELETE":
@@ -396,6 +412,21 @@ def story_transactions(request, story_id):
             txn_type = txn.get('type')
             txn_id = txn.get('id')
             if txn_type in ('bank', 'credit_card') and txn_id:
+                try:
+                    from links.models import StoryLink
+                    if txn_type == 'bank':
+                        from bank_accounts.models import BankTransaction
+                        t = BankTransaction.objects.filter(id=txn_id).first()
+                    else:
+                        from credit_cards.models import CreditCardTransaction
+                        t = CreditCardTransaction.objects.filter(id=txn_id).first()
+                    if t and t.resolved_transaction_id:
+                        StoryLink.objects.filter(
+                            resolved_transaction_id=t.resolved_transaction_id,
+                            story=story,
+                        ).delete()
+                except ImportError:
+                    pass
                 deleted, _ = StoryTransaction.objects.filter(
                     story=story,
                     transaction_type=txn_type,

@@ -319,19 +319,20 @@ class TransactionLinkSnapshot(models.Model):
     LINK_TYPE_CHOICES = [
         ('self_transfer', 'Self Transfer'),
         ('cc_payment', 'Credit Card Payment'),
+        ('category', 'Category'),
+        ('story', 'Story'),
+        ('entity', 'Entity'),
     ]
 
-    # Parent artifact
     data_source_artifact = models.ForeignKey(
         'DataSourceArtifact',
         on_delete=models.CASCADE,
         related_name='link_snapshots'
     )
 
-    # Link info
     link_type = models.CharField(max_length=20, choices=LINK_TYPE_CHOICES)
     source_row_id = models.CharField(max_length=50)
-    target_row_id = models.CharField(max_length=50)
+    target_row_id = models.CharField(max_length=50, blank=True)
     link_metadata = models.JSONField(default=dict, blank=True)
 
     # Timestamp
@@ -419,9 +420,17 @@ class ResolvedTransaction(models.Model):
             return self.credit_card_transactions.count()
 
     def get_stories(self):
-        """Aggregate stories from all member transactions."""
-        from stories.models import Story, StoryTransaction
+        """Stories attached to this display group (from StoryLink, then StoryTransaction)."""
+        from stories.models import Story
 
+        try:
+            from links.models import StoryLink
+            links = StoryLink.objects.filter(resolved_transaction_id=self.id).select_related('story')
+            if links.exists():
+                return Story.objects.filter(id__in=[sl.story_id for sl in links])
+        except ImportError:
+            pass
+        from stories.models import StoryTransaction
         story_ids = set()
         if self.transaction_type == 'bank':
             for txn in self.bank_transactions.all():
@@ -440,9 +449,17 @@ class ResolvedTransaction(models.Model):
         return Story.objects.filter(id__in=story_ids)
 
     def get_entities(self):
-        """Aggregate entities from all member transactions."""
-        from entities.models import Entity, EntityTransaction
+        """Entities attached to this display group (from EntityLink, then EntityTransaction)."""
+        from entities.models import Entity
 
+        try:
+            from links.models import EntityLink
+            links = EntityLink.objects.filter(resolved_transaction_id=self.id).select_related('entity')
+            if links.exists():
+                return Entity.objects.filter(id__in=[el.entity_id for el in links])
+        except ImportError:
+            pass
+        from entities.models import EntityTransaction
         entity_ids = set()
         if self.transaction_type == 'bank':
             for txn in self.bank_transactions.all():
@@ -460,14 +477,43 @@ class ResolvedTransaction(models.Model):
                 )
         return Entity.objects.filter(id__in=entity_ids)
 
+    def get_effective_category(self):
+        """Category for this display group (from CategoryLink, then primary txn)."""
+        try:
+            from links.models import CategoryLink
+            link = CategoryLink.objects.filter(resolved_transaction_id=self.id).order_by('-created_at').first()
+            if link:
+                return link.category
+        except ImportError:
+            pass
+        if self.transaction_type == 'bank':
+            primary = self.bank_transactions.filter(is_primary=True).first()
+            if primary:
+                return primary.category
+        else:
+            primary = self.credit_card_transactions.filter(is_primary=True).first()
+            if primary:
+                return primary.category
+        return None
+
     def get_linked_resolved_transaction(self):
-        """
-        Get linked resolved transaction (for self-transfers).
-        Derived from source-level BankTransaction.linked_transaction.
-        """
+        """Linked resolved transaction for self-transfers (from SelfTransferLink, then BankTransaction.linked_transaction)."""
         if self.transaction_type != 'bank':
             return None
-
+        try:
+            from links.models import SelfTransferLink
+            link = SelfTransferLink.objects.filter(
+                resolved_transaction_a_id=self.id
+            ).select_related('resolved_transaction_b').first()
+            if link and link.resolved_transaction_b_id:
+                return link.resolved_transaction_b
+            link = SelfTransferLink.objects.filter(
+                resolved_transaction_b_id=self.id
+            ).select_related('resolved_transaction_a').first()
+            if link and link.resolved_transaction_a_id:
+                return link.resolved_transaction_a
+        except ImportError:
+            pass
         for txn in self.bank_transactions.all():
             if txn.linked_transaction_id:
                 from bank_accounts.models import BankTransaction

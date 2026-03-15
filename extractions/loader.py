@@ -13,9 +13,10 @@ from decimal import Decimal
 from typing import List, Optional, Tuple
 from django.utils import timezone
 from django.db import transaction as db_transaction
+from django.db.models import Q
 
 from .transformers import decompress_data
-from .models import DataSourceArtifact, TransactionLinkSnapshot
+from .models import DataSourceArtifact, TransactionLinkSnapshot, ResolvedTransaction
 from project.cache_utils import invalidate_bank_inconsistencies, invalidate_cc_inconsistencies
 
 
@@ -108,8 +109,29 @@ def _load_bank_transactions(artifact: DataSourceArtifact, reader) -> int:
         )
         transactions.append(txn)
 
-    # Bulk create
     BankTransaction.objects.bulk_create(transactions)
+    created = list(
+        BankTransaction.objects.filter(data_source_artifact=artifact)
+        .order_by('row_number', 'id')
+    )
+    if not created:
+        return len(transactions)
+    resolved_list = [
+        ResolvedTransaction(
+            transaction_type='bank',
+            primary_transaction_id=txn.id,
+            date=txn.date,
+            amount=txn.credit_amount - txn.debit_amount,
+            bank_account=artifact.bank_account,
+            credit_card=None,
+        )
+        for txn in created
+    ]
+    ResolvedTransaction.objects.bulk_create(resolved_list)
+    for i, txn in enumerate(created):
+        txn.resolved_transaction_id = resolved_list[i].id
+        txn.is_primary = True
+    BankTransaction.objects.bulk_update(created, ['resolved_transaction_id', 'is_primary'])
     return len(transactions)
 
 
@@ -149,8 +171,29 @@ def _load_cc_transactions(artifact: DataSourceArtifact, reader) -> int:
         )
         transactions.append(txn)
 
-    # Bulk create
     CreditCardTransaction.objects.bulk_create(transactions)
+    created = list(
+        CreditCardTransaction.objects.filter(data_source_artifact=artifact)
+        .order_by('row_number', 'id')
+    )
+    if not created:
+        return len(transactions)
+    resolved_list = [
+        ResolvedTransaction(
+            transaction_type='credit_card',
+            primary_transaction_id=txn.id,
+            date=txn.date,
+            amount=txn.amount,
+            bank_account=None,
+            credit_card=artifact.credit_card,
+        )
+        for txn in created
+    ]
+    ResolvedTransaction.objects.bulk_create(resolved_list)
+    for i, txn in enumerate(created):
+        txn.resolved_transaction_id = resolved_list[i].id
+        txn.is_primary = True
+    CreditCardTransaction.objects.bulk_update(created, ['resolved_transaction_id', 'is_primary'])
     return len(transactions)
 
 
@@ -170,10 +213,9 @@ def unload_artifact(artifact: DataSourceArtifact) -> Tuple[int, Optional[str]]:
         return 0, "Artifact is not loaded"
 
     try:
-        # Snapshot links before deleting transactions
         _snapshot_links(artifact)
+        _promote_primary_if_needed(artifact)
 
-        # Delete transactions
         if artifact.data_source_target == 'bank_account_transactions':
             from bank_accounts.models import BankTransaction
             count, _ = BankTransaction.objects.filter(data_source_artifact=artifact).delete()
@@ -217,6 +259,70 @@ def delete_artifact(artifact: DataSourceArtifact) -> Tuple[bool, Optional[str]]:
 
     except Exception as e:
         return False, str(e)
+
+
+def _promote_primary_if_needed(artifact: DataSourceArtifact):
+    """
+    Before deleting this artifact's transactions, for any ResolvedTransaction whose
+    primary is in the delete set, promote another member (not in the artifact) so links
+    remain displayed.
+    """
+    if artifact.data_source_target == 'bank_account_transactions':
+        from bank_accounts.models import BankTransaction
+        txns_in_artifact = list(
+            BankTransaction.objects.filter(data_source_artifact=artifact).values_list('id', flat=True)
+        )
+        if not txns_in_artifact:
+            return
+        delete_ids = set(txns_in_artifact)
+        resolved_ids = set(
+            BankTransaction.objects.filter(id__in=txns_in_artifact)
+            .values_list('resolved_transaction_id', flat=True)
+        )
+        resolved_ids.discard(None)
+        for rid in resolved_ids:
+            resolved = ResolvedTransaction.objects.filter(id=rid).first()
+            if not resolved or resolved.primary_transaction_id not in delete_ids:
+                continue
+            other = (
+                BankTransaction.objects.filter(resolved_transaction_id=rid)
+                .exclude(data_source_artifact=artifact)
+                .first()
+            )
+            if other:
+                resolved.bank_transactions.update(is_primary=False)
+                other.is_primary = True
+                other.save(update_fields=['is_primary'])
+                resolved.primary_transaction_id = other.id
+                resolved.save(update_fields=['primary_transaction_id'])
+    elif artifact.data_source_target == 'credit_card_transactions':
+        from credit_cards.models import CreditCardTransaction
+        txns_in_artifact = list(
+            CreditCardTransaction.objects.filter(data_source_artifact=artifact).values_list('id', flat=True)
+        )
+        if not txns_in_artifact:
+            return
+        delete_ids = set(txns_in_artifact)
+        resolved_ids = set(
+            CreditCardTransaction.objects.filter(id__in=txns_in_artifact)
+            .values_list('resolved_transaction_id', flat=True)
+        )
+        resolved_ids.discard(None)
+        for rid in resolved_ids:
+            resolved = ResolvedTransaction.objects.filter(id=rid).first()
+            if not resolved or resolved.primary_transaction_id not in delete_ids:
+                continue
+            other = (
+                CreditCardTransaction.objects.filter(resolved_transaction_id=rid)
+                .exclude(data_source_artifact=artifact)
+                .first()
+            )
+            if other:
+                resolved.credit_card_transactions.update(is_primary=False)
+                other.is_primary = True
+                other.save(update_fields=['is_primary'])
+                resolved.primary_transaction_id = other.id
+                resolved.save(update_fields=['primary_transaction_id'])
 
 
 def _snapshot_links(artifact: DataSourceArtifact):
@@ -278,9 +384,82 @@ def _snapshot_links(artifact: DataSourceArtifact):
                         }
                     ))
 
-    # Bulk create snapshots
+        _snapshot_category_story_entity(artifact, snapshots)
+
     if snapshots:
         TransactionLinkSnapshot.objects.bulk_create(snapshots)
+
+
+def _snapshot_category_story_entity(artifact: DataSourceArtifact, snapshots: list):
+    if artifact.data_source_target != 'bank_account_transactions':
+        return
+    from bank_accounts.models import BankTransaction
+    txns = list(
+        BankTransaction.objects.filter(data_source_artifact=artifact)
+        .filter(artifact_row_id__isnull=False)
+        .exclude(artifact_row_id='')
+    )
+    if not txns:
+        return
+    try:
+        from links.models import CategoryLink, StoryLink, EntityLink
+        use_links = True
+    except ImportError:
+        use_links = False
+    from stories.models import StoryTransaction
+    from entities.models import EntityTransaction
+    for txn in txns:
+        if use_links and txn.resolved_transaction_id:
+            cat_links = CategoryLink.objects.filter(resolved_transaction_id=txn.resolved_transaction_id).order_by('-created_at')[:1]
+            if cat_links:
+                snapshots.append(TransactionLinkSnapshot(
+                    data_source_artifact=artifact,
+                    link_type='category',
+                    source_row_id=txn.artifact_row_id,
+                    target_row_id='',
+                    link_metadata={'category': cat_links[0].category},
+                ))
+            for sl in StoryLink.objects.filter(resolved_transaction_id=txn.resolved_transaction_id).select_related('story'):
+                snapshots.append(TransactionLinkSnapshot(
+                    data_source_artifact=artifact,
+                    link_type='story',
+                    source_row_id=txn.artifact_row_id,
+                    target_row_id='',
+                    link_metadata={'story_id': sl.story.story_id},
+                ))
+            for el in EntityLink.objects.filter(resolved_transaction_id=txn.resolved_transaction_id).select_related('entity'):
+                snapshots.append(TransactionLinkSnapshot(
+                    data_source_artifact=artifact,
+                    link_type='entity',
+                    source_row_id=txn.artifact_row_id,
+                    target_row_id='',
+                    link_metadata={'entity_id': el.entity.entity_id},
+                ))
+        else:
+            if txn.category:
+                snapshots.append(TransactionLinkSnapshot(
+                    data_source_artifact=artifact,
+                    link_type='category',
+                    source_row_id=txn.artifact_row_id,
+                    target_row_id='',
+                    link_metadata={'category': txn.category},
+                ))
+            for st in StoryTransaction.objects.filter(transaction_type='bank', transaction_id=txn.id).select_related('story'):
+                snapshots.append(TransactionLinkSnapshot(
+                    data_source_artifact=artifact,
+                    link_type='story',
+                    source_row_id=txn.artifact_row_id,
+                    target_row_id='',
+                    link_metadata={'story_id': st.story.story_id},
+                ))
+            for et in EntityTransaction.objects.filter(transaction_type='bank', transaction_id=txn.id).select_related('entity'):
+                snapshots.append(TransactionLinkSnapshot(
+                    data_source_artifact=artifact,
+                    link_type='entity',
+                    source_row_id=txn.artifact_row_id,
+                    target_row_id='',
+                    link_metadata={'entity_id': et.entity.entity_id},
+                ))
 
 
 def _reapply_links(artifact: DataSourceArtifact):
@@ -326,6 +505,8 @@ def _reapply_links(artifact: DataSourceArtifact):
                 if target_txn and source_txn.linked_transaction is None:
                     source_txn.linked_transaction = target_txn
                     source_txn.save()
+                if target_txn:
+                    _reapply_create_self_transfer_link(source_txn, target_txn)
 
             elif snapshot.link_type == 'cc_payment':
                 # Find target CC transaction
@@ -350,9 +531,124 @@ def _reapply_links(artifact: DataSourceArtifact):
                                 confidence_score=snapshot.link_metadata.get('confidence_score', 0),
                                 match_reasons=snapshot.link_metadata.get('match_reasons', []),
                             )
+                        _reapply_create_cc_payment_link(source_txn, target_cc_txn, snapshot.link_metadata)
 
-    # Clear snapshots after reapplication
+            elif snapshot.link_type == 'category':
+                _reapply_create_category_link(source_txn, snapshot.link_metadata)
+            elif snapshot.link_type == 'story':
+                _reapply_create_story_link(source_txn, snapshot.link_metadata)
+            elif snapshot.link_type == 'entity':
+                _reapply_create_entity_link(source_txn, snapshot.link_metadata)
+
     snapshots.delete()
+
+
+def _reapply_create_self_transfer_link(source_txn, target_txn):
+    try:
+        from links.models import SelfTransferLink
+    except ImportError:
+        return
+    if not source_txn.resolved_transaction_id or not target_txn.resolved_transaction_id:
+        return
+    if source_txn.resolved_transaction_id == target_txn.resolved_transaction_id:
+        return
+    ra, rb = source_txn.resolved_transaction_id, target_txn.resolved_transaction_id
+    if SelfTransferLink.objects.filter(
+        Q(resolved_transaction_a_id=ra, resolved_transaction_b_id=rb)
+        | Q(resolved_transaction_a_id=rb, resolved_transaction_b_id=ra)
+    ).exists():
+        return
+    SelfTransferLink.objects.create(
+        resolved_transaction_a_id=ra,
+        resolved_transaction_b_id=rb,
+        origin_transaction_id_a=source_txn.id,
+        origin_transaction_id_b=target_txn.id,
+    )
+
+
+def _reapply_create_cc_payment_link(source_txn, target_cc_txn, link_metadata):
+    try:
+        from links.models import CreditCardPaymentLink
+    except ImportError:
+        return
+    if not source_txn.resolved_transaction_id or not target_cc_txn.resolved_transaction_id:
+        return
+    if CreditCardPaymentLink.objects.filter(
+        bank_resolved_transaction_id=source_txn.resolved_transaction_id,
+        cc_resolved_transaction_id=target_cc_txn.resolved_transaction_id,
+    ).exists():
+        return
+    CreditCardPaymentLink.objects.create(
+        bank_resolved_transaction_id=source_txn.resolved_transaction_id,
+        cc_resolved_transaction_id=target_cc_txn.resolved_transaction_id,
+        offset=Decimal(str(link_metadata.get('offset', 0))),
+        confidence_score=link_metadata.get('confidence_score', 0),
+        match_reasons=link_metadata.get('match_reasons', []),
+        origin_bank_transaction_id=source_txn.id,
+        origin_cc_transaction_id=target_cc_txn.id,
+    )
+
+
+def _reapply_create_category_link(source_txn, link_metadata):
+    try:
+        from links.models import CategoryLink
+    except ImportError:
+        return
+    category = link_metadata.get('category')
+    if not category or not source_txn.resolved_transaction_id:
+        return
+    if CategoryLink.objects.filter(resolved_transaction_id=source_txn.resolved_transaction_id).exists():
+        return
+    CategoryLink.objects.create(
+        resolved_transaction_id=source_txn.resolved_transaction_id,
+        category=category,
+        origin_transaction_type='bank',
+        origin_transaction_id=source_txn.id,
+    )
+
+
+def _reapply_create_story_link(source_txn, link_metadata):
+    try:
+        from links.models import StoryLink
+        from stories.models import Story
+    except ImportError:
+        return
+    story_id = link_metadata.get('story_id')
+    if not story_id or not source_txn.resolved_transaction_id:
+        return
+    story = Story.objects.filter(story_id=story_id).first()
+    if not story:
+        return
+    StoryLink.objects.get_or_create(
+        resolved_transaction_id=source_txn.resolved_transaction_id,
+        story=story,
+        defaults={
+            'origin_transaction_type': 'bank',
+            'origin_transaction_id': source_txn.id,
+        },
+    )
+
+
+def _reapply_create_entity_link(source_txn, link_metadata):
+    try:
+        from links.models import EntityLink
+        from entities.models import Entity
+    except ImportError:
+        return
+    entity_id = link_metadata.get('entity_id')
+    if not entity_id or not source_txn.resolved_transaction_id:
+        return
+    entity = Entity.objects.filter(entity_id=entity_id).first()
+    if not entity:
+        return
+    EntityLink.objects.get_or_create(
+        resolved_transaction_id=source_txn.resolved_transaction_id,
+        entity=entity,
+        defaults={
+            'origin_transaction_type': 'bank',
+            'origin_transaction_id': source_txn.id,
+        },
+    )
 
 
 def reload_artifact(artifact: DataSourceArtifact) -> Tuple[int, Optional[str]]:

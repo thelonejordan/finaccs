@@ -48,6 +48,14 @@ Run database migrations:
 uv run python manage.py migrate
 ```
 
+If migration `extractions.0003_ensure_resolved_for_all_transactions` fails with a lock timeout (e.g. MySQL 1205), stop other processes using the DB, then run the backfill manually and fake the migration:
+
+```bash
+uv run python manage.py backfill_resolved_transactions
+uv run python manage.py migrate extractions 0003 --fake
+uv run python manage.py migrate
+```
+
 ### 3. Frontend Setup
 
 Navigate to the frontend directory and install dependencies:
