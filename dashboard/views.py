@@ -108,25 +108,15 @@ def get_active_transactions():
     ],
     tags=['Dashboard'],
 )
-def _get_effective_category(txn):
-    """Get effective category from CategoryLink or primary/member transaction."""
-    if txn.resolved_transaction_id:
-        try:
-            from links.models import CategoryLink
-            link = CategoryLink.objects.filter(
-                resolved_transaction_id=txn.resolved_transaction_id
-            ).order_by('-created_at').first()
-            if link:
-                return link.category
-        except ImportError:
-            pass
-    if txn.category:
-        return txn.category
-    if txn.resolved_transaction:
-        for member in txn.resolved_transaction.bank_transactions.all():
-            if member.category:
-                return member.category
-    return None
+def _build_category_map(resolved_transaction_ids):
+    """Build a map of resolved_transaction_id -> category from CategoryLinks (latest wins)."""
+    from links.models import CategoryLink
+    category_map = {}
+    for link in CategoryLink.objects.filter(
+        resolved_transaction_id__in=resolved_transaction_ids
+    ).order_by('created_at'):
+        category_map[link.resolved_transaction_id] = link.category
+    return category_map
 
 
 @api_view(['GET'])
@@ -137,19 +127,28 @@ def api_summary(request):
     from bank_accounts.models import BankAccount
 
     # For income/expense breakdown, exclude linked self transfers (both sides of the link)
-    # Exclude transactions that link TO another (linked_transaction is set)
-    # AND transactions that are linked FROM another (linked_from exists)
+    from links.models import SelfTransferLink
+    self_transfer_rt_ids = set(
+        SelfTransferLink.objects.values_list('resolved_transaction_a_id', flat=True)
+    ) | set(
+        SelfTransferLink.objects.values_list('resolved_transaction_b_id', flat=True)
+    )
+    self_transfer_rt_ids.discard(None)
+
     filtered_transactions = all_transactions.exclude(
-        Q(category__in=EXCLUDED_CATEGORIES) & (
-            Q(linked_transaction__isnull=False) | Q(linked_from__isnull=False)
-        )
+        Q(category__in=EXCLUDED_CATEGORIES) &
+        Q(resolved_transaction_id__in=self_transfer_rt_ids)
     )
 
-    # Also exclude transactions where aggregated category is in EXCLUDED_CATEGORIES
-    # and they have links (need to check resolved members too)
     filtered_with_resolved = filtered_transactions.select_related(
         'resolved_transaction'
-    ).prefetch_related('resolved_transaction__bank_transactions')
+    ).prefetch_related('resolved_transaction__category_links')
+
+    # Pre-fetch category map to avoid N+1 queries
+    all_rt_ids = set(all_transactions.exclude(
+        resolved_transaction_id__isnull=True
+    ).values_list('resolved_transaction_id', flat=True))
+    category_map = _build_category_map(all_rt_ids)
 
     # Income breakdown using aggregated category
     income_categories = ['Salary/Income']
@@ -160,12 +159,11 @@ def api_summary(request):
     total_debits = 0.0
 
     for txn in filtered_with_resolved:
-        effective_category = _get_effective_category(txn)
+        effective_category = category_map.get(txn.resolved_transaction_id)
 
         # Check if this is an excluded self transfer that wasn't caught by the query filter
-        # (i.e., member has Self Transfer category but primary doesn't)
-        is_linked = txn.linked_transaction_id is not None or hasattr(txn, 'linked_from') and txn.linked_from
-        if effective_category in EXCLUDED_CATEGORIES and is_linked:
+        is_self_transfer = txn.resolved_transaction_id in self_transfer_rt_ids
+        if effective_category in EXCLUDED_CATEGORIES and is_self_transfer:
             continue
 
         credit_amt = float(txn.credit_amount)
@@ -212,11 +210,11 @@ def api_summary(request):
         filtered_count = 0
 
         for txn in account_txns:
-            effective_category = _get_effective_category(txn)
+            effective_category = category_map.get(txn.resolved_transaction_id)
 
             # Check if this is an excluded self transfer
-            is_linked = txn.linked_transaction_id is not None or hasattr(txn, 'linked_from') and txn.linked_from
-            if effective_category in EXCLUDED_CATEGORIES and is_linked:
+            is_self_transfer = txn.resolved_transaction_id in self_transfer_rt_ids
+            if effective_category in EXCLUDED_CATEGORIES and is_self_transfer:
                 continue
 
             filtered_count += 1
@@ -460,26 +458,13 @@ def api_transactions(request):
 
     transactions = get_active_transactions().select_related(
         'bank_account',
-        'linked_transaction',
-        'linked_transaction__bank_account',
-        'cc_payment_match',
-        'cc_payment_match__credit_card_transaction',
-        'cc_payment_match__credit_card_transaction__credit_card',
-        'cc_payment_match__credit_card_transaction__data_source_artifact',
         'data_source_artifact',
         'data_source_artifact__source_artifact',
         'data_source_artifact__source_artifact__extraction',
         'data_source_artifact__source_artifact__extraction__source_file',
         'resolved_transaction',
     ).prefetch_related(
-        'linked_from',
         'resolved_transaction__bank_transactions',
-        'resolved_transaction__bank_transactions__linked_transaction',
-        'resolved_transaction__bank_transactions__linked_transaction__bank_account',
-        'resolved_transaction__bank_transactions__cc_payment_match',
-        'resolved_transaction__bank_transactions__cc_payment_match__credit_card_transaction',
-        'resolved_transaction__bank_transactions__cc_payment_match__credit_card_transaction__credit_card',
-        'resolved_transaction__bank_transactions__cc_payment_match__credit_card_transaction__data_source_artifact',
         'resolved_transaction__category_links',
         'resolved_transaction__self_transfer_links_as_a__resolved_transaction_b',
         'resolved_transaction__self_transfer_links_as_b__resolved_transaction_a',
@@ -499,18 +484,11 @@ def api_transactions(request):
 
     category = request.GET.get('category')
     if category:
-        try:
-            from links.models import CategoryLink
-            transactions = transactions.filter(
-                Q(category=category) |
-                Q(resolved_transaction__bank_transactions__category=category) |
-                Q(resolved_transaction__category_links__category=category)
-            ).distinct()
-        except ImportError:
-            transactions = transactions.filter(
-                Q(category=category) |
-                Q(resolved_transaction__bank_transactions__category=category)
-            ).distinct()
+        transactions = transactions.filter(
+            Q(category=category) |
+            Q(resolved_transaction__bank_transactions__category=category) |
+            Q(resolved_transaction__category_links__category=category)
+        ).distinct()
 
     transaction_type = request.GET.get('type')
     if transaction_type == 'credit':
@@ -587,6 +565,8 @@ def api_transactions(request):
     transactions_page = sorted_result[offset:offset + limit]
 
     active_cc_txn_ids = set(get_active_cc_transactions().values_list('id', flat=True))
+    page_rt_ids = {t.resolved_transaction_id for t in transactions_page if t.resolved_transaction_id}
+    category_map = _build_category_map(page_rt_ids)
     data = []
     for t in transactions_page:
         member_txns = [t]
@@ -595,36 +575,21 @@ def api_transactions(request):
 
         linked = None
         linked_data = None
-        try:
-            from links.models import SelfTransferLink
-            rt = t.resolved_transaction
-            if rt:
-                link = rt.self_transfer_links_as_a.select_related('resolved_transaction_b').first()
-                if link and link.resolved_transaction_b_id:
-                    other = link.resolved_transaction_b
+        rt = t.resolved_transaction
+        if rt:
+            link = rt.self_transfer_links_as_a.select_related('resolved_transaction_b').first()
+            if link and link.resolved_transaction_b_id:
+                other = link.resolved_transaction_b
+                primary_id = getattr(other, 'primary_transaction_id', None)
+                if primary_id:
+                    linked = BankTransaction.objects.filter(id=primary_id).select_related('bank_account').first()
+            if not linked:
+                link = rt.self_transfer_links_as_b.select_related('resolved_transaction_a').first()
+                if link and link.resolved_transaction_a_id:
+                    other = link.resolved_transaction_a
                     primary_id = getattr(other, 'primary_transaction_id', None)
                     if primary_id:
                         linked = BankTransaction.objects.filter(id=primary_id).select_related('bank_account').first()
-                if not linked and rt:
-                    link = rt.self_transfer_links_as_b.select_related('resolved_transaction_a').first()
-                    if link and link.resolved_transaction_a_id:
-                        other = link.resolved_transaction_a
-                        primary_id = getattr(other, 'primary_transaction_id', None)
-                        if primary_id:
-                            linked = BankTransaction.objects.filter(id=primary_id).select_related('bank_account').first()
-        except ImportError:
-            pass
-        if not linked:
-            for member in member_txns:
-                linked = member.linked_transaction
-                if linked:
-                    break
-                try:
-                    linked = member.linked_from
-                    if linked:
-                        break
-                except BankTransaction.DoesNotExist:
-                    pass
         if linked:
             linked_data = {
                 'id': linked.id,
@@ -635,53 +600,24 @@ def api_transactions(request):
             }
 
         cc_match_data = None
-        try:
-            from links.models import CreditCardPaymentLink
-            rt = t.resolved_transaction
-            if rt and hasattr(rt, 'cc_payment_links_bank'):
-                for ccl in rt.cc_payment_links_bank.all():
-                    if not ccl.is_active:
-                        continue
-                    cc_resolved = getattr(ccl, 'cc_resolved_transaction', None)
-                    if cc_resolved and cc_resolved.primary_transaction_id in active_cc_txn_ids:
-                        cc_txn = CreditCardTransaction.objects.filter(
-                            id=cc_resolved.primary_transaction_id
-                        ).select_related('credit_card', 'data_source_artifact').first()
-                        if cc_txn:
-                            cc_source = cc_txn.data_source_artifact
-                            is_active_cc_source = (
-                                cc_source and cc_source.status == 'loaded' and cc_source.enabled and not cc_source.hidden
-                            )
-                            if is_active_cc_source:
-                                cc_match_data = {
-                                    'id': ccl.id,
-                                    'credit_card_transaction': {
-                                        'id': cc_txn.id,
-                                        'date': cc_txn.date.isoformat(),
-                                        'description': cc_txn.description,
-                                        'amount': float(cc_txn.amount),
-                                        'credit_card': {'id': cc_txn.credit_card.id, 'nickname': cc_txn.credit_card.nickname} if cc_txn.credit_card else None,
-                                    },
-                                    'offset': float(ccl.offset),
-                                    'confidence_score': ccl.confidence_score,
-                                    'match_reasons': ccl.match_reasons or [],
-                                }
-                                break
-        except ImportError:
-            pass
-        if not cc_match_data:
-            for member in member_txns:
-                try:
-                    cc_match = member.cc_payment_match
-                    if cc_match and cc_match.is_active:
-                        cc_txn = cc_match.credit_card_transaction
+        rt = t.resolved_transaction
+        if rt:
+            for ccl in rt.cc_payment_links_bank.all():
+                if not ccl.is_active:
+                    continue
+                cc_resolved = getattr(ccl, 'cc_resolved_transaction', None)
+                if cc_resolved and cc_resolved.primary_transaction_id in active_cc_txn_ids:
+                    cc_txn = CreditCardTransaction.objects.filter(
+                        id=cc_resolved.primary_transaction_id
+                    ).select_related('credit_card', 'data_source_artifact').first()
+                    if cc_txn:
                         cc_source = cc_txn.data_source_artifact
                         is_active_cc_source = (
                             cc_source and cc_source.status == 'loaded' and cc_source.enabled and not cc_source.hidden
                         )
                         if is_active_cc_source:
                             cc_match_data = {
-                                'id': cc_match.id,
+                                'id': ccl.id,
                                 'credit_card_transaction': {
                                     'id': cc_txn.id,
                                     'date': cc_txn.date.isoformat(),
@@ -689,15 +625,13 @@ def api_transactions(request):
                                     'amount': float(cc_txn.amount),
                                     'credit_card': {'id': cc_txn.credit_card.id, 'nickname': cc_txn.credit_card.nickname} if cc_txn.credit_card else None,
                                 },
-                                'offset': float(cc_match.offset),
-                                'confidence_score': cc_match.confidence_score,
-                                'match_reasons': cc_match.match_reasons,
+                                'offset': float(ccl.offset),
+                                'confidence_score': ccl.confidence_score,
+                                'match_reasons': ccl.match_reasons or [],
                             }
                             break
-                except CreditCardPaymentMatch.DoesNotExist:
-                    pass
 
-        aggregated_category = _get_effective_category(t) if t.resolved_transaction_id else t.category
+        aggregated_category = category_map.get(t.resolved_transaction_id) if t.resolved_transaction_id else t.category
         if not aggregated_category:
             for member in member_txns:
                 if member.category:
@@ -1362,18 +1296,11 @@ def api_date_range(request):
 
     category = request.GET.get('category')
     if category:
-        try:
-            from links.models import CategoryLink
-            transactions = transactions.filter(
-                Q(category=category) |
-                Q(resolved_transaction__bank_transactions__category=category) |
-                Q(resolved_transaction__category_links__category=category)
-            ).distinct()
-        except ImportError:
-            transactions = transactions.filter(
-                Q(category=category) |
-                Q(resolved_transaction__bank_transactions__category=category)
-            ).distinct()
+        transactions = transactions.filter(
+            Q(category=category) |
+            Q(resolved_transaction__bank_transactions__category=category) |
+            Q(resolved_transaction__category_links__category=category)
+        ).distinct()
 
     transaction_type = request.GET.get('type')
     if transaction_type == 'credit':

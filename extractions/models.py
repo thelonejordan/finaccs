@@ -4,6 +4,8 @@ Unified extraction models for the MODELLING-REVAMP architecture.
 This module provides a unified, format-agnostic, data-agnostic extraction system
 that replaces the current domain-specific (bank_accs and credit_cards) extraction systems.
 """
+import uuid as uuid_lib
+
 import shortuuid
 from django.db import models
 
@@ -349,9 +351,6 @@ class TransactionLinkSnapshot(models.Model):
 # Transaction Resolution Models
 # =============================================================================
 
-import uuid as uuid_lib
-
-
 class ResolvedTransaction(models.Model):
     """
     Logical identity for a real-world transaction, grouping multiple source records.
@@ -420,109 +419,48 @@ class ResolvedTransaction(models.Model):
             return self.credit_card_transactions.count()
 
     def get_stories(self):
-        """Stories attached to this display group (from StoryLink, then StoryTransaction)."""
+        """Stories attached to this display group (from StoryLink)."""
         from stories.models import Story
-
-        try:
-            from links.models import StoryLink
-            links = StoryLink.objects.filter(resolved_transaction_id=self.id).select_related('story')
-            if links.exists():
-                return Story.objects.filter(id__in=[sl.story_id for sl in links])
-        except ImportError:
-            pass
-        from stories.models import StoryTransaction
-        story_ids = set()
-        if self.transaction_type == 'bank':
-            for txn in self.bank_transactions.all():
-                story_ids.update(
-                    StoryTransaction.objects
-                    .filter(transaction_type='bank', transaction_id=txn.id)
-                    .values_list('story_id', flat=True)
-                )
-        else:
-            for txn in self.credit_card_transactions.all():
-                story_ids.update(
-                    StoryTransaction.objects
-                    .filter(transaction_type='credit_card', transaction_id=txn.id)
-                    .values_list('story_id', flat=True)
-                )
+        from links.models import StoryLink
+        story_ids = StoryLink.objects.filter(
+            resolved_transaction_id=self.id
+        ).values_list('story_id', flat=True)
         return Story.objects.filter(id__in=story_ids)
 
     def get_entities(self):
-        """Entities attached to this display group (from EntityLink, then EntityTransaction)."""
+        """Entities attached to this display group (from EntityLink)."""
         from entities.models import Entity
-
-        try:
-            from links.models import EntityLink
-            links = EntityLink.objects.filter(resolved_transaction_id=self.id).select_related('entity')
-            if links.exists():
-                return Entity.objects.filter(id__in=[el.entity_id for el in links])
-        except ImportError:
-            pass
-        from entities.models import EntityTransaction
-        entity_ids = set()
-        if self.transaction_type == 'bank':
-            for txn in self.bank_transactions.all():
-                entity_ids.update(
-                    EntityTransaction.objects
-                    .filter(transaction_type='bank', transaction_id=txn.id)
-                    .values_list('entity_id', flat=True)
-                )
-        else:
-            for txn in self.credit_card_transactions.all():
-                entity_ids.update(
-                    EntityTransaction.objects
-                    .filter(transaction_type='credit_card', transaction_id=txn.id)
-                    .values_list('entity_id', flat=True)
-                )
+        from links.models import EntityLink
+        entity_ids = EntityLink.objects.filter(
+            resolved_transaction_id=self.id
+        ).values_list('entity_id', flat=True)
         return Entity.objects.filter(id__in=entity_ids)
 
     def get_effective_category(self):
-        """Category for this display group (from CategoryLink, then primary txn)."""
-        try:
-            from links.models import CategoryLink
-            link = CategoryLink.objects.filter(resolved_transaction_id=self.id).order_by('-created_at').first()
-            if link:
-                return link.category
-        except ImportError:
-            pass
-        if self.transaction_type == 'bank':
-            primary = self.bank_transactions.filter(is_primary=True).first()
-            if primary:
-                return primary.category
-        else:
-            primary = self.credit_card_transactions.filter(is_primary=True).first()
-            if primary:
-                return primary.category
+        """Category for this display group (from CategoryLink)."""
+        from links.models import CategoryLink
+        link = CategoryLink.objects.filter(
+            resolved_transaction_id=self.id
+        ).order_by('-created_at').first()
+        if link:
+            return link.category
         return None
 
     def get_linked_resolved_transaction(self):
-        """Linked resolved transaction for self-transfers (from SelfTransferLink, then BankTransaction.linked_transaction)."""
+        """Linked resolved transaction for self-transfers (from SelfTransferLink)."""
         if self.transaction_type != 'bank':
             return None
-        try:
-            from links.models import SelfTransferLink
-            link = SelfTransferLink.objects.filter(
-                resolved_transaction_a_id=self.id
-            ).select_related('resolved_transaction_b').first()
-            if link and link.resolved_transaction_b_id:
-                return link.resolved_transaction_b
-            link = SelfTransferLink.objects.filter(
-                resolved_transaction_b_id=self.id
-            ).select_related('resolved_transaction_a').first()
-            if link and link.resolved_transaction_a_id:
-                return link.resolved_transaction_a
-        except ImportError:
-            pass
-        for txn in self.bank_transactions.all():
-            if txn.linked_transaction_id:
-                from bank_accounts.models import BankTransaction
-                try:
-                    linked_txn = BankTransaction.objects.get(id=txn.linked_transaction_id)
-                    if linked_txn.resolved_transaction_id:
-                        return linked_txn.resolved_transaction
-                except BankTransaction.DoesNotExist:
-                    pass
+        from links.models import SelfTransferLink
+        link = SelfTransferLink.objects.filter(
+            resolved_transaction_a_id=self.id
+        ).select_related('resolved_transaction_b').first()
+        if link and link.resolved_transaction_b_id:
+            return link.resolved_transaction_b
+        link = SelfTransferLink.objects.filter(
+            resolved_transaction_b_id=self.id
+        ).select_related('resolved_transaction_a').first()
+        if link and link.resolved_transaction_a_id:
+            return link.resolved_transaction_a
         return None
 
 

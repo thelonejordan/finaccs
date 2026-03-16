@@ -24,27 +24,27 @@ except ImportError:
 from .models import Entity, EntityTransaction
 from bank_accounts.models import BankTransaction
 from credit_cards.models import CreditCardTransaction
+from extractions.models import ResolvedTransaction
+from links.models import EntityLink, CategoryLink
 from dashboard.views import get_active_transactions
 from credit_cards.views import get_active_cc_transactions
 
 
 def get_entity_stats(entity):
     """Get transaction stats for an entity."""
-    entity_txns = EntityTransaction.objects.filter(entity=entity)
-
-    bank_ids = list(entity_txns.filter(transaction_type='bank').values_list('transaction_id', flat=True))
-    cc_ids = list(entity_txns.filter(transaction_type='credit_card').values_list('transaction_id', flat=True))
+    rt_ids = list(EntityLink.objects.filter(entity=entity).values_list('resolved_transaction_id', flat=True))
+    resolved_txns = ResolvedTransaction.objects.filter(id__in=rt_ids)
 
     total_spent = 0
     min_date = None
     max_date = None
     transaction_count = 0
 
-    # Get bank transactions
-    if bank_ids:
-        bank_txns = get_active_transactions().filter(id__in=bank_ids)
+    # Get bank transactions via resolved transactions
+    bank_rt_ids = list(resolved_txns.filter(transaction_type='bank').values_list('id', flat=True))
+    if bank_rt_ids:
+        bank_txns = get_active_transactions().filter(resolved_transaction_id__in=bank_rt_ids, is_primary=True)
         for txn in bank_txns:
-            # Debit = expense (positive spent), Credit = income (negative spent for total)
             total_spent += float(txn.debit_amount) - float(txn.credit_amount)
             transaction_count += 1
             if min_date is None or txn.date < min_date:
@@ -52,11 +52,11 @@ def get_entity_stats(entity):
             if max_date is None or txn.date > max_date:
                 max_date = txn.date
 
-    # Get CC transactions
-    if cc_ids:
-        cc_txns = get_active_cc_transactions().filter(id__in=cc_ids)
+    # Get CC transactions via resolved transactions
+    cc_rt_ids = list(resolved_txns.filter(transaction_type='credit_card').values_list('id', flat=True))
+    if cc_rt_ids:
+        cc_txns = get_active_cc_transactions().filter(resolved_transaction_id__in=cc_rt_ids, is_primary=True)
         for txn in cc_txns:
-            # All CC transactions are expenses (positive amounts)
             total_spent += float(txn.amount)
             transaction_count += 1
             if min_date is None or txn.date < min_date:
@@ -89,59 +89,57 @@ def serialize_entity(entity, include_stats=True):
     return data
 
 
+def _build_category_map(resolved_transaction_ids):
+    """Build a map of resolved_transaction_id -> category from CategoryLinks (latest wins)."""
+    category_map = {}
+    for link in CategoryLink.objects.filter(
+        resolved_transaction_id__in=resolved_transaction_ids
+    ).order_by('created_at'):
+        category_map[link.resolved_transaction_id] = link.category
+    return category_map
+
+
 def get_entity_transactions(entity):
     """Get all transactions for an entity with full details."""
-    entity_txns = EntityTransaction.objects.filter(entity=entity)
+    rt_ids = list(EntityLink.objects.filter(entity=entity).values_list('resolved_transaction_id', flat=True))
+    resolved_txns = ResolvedTransaction.objects.filter(id__in=rt_ids)
     transactions = []
 
-    bank_ids = list(entity_txns.filter(transaction_type='bank').values_list('transaction_id', flat=True))
-    cc_ids = list(entity_txns.filter(transaction_type='credit_card').values_list('transaction_id', flat=True))
+    bank_rt_ids = list(resolved_txns.filter(transaction_type='bank').values_list('id', flat=True))
+    cc_rt_ids = list(resolved_txns.filter(transaction_type='credit_card').values_list('id', flat=True))
+    category_map = _build_category_map(rt_ids)
 
     # Get bank transactions
-    if bank_ids:
-        bank_txns = get_active_transactions().filter(id__in=bank_ids).select_related(
-            'bank_account', 'resolved_transaction'
-        ).prefetch_related('resolved_transaction__bank_transactions')
+    if bank_rt_ids:
+        bank_txns = get_active_transactions().filter(
+            resolved_transaction_id__in=bank_rt_ids, is_primary=True
+        ).select_related('bank_account', 'resolved_transaction')
         for txn in bank_txns:
-            # Aggregate category from member transactions
-            aggregated_category = txn.category
-            if not aggregated_category and txn.resolved_transaction:
-                for member in txn.resolved_transaction.bank_transactions.all():
-                    if member.category:
-                        aggregated_category = member.category
-                        break
-
+            category = category_map.get(txn.resolved_transaction_id) if txn.resolved_transaction_id else txn.category
             transactions.append({
                 'id': txn.id,
                 'type': 'bank',
                 'date': txn.date.isoformat(),
                 'description': txn.narration,
                 'amount': float(txn.debit_amount) - float(txn.credit_amount),
-                'category': aggregated_category,
+                'category': category,
                 'source': txn.bank_account.nickname if txn.bank_account else 'Unknown',
             })
 
     # Get CC transactions
-    if cc_ids:
-        cc_txns = get_active_cc_transactions().filter(id__in=cc_ids).select_related(
-            'credit_card', 'resolved_transaction'
-        ).prefetch_related('resolved_transaction__credit_card_transactions')
+    if cc_rt_ids:
+        cc_txns = get_active_cc_transactions().filter(
+            resolved_transaction_id__in=cc_rt_ids, is_primary=True
+        ).select_related('credit_card', 'resolved_transaction')
         for txn in cc_txns:
-            # Aggregate category from member transactions
-            aggregated_category = txn.category
-            if not aggregated_category and txn.resolved_transaction:
-                for member in txn.resolved_transaction.credit_card_transactions.all():
-                    if member.category:
-                        aggregated_category = member.category
-                        break
-
+            category = category_map.get(txn.resolved_transaction_id) if txn.resolved_transaction_id else txn.category
             transactions.append({
                 'id': txn.id,
                 'type': 'credit_card',
                 'date': txn.date.isoformat(),
                 'description': txn.description,
                 'amount': float(txn.amount),
-                'category': aggregated_category,
+                'category': category,
                 'source': txn.credit_card.nickname if txn.credit_card else 'Unknown',
             })
 
@@ -397,22 +395,16 @@ def entity_transactions(request, entity_id):
                 )
                 if created:
                     added += 1
-                    try:
-                        from links.models import EntityLink
-                        if txn_type == 'bank':
-                            from bank_accounts.models import BankTransaction
-                            t = BankTransaction.objects.filter(id=txn_id).first()
-                        else:
-                            from credit_cards.models import CreditCardTransaction
-                            t = CreditCardTransaction.objects.filter(id=txn_id).first()
-                        if t and t.resolved_transaction_id:
-                            EntityLink.objects.get_or_create(
-                                resolved_transaction_id=t.resolved_transaction_id,
-                                entity=entity,
-                                defaults={'origin_transaction_type': txn_type, 'origin_transaction_id': txn_id},
-                            )
-                    except ImportError:
-                        pass
+                    if txn_type == 'bank':
+                        t = BankTransaction.objects.filter(id=txn_id).first()
+                    else:
+                        t = CreditCardTransaction.objects.filter(id=txn_id).first()
+                    if t and t.resolved_transaction_id:
+                        EntityLink.objects.get_or_create(
+                            resolved_transaction_id=t.resolved_transaction_id,
+                            entity=entity,
+                            defaults={'origin_transaction_type': txn_type, 'origin_transaction_id': txn_id},
+                        )
         return JsonResponse({'success': True, 'added': added})
 
     elif request.method == "DELETE":
@@ -421,21 +413,15 @@ def entity_transactions(request, entity_id):
             txn_type = txn.get('type')
             txn_id = txn.get('id')
             if txn_type in ('bank', 'credit_card') and txn_id:
-                try:
-                    from links.models import EntityLink
-                    if txn_type == 'bank':
-                        from bank_accounts.models import BankTransaction
-                        t = BankTransaction.objects.filter(id=txn_id).first()
-                    else:
-                        from credit_cards.models import CreditCardTransaction
-                        t = CreditCardTransaction.objects.filter(id=txn_id).first()
-                    if t and t.resolved_transaction_id:
-                        EntityLink.objects.filter(
-                            resolved_transaction_id=t.resolved_transaction_id,
-                            entity=entity,
-                        ).delete()
-                except ImportError:
-                    pass
+                if txn_type == 'bank':
+                    t = BankTransaction.objects.filter(id=txn_id).first()
+                else:
+                    t = CreditCardTransaction.objects.filter(id=txn_id).first()
+                if t and t.resolved_transaction_id:
+                    EntityLink.objects.filter(
+                        resolved_transaction_id=t.resolved_transaction_id,
+                        entity=entity,
+                    ).delete()
                 deleted, _ = EntityTransaction.objects.filter(
                     entity=entity,
                     transaction_type=txn_type,
@@ -496,42 +482,25 @@ def get_transaction_entities(request):
         if txn_type in ('bank', 'credit_card') and txn_id:
             key = f"{txn_type}:{txn_id}"
 
-            # For resolved transactions, aggregate entities from ALL member transactions
-            member_ids = [txn_id]
+            # Find the resolved_transaction for this transaction
+            rt_id = None
             if txn_type == 'bank':
-                from bank_accounts.models import BankTransaction
-                try:
-                    bank_txn = BankTransaction.objects.select_related('resolved_transaction').get(id=txn_id)
-                    if bank_txn.resolved_transaction:
-                        member_ids = list(bank_txn.resolved_transaction.bank_transactions.values_list('id', flat=True))
-                except BankTransaction.DoesNotExist:
-                    pass
+                rt_id = BankTransaction.objects.filter(id=txn_id).values_list('resolved_transaction_id', flat=True).first()
             elif txn_type == 'credit_card':
-                from credit_cards.models import CreditCardTransaction
-                try:
-                    cc_txn = CreditCardTransaction.objects.select_related('resolved_transaction').get(id=txn_id)
-                    if cc_txn.resolved_transaction:
-                        member_ids = list(cc_txn.resolved_transaction.credit_card_transactions.values_list('id', flat=True))
-                except CreditCardTransaction.DoesNotExist:
-                    pass
+                rt_id = CreditCardTransaction.objects.filter(id=txn_id).values_list('resolved_transaction_id', flat=True).first()
 
-            # Query entities for all member transaction IDs
-            entity_txns = EntityTransaction.objects.filter(
-                transaction_type=txn_type,
-                transaction_id__in=member_ids,
-            ).select_related('entity')
-
-            # Deduplicate entities (same entity might be linked to multiple members)
-            seen_entities = set()
+            # Query entities via EntityLink
             entities = []
-            for et in entity_txns:
-                if et.entity.entity_id not in seen_entities:
-                    seen_entities.add(et.entity.entity_id)
+            if rt_id:
+                entity_links = EntityLink.objects.filter(
+                    resolved_transaction_id=rt_id
+                ).select_related('entity')
+                for el in entity_links:
                     entities.append({
-                        'entity_id': et.entity.entity_id,
-                        'name': et.entity.name,
-                        'icon': et.entity.icon,
-                        'entity_type': et.entity.entity_type,
+                        'entity_id': el.entity.entity_id,
+                        'name': el.entity.name,
+                        'icon': el.entity.icon,
+                        'entity_type': el.entity.entity_type,
                     })
             result[key] = entities
 
@@ -613,12 +582,9 @@ def compare_entities(request):
             'total_spent': stats['total_spent'],
         })
 
-        # Get transaction identifiers for this entity
-        entity_txns = EntityTransaction.objects.filter(entity=entity)
-        txn_set = set()
-        for et in entity_txns:
-            txn_set.add((et.transaction_type, et.transaction_id))
-        entity_transaction_sets[entity.entity_id] = txn_set
+        # Get resolved_transaction_ids for this entity via EntityLink
+        rt_ids = set(EntityLink.objects.filter(entity=entity).values_list('resolved_transaction_id', flat=True))
+        entity_transaction_sets[entity.entity_id] = rt_ids
 
     # Find common transactions (present in ALL entities)
     all_txn_sets = list(entity_transaction_sets.values())
@@ -636,55 +602,44 @@ def compare_entities(request):
         unique_txns = txn_set - other_union
         unique_transactions[entity_id] = unique_txns
 
-    # Helper to serialize transactions
-    def serialize_transactions(txn_tuples):
+    # Helper to serialize transactions from resolved_transaction_ids
+    def serialize_transactions(rt_ids):
         result = []
-        bank_ids = [tid for ttype, tid in txn_tuples if ttype == 'bank']
-        cc_ids = [tid for ttype, tid in txn_tuples if ttype == 'credit_card']
+        resolved_txns = ResolvedTransaction.objects.filter(id__in=rt_ids)
 
-        if bank_ids:
-            bank_txns = get_active_transactions().filter(id__in=bank_ids).select_related(
-                'bank_account', 'resolved_transaction'
-            ).prefetch_related('resolved_transaction__bank_transactions')
+        bank_rt_ids = list(resolved_txns.filter(transaction_type='bank').values_list('id', flat=True))
+        cc_rt_ids = list(resolved_txns.filter(transaction_type='credit_card').values_list('id', flat=True))
+        cat_map = _build_category_map(rt_ids)
+
+        if bank_rt_ids:
+            bank_txns = get_active_transactions().filter(
+                resolved_transaction_id__in=bank_rt_ids, is_primary=True
+            ).select_related('bank_account', 'resolved_transaction')
             for txn in bank_txns:
-                # Aggregate category from resolved member transactions
-                aggregated_category = txn.category
-                if not aggregated_category and txn.resolved_transaction:
-                    for member in txn.resolved_transaction.bank_transactions.all():
-                        if member.category:
-                            aggregated_category = member.category
-                            break
-
+                category = cat_map.get(txn.resolved_transaction_id) if txn.resolved_transaction_id else txn.category
                 result.append({
                     'id': txn.id,
                     'type': 'bank',
                     'date': txn.date.isoformat(),
                     'description': txn.narration,
                     'amount': float(txn.debit_amount) - float(txn.credit_amount),
-                    'category': aggregated_category,
+                    'category': category,
                     'source': txn.bank_account.nickname if txn.bank_account else 'Unknown',
                 })
 
-        if cc_ids:
-            cc_txns = get_active_cc_transactions().filter(id__in=cc_ids).select_related(
-                'credit_card', 'resolved_transaction'
-            ).prefetch_related('resolved_transaction__credit_card_transactions')
+        if cc_rt_ids:
+            cc_txns = get_active_cc_transactions().filter(
+                resolved_transaction_id__in=cc_rt_ids, is_primary=True
+            ).select_related('credit_card', 'resolved_transaction')
             for txn in cc_txns:
-                # Aggregate category from resolved member transactions
-                aggregated_category = txn.category
-                if not aggregated_category and txn.resolved_transaction:
-                    for member in txn.resolved_transaction.credit_card_transactions.all():
-                        if member.category:
-                            aggregated_category = member.category
-                            break
-
+                category = cat_map.get(txn.resolved_transaction_id) if txn.resolved_transaction_id else txn.category
                 result.append({
                     'id': txn.id,
                     'type': 'credit_card',
                     'date': txn.date.isoformat(),
                     'description': txn.description,
                     'amount': float(txn.amount),
-                    'category': aggregated_category,
+                    'category': category,
                     'source': txn.credit_card.nickname if txn.credit_card else 'Unknown',
                 })
 

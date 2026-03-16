@@ -67,8 +67,14 @@ python manage.py runserver   # Runs on :8000
 | `SECRET_KEY` | Prod | insecure-key | Django secret key |
 | `DEBUG` | No | True | Debug mode |
 | `ALLOWED_HOSTS` | Yes | localhost | Comma-separated hosts |
-| `DATABASE_URL` | No | SQLite | MySQL URL |
-| `CORS_ALLOWED_ORIGINS` | No | localhost:5173 | CORS origins |
-| `DEV_MODE` | No | 0 | Enable API docs |
+| `DATABASE_URL` | No | SQLite | MySQL connection URL |
+| `CORS_ALLOWED_ORIGINS` | No | localhost:5173 | Comma-separated CORS origins |
+| `CORS_ALLOW_ALL_ORIGINS` | No | false | Allow all origins (useful for tunneling) |
+| `DEV_MODE` | No | 0 | Enable API docs, django-extensions |
+| `VITE_ALLOWED_HOSTS` | No | — | Vite dev server allowed hosts (comma-separated) |
 | `REDIS_ENABLED` | No | 0 | Enable Redis cache |
-| `VITE_API_BASE` | No | localhost:8000 | Frontend API base |
+| `REDIS_HOST` | No | 127.0.0.1 | Redis server host |
+| `REDIS_PORT` | No | 6379 | Redis server port |
+| `REDIS_USERNAME` | No | default | Redis username |
+| `REDIS_PASSWORD` | No | — | Redis password |
+| `VITE_API_BASE` | No | localhost:8000 | Frontend API base URL |
