@@ -5,7 +5,7 @@
 - Python 3.11+
 - Node.js 20+
 - uv (Python package manager)
-- MySQL (optional, SQLite default)
+- MySQL
 
 ## Environment Setup
 
@@ -31,8 +31,8 @@ ln -sf frontend/dist frontend_dist
 cp -r frontend/dist frontend_dist
 
 # Collect static and run
-python manage.py collectstatic --noinput
-python manage.py runserver
+uv run python manage.py collectstatic --noinput
+uv run python manage.py runserver
 ```
 
 ### Option B: Vite + Django (hot reload)
@@ -42,7 +42,7 @@ python manage.py runserver
 cd frontend && npm run dev   # Runs on :5173
 
 # Terminal 2: Django backend
-python manage.py runserver   # Runs on :8000
+uv run python manage.py runserver   # Runs on :8000
 
 # Frontend served from Vite, API from Django
 # Set VITE_API_BASE=http://localhost:8000 in frontend/.env
@@ -56,9 +56,11 @@ python manage.py runserver   # Runs on :8000
 | Frontend Build | `npm run build` | TypeScript + Vite production build |
 | Frontend Lint | `npm run lint` | ESLint check |
 | Frontend Preview | `npm run preview` | Preview production build |
-| Django Server | `python manage.py runserver` | Django dev server |
-| Collect Static | `python manage.py collectstatic` | Collect for Whitenoise |
-| Migrations | `python manage.py migrate` | Run database migrations |
+| Django Server | `uv run python manage.py runserver` | Django dev server |
+| Collect Static | `uv run python manage.py collectstatic` | Collect for Whitenoise |
+| Migrations | `uv run python manage.py migrate` | Run database migrations |
+| Backfill Resolved | `uv run python manage.py backfill_resolved_transactions` | Backfill ResolvedTransaction for all transactions |
+| Recover Links | `uv run python manage.py recover_orphaned_links` | Recover orphaned links (supports `--dry-run`) |
 
 ## Environment Variables
 

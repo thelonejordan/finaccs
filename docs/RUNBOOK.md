@@ -70,6 +70,32 @@ curl http://localhost:8000/api/health/
 | Database errors | Check `DATABASE_URL` format, run `migrate` |
 | CORS errors | Add origin to `CORS_ALLOWED_ORIGINS` |
 
+## Management Commands
+
+### `backfill_resolved_transactions`
+
+Creates single-member `ResolvedTransaction` records for any transactions that don't have one. Used when the data migration times out or for manual backfill.
+
+```bash
+uv run python manage.py backfill_resolved_transactions
+```
+
+### `recover_orphaned_links`
+
+Recovers links orphaned when their `resolved_transaction` was set to NULL (e.g. after a resolved transaction deletion).
+
+```bash
+# Preview what would be recovered (no changes made)
+uv run python manage.py recover_orphaned_links --dry-run
+
+# Recover orphaned links
+uv run python manage.py recover_orphaned_links
+```
+
+**Link types recovered:** CategoryLink, StoryLink, EntityLink, SelfTransferLink, CreditCardPaymentLink
+
+The command finds links with a NULL `resolved_transaction` and attempts to re-associate them with the correct resolved transaction using origin transaction metadata.
+
 ## Rollback
 
 ```bash

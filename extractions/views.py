@@ -1963,6 +1963,105 @@ def overlapping_group_list_create(request):
         return JsonResponse(_serialize_overlapping_group(group), status=201)
 
 
+def _cleanup_group_resolved_transactions(group):
+    """Unmerge resolved transactions and route links back to individual transactions."""
+    from django.db import IntegrityError, transaction
+
+    is_bank = group.bank_account_id is not None
+    if is_bank:
+        from bank_accounts.models import BankTransaction
+        TxnModel = BankTransaction
+    else:
+        from credit_cards.models import CreditCardTransaction
+        TxnModel = CreditCardTransaction
+
+    resolved_ids = set()
+    for session in group.sessions.filter(status='completed'):
+        for suggestion in session.suggestions.filter(status='confirmed'):
+            txn_ids = [t['id'] for t in suggestion.confirmed_transaction_ids or suggestion.suggested_transaction_ids]
+            txns = TxnModel.objects.filter(id__in=txn_ids, resolved_transaction__isnull=False)
+            resolved_ids.update(txns.values_list('resolved_transaction_id', flat=True))
+
+    if not resolved_ids:
+        return
+
+    from links.models import CategoryLink, StoryLink, EntityLink, SelfTransferLink, CreditCardPaymentLink
+
+    for merged_rt in ResolvedTransaction.objects.filter(id__in=resolved_ids):
+        with transaction.atomic():
+            source_txns = list(TxnModel.objects.filter(resolved_transaction=merged_rt))
+            if not source_txns:
+                merged_rt.delete()
+                continue
+
+            # Create individual RTs for each source transaction
+            txn_to_new_rt = {}
+            primary_new_rt = None
+            for txn in source_txns:
+                new_rt = ResolvedTransaction.objects.create(
+                    transaction_type='bank' if is_bank else 'credit_card',
+                    primary_transaction_id=txn.id,
+                    date=txn.date,
+                    amount=(txn.credit_amount - txn.debit_amount) if is_bank else txn.amount,
+                    bank_account_id=group.bank_account_id,
+                    credit_card_id=group.credit_card_id,
+                )
+                txn.resolved_transaction = new_rt
+                txn.is_primary = True
+                txn.save()
+                txn_to_new_rt[txn.id] = new_rt.id
+                if txn.id == merged_rt.primary_transaction_id:
+                    primary_new_rt = new_rt.id
+
+            if primary_new_rt is None:
+                primary_new_rt = txn_to_new_rt[source_txns[0].id]
+
+            # Route CategoryLink by origin_transaction_id
+            for link in CategoryLink.objects.filter(resolved_transaction=merged_rt):
+                target_rt = txn_to_new_rt.get(link.origin_transaction_id, primary_new_rt)
+                link.resolved_transaction_id = target_rt
+                link.save()
+
+            # Route StoryLink by origin_transaction_id (unique_together on resolved_transaction + story)
+            for link in StoryLink.objects.filter(resolved_transaction=merged_rt):
+                target_rt = txn_to_new_rt.get(link.origin_transaction_id, primary_new_rt)
+                link.resolved_transaction_id = target_rt
+                try:
+                    with transaction.atomic():
+                        link.save()
+                except IntegrityError:
+                    link.delete()
+
+            # Route EntityLink by origin_transaction_id (unique_together on resolved_transaction + entity)
+            for link in EntityLink.objects.filter(resolved_transaction=merged_rt):
+                target_rt = txn_to_new_rt.get(link.origin_transaction_id, primary_new_rt)
+                link.resolved_transaction_id = target_rt
+                try:
+                    with transaction.atomic():
+                        link.save()
+                except IntegrityError:
+                    link.delete()
+
+            # Route SelfTransferLink sides independently
+            for stl in SelfTransferLink.objects.filter(resolved_transaction_a=merged_rt):
+                stl.resolved_transaction_a_id = txn_to_new_rt.get(stl.origin_transaction_id_a, primary_new_rt)
+                stl.save()
+            for stl in SelfTransferLink.objects.filter(resolved_transaction_b=merged_rt):
+                stl.resolved_transaction_b_id = txn_to_new_rt.get(stl.origin_transaction_id_b, primary_new_rt)
+                stl.save()
+
+            # Route CreditCardPaymentLink sides independently
+            for cpl in CreditCardPaymentLink.objects.filter(bank_resolved_transaction=merged_rt):
+                cpl.bank_resolved_transaction_id = txn_to_new_rt.get(cpl.origin_bank_transaction_id, primary_new_rt)
+                cpl.save()
+            for cpl in CreditCardPaymentLink.objects.filter(cc_resolved_transaction=merged_rt):
+                cpl.cc_resolved_transaction_id = txn_to_new_rt.get(cpl.origin_cc_transaction_id, primary_new_rt)
+                cpl.save()
+
+            # Safe to delete — all links rerouted, all txns re-pointed
+            merged_rt.delete()
+
+
 @api_view(['GET', 'DELETE'])
 def overlapping_group_detail(request, group_id):
     """
@@ -1982,8 +2081,8 @@ def overlapping_group_detail(request, group_id):
 
     elif request.method == 'DELETE':
         if group.resolution_status == 'completed':
-            return JsonResponse({'error': 'Cannot delete a completed resolution group'}, status=400)
-        group.delete()
+            _cleanup_group_resolved_transactions(group)
+        group.delete()  # cascades to sessions + suggestions
         return JsonResponse({}, status=204)
 
 
@@ -2064,14 +2163,14 @@ def resolution_session_suggest(request, session_id):
     groups_by_key = defaultdict(list)
     for txn in transactions:
         if txn_type == 'bank':
-            key = (txn.date, txn.debit_amount - txn.credit_amount)
+            key = (txn.date, txn.debit_amount - txn.credit_amount, txn.closing_balance)
         else:
             key = (txn.date, txn.amount)
         groups_by_key[key].append(txn)
 
     # Create suggestions for groups with multiple transactions FROM DIFFERENT SOURCES
     suggestions_created = 0
-    for (date, amount), txns in groups_by_key.items():
+    for key, txns in groups_by_key.items():
         if len(txns) > 1:
             # Group transactions by their source artifact
             by_source = defaultdict(list)

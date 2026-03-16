@@ -207,6 +207,7 @@ finaccs/
 │   │   ├── components/     # React page components
 │   │   └── lib/            # API client, caches, theme
 │   └── package.json
+├── links/                  # Durable links app (link models, management commands)
 ├── project/                # Django project settings
 ├── pyproject.toml          # Python dependencies (uv)
 ├── manage.py               # Django CLI

@@ -426,6 +426,18 @@ export function OverlappingGroups({ dataSources, onStartResolution, onRefresh }:
                             Edit
                           </button>
                         )}
+                        <button
+                          onClick={() => { if (window.confirm('Delete this completed group? Links will be preserved on individual transactions.')) handleDeleteGroup(group.group_id) }}
+                          disabled={deletingId === group.group_id}
+                          className="p-1.5 rounded-lg hover:bg-red-500/20 text-muted-foreground hover:text-red-600 transition-colors disabled:opacity-50"
+                          title="Delete group"
+                        >
+                          {deletingId === group.group_id ? (
+                            <Loader2Icon className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2Icon className="h-4 w-4" />
+                          )}
+                        </button>
                       </>
                     )}
                   </div>

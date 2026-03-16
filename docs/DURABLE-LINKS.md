@@ -1,4 +1,4 @@
-# Durable, Transferable Links Revamp (Full Plan)
+# Durable, Transferable Links
 
 This plan has two parts: **Part 1** makes every transaction belong to a ResolvedTransaction (universal display_group). **Part 2** introduces first-class link objects that attach to ResolvedTransaction with origin/display_primary semantics, full recovery, and no link deletion.
 
@@ -45,11 +45,11 @@ Then display_group is always `resolved_transaction` (no nulls), display_primary 
 | Area | Current | Gap |
 |------|--------|-----|
 | Link storage | Category on txn; self-transfer on `BankTransaction.linked_transaction`; stories/entities on `StoryTransaction`/`EntityTransaction`; CC payment on `CreditCardPaymentMatch` (CASCADE) | Links live on txns; deleting/unloading loses or orphans them. No origin or display_group. |
-| Display group | ResolvedTransaction groups overlapping txns; primary chosen by `is_primary` | After Part 1, every txn has a ResolvedTransaction; links still don’t reference it. |
+| Display group | ResolvedTransaction groups overlapping txns; primary chosen by `is_primary` | After Part 1, every txn has a ResolvedTransaction; links still don't reference it. |
 | Primary deleted | Unlink API promotes another; **unload does not** promote | Links on that txn lost; no recovery. |
 | Origin deleted/unloaded | Unload deletes txns, snapshots by artifact+row_id; reapply on reload. Story/entity refs orphan; CC match CASCADE deleted | Links not durable independent of origin. |
 
-**Requirements:** Links as their own objects; track **origin** (txn where created) and **display_group** (all overlapping txns) and **display_primary** (where shown); if primary deleted, links recoverable when another primary selected; if origin deleted/unloaded, links remain; links never deleted (may be “unused” if display_group empty); extra durability measures.
+**Requirements:** Links as their own objects; track **origin** (txn where created) and **display_group** (all overlapping txns) and **display_primary** (where shown); if primary deleted, links recoverable when another primary selected; if origin deleted/unloaded, links remain; links never deleted (may be "unused" if display_group empty); extra durability measures.
 
 ## Architecture
 
@@ -147,3 +147,13 @@ flowchart LR
 7. **Part 2f:** Switch all write paths (category, link/unlink, add-to-story/entity, CC match) to create/update link rows.
 8. **Part 2g:** On resolution execute, reassign links from old ResolvedTransactions to the new merged one.
 9. **Optional:** Mark links unused when ResolvedTransaction has zero members; audit table.
+
+---
+
+## Implementation Status
+
+### Completed
+
+- **Completed group deletion with link preservation:** Deleting a completed overlapping group now unmerges resolved transactions and reroutes all link types (CategoryLink, StoryLink, EntityLink, SelfTransferLink, CreditCardPaymentLink) back to individual transactions. The entire operation is wrapped in `transaction.atomic()` for safety.
+- **Recovery management command:** `recover_orphaned_links` command available to recover links whose `resolved_transaction` was set to NULL. Supports `--dry-run` for preview. See [RUNBOOK.md](RUNBOOK.md) for usage.
+- **Frontend confirmation guard:** Delete action on completed overlapping groups shows a confirmation dialog before proceeding.
