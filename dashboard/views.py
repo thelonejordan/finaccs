@@ -60,14 +60,17 @@ PREDEFINED_CATEGORIES = [
 def get_active_transactions():
     """
     Return bank transactions from loaded, enabled, visible data sources.
-    No filter on resolved_transaction or is_primary so all such transactions
-    are shown (avoids empty list when backfill is partial or not run).
+    Excludes non-primary duplicates from resolved overlapping source groups.
+    Transactions without a resolved_transaction (legacy) are always included.
     """
+    from django.db.models import Q
     return BankTransaction.objects.filter(
         data_source_artifact__isnull=False,
         data_source_artifact__status='loaded',
         data_source_artifact__enabled=True,
         data_source_artifact__hidden=False,
+    ).filter(
+        Q(resolved_transaction__isnull=True) | Q(is_primary=True)
     )
 
 
@@ -1604,6 +1607,32 @@ def bank_inconsistencies(request):
     # Apply custom sorting to each account's transactions
     for account_id in transactions_by_account:
         transactions_by_account[account_id] = sort_account_transactions(
+            transactions_by_account[account_id]
+        )
+
+    # Deduplicate transactions that have identical fingerprints but were resolved
+    # into separate resolved_transactions (both marked is_primary=True).
+    # This can happen when overlapping sources aren't properly linked during resolution.
+    # Only dedup across different artifacts — same-artifact duplicates with identical
+    # fingerprints are legitimate (e.g., a payment and its reversal yielding the same balance).
+    def dedup_account_transactions(txns):
+        seen = {}  # fingerprint -> set of artifact_ids
+        result = []
+        for txn in txns:
+            key = (txn.date, float(txn.debit_amount), float(txn.credit_amount), float(txn.closing_balance))
+            artifacts = seen.get(key)
+            if artifacts is None:
+                seen[key] = {txn.data_source_artifact_id}
+                result.append(txn)
+            elif txn.data_source_artifact_id in artifacts:
+                result.append(txn)
+            # else: different artifact with same fingerprint — cross-source duplicate, skip
+        return result
+
+    # Dedup only affects balance gap detection below; the duplicate detection
+    # section intentionally uses the original all_transactions list.
+    for account_id in transactions_by_account:
+        transactions_by_account[account_id] = dedup_account_transactions(
             transactions_by_account[account_id]
         )
 

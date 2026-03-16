@@ -40,12 +40,18 @@ def get_active_cc_transactions():
     - status='loaded' means the artifact data is loaded into transactions
     - enabled=True means the artifact is shown in views (not disabled)
     - hidden=False means the artifact is visible in UI lists
+
+    Excludes non-primary duplicates from resolved overlapping source groups.
+    Transactions without a resolved_transaction (legacy) are always included.
     """
+    from django.db.models import Q
     return CreditCardTransaction.objects.filter(
         data_source_artifact__isnull=False,
         data_source_artifact__status='loaded',
         data_source_artifact__enabled=True,
         data_source_artifact__hidden=False,
+    ).filter(
+        Q(resolved_transaction__isnull=True) | Q(is_primary=True)
     )
 
 
