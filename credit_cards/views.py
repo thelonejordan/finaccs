@@ -347,31 +347,45 @@ def _get_cc_available_data_sources(transactions):
     return available_data_sources
 
 
-def _serialize_cc_transaction(t):
+def _serialize_cc_transaction(t, active_bank_txn_ids=None, bank_txns_map=None):
     """Serialize a credit card transaction to dict."""
     bank_match_data = None
     try:
-        bank_match = t.bank_payment_match
-        if bank_match and bank_match.is_active:
-            bank_txn = bank_match.bank_transaction
-            if not bank_txn.data_source_artifact_id:
-                raise AttributeError("Orphaned transaction")
-            bank_match_data = {
-                'id': bank_match.id,
-                'bank_transaction': {
-                    'id': bank_txn.id,
-                    'date': bank_txn.date.isoformat(),
-                    'narration': bank_txn.narration,
-                    'amount': float(bank_txn.debit_amount),
-                    'bank_account': {
-                        'id': bank_txn.bank_account.id,
-                        'nickname': bank_txn.bank_account.nickname,
-                    } if bank_txn.bank_account else None,
-                },
-                'offset': float(bank_match.offset),
-                'confidence_score': bank_match.confidence_score,
-                'match_reasons': bank_match.match_reasons,
-            }
+        rt = t.resolved_transaction
+        if rt:
+            # Display first active link only (1:1 display, matching old bank_payment_match behavior)
+            for ccl in rt.cc_payment_links_cc.all():
+                if not ccl.is_active:
+                    continue
+                bank_rt = ccl.bank_resolved_transaction
+                if not bank_rt:
+                    continue
+                if active_bank_txn_ids is not None and bank_rt.primary_transaction_id not in active_bank_txn_ids:
+                    continue
+                bank_txn = bank_txns_map.get(bank_rt.primary_transaction_id) if bank_txns_map else None
+                if not bank_txn:
+                    from bank_accounts.models import BankTransaction
+                    bank_txn = BankTransaction.objects.filter(
+                        id=bank_rt.primary_transaction_id
+                    ).select_related('bank_account').first()
+                if bank_txn:
+                    bank_match_data = {
+                        'id': ccl.id,
+                        'bank_transaction': {
+                            'id': bank_txn.id,
+                            'date': bank_txn.date.isoformat(),
+                            'narration': bank_txn.narration,
+                            'amount': float(bank_txn.debit_amount),
+                            'bank_account': {
+                                'id': bank_txn.bank_account.id,
+                                'nickname': bank_txn.bank_account.nickname,
+                            } if bank_txn.bank_account else None,
+                        },
+                        'offset': float(ccl.offset),
+                        'confidence_score': ccl.confidence_score,
+                        'match_reasons': ccl.match_reasons,
+                    }
+                    break
     except (AttributeError, ObjectDoesNotExist):
         pass
 
@@ -454,17 +468,20 @@ def _serialize_cc_transaction(t):
 @api_view(['GET'])
 def credit_card_transactions(request):
     """List credit card transactions with filters."""
+    from dashboard.views import get_active_transactions
+
     transactions = get_active_cc_transactions().select_related(
         'credit_card',
         'data_source_artifact',
         'data_source_artifact__source_artifact__extraction__source_file',
-        'bank_payment_match',
-        'bank_payment_match__bank_transaction',
-        'bank_payment_match__bank_transaction__bank_account',
         'resolved_transaction',
     ).prefetch_related(
         'resolved_transaction__credit_card_transactions',
+        'resolved_transaction__cc_payment_links_cc',
+        'resolved_transaction__cc_payment_links_cc__bank_resolved_transaction',
     )
+
+    active_bank_txn_ids = set(get_active_transactions().values_list('id', flat=True))
 
     transactions = _apply_cc_transaction_filters(transactions, request)
     available_data_sources = _get_cc_available_data_sources(transactions)
@@ -482,7 +499,19 @@ def credit_card_transactions(request):
     offset = int(request.GET.get('offset', 0))
     total = transactions.count()
 
-    data = [_serialize_cc_transaction(t) for t in transactions[offset:offset + limit]]
+    transactions_page = list(transactions[offset:offset + limit])
+
+    # Batch-fetch bank transactions for payment links to avoid N+1 queries
+    from bank_accounts.models import BankTransaction
+    bank_primary_ids = set()
+    for t in transactions_page:
+        if t.resolved_transaction:
+            for ccl in t.resolved_transaction.cc_payment_links_cc.all():
+                if ccl.is_active and ccl.bank_resolved_transaction:
+                    bank_primary_ids.add(ccl.bank_resolved_transaction.primary_transaction_id)
+    bank_txns_map = {t.id: t for t in BankTransaction.objects.filter(id__in=bank_primary_ids).select_related('bank_account')} if bank_primary_ids else {}
+
+    data = [_serialize_cc_transaction(t, active_bank_txn_ids, bank_txns_map) for t in transactions_page]
 
     return JsonResponse({
         'data': data,

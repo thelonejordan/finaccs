@@ -2356,6 +2356,41 @@ def api_bank_suggestions_for_cc_transaction(request, cc_txn_id):
     return JsonResponse({'suggestions': suggestions})
 
 
+def _ensure_cc_payment_links_synced():
+    """Ensure CreditCardPaymentLink exists for all active CreditCardPaymentMatch."""
+    from links.models import CreditCardPaymentLink
+
+    matches = CreditCardPaymentMatch.objects.filter(
+        is_active=True,
+        bank_transaction__resolved_transaction__isnull=False,
+        credit_card_transaction__resolved_transaction__isnull=False,
+    ).select_related('bank_transaction', 'credit_card_transaction')
+
+    existing_pairs = set(
+        CreditCardPaymentLink.objects.filter(is_active=True)
+        .values_list('bank_resolved_transaction_id', 'cc_resolved_transaction_id')
+    )
+
+    to_create = []
+    for m in matches:
+        pair = (m.bank_transaction.resolved_transaction_id,
+                m.credit_card_transaction.resolved_transaction_id)
+        if pair not in existing_pairs:
+            to_create.append(CreditCardPaymentLink(
+                bank_resolved_transaction_id=pair[0],
+                cc_resolved_transaction_id=pair[1],
+                offset=m.offset,
+                confidence_score=m.confidence_score,
+                match_reasons=m.match_reasons,
+                origin_bank_transaction_id=m.bank_transaction_id,
+                origin_cc_transaction_id=m.credit_card_transaction_id,
+            ))
+            existing_pairs.add(pair)
+
+    if to_create:
+        CreditCardPaymentLink.objects.bulk_create(to_create, ignore_conflicts=True)
+
+
 @extend_schema(
     methods=['GET'],
     summary="Get confirmed CC payment matches",
@@ -2423,60 +2458,76 @@ def api_cc_payment_matches(request):
     """Get or create credit card payment matches."""
     if request.method == 'GET':
         from credit_cards.views import get_active_cc_transactions
+        from links.models import CreditCardPaymentLink
 
         # Get IDs of active transactions (bank and CC)
-        active_bank_txn_ids = get_active_transactions().values_list('id', flat=True)
-        active_cc_txn_ids = get_active_cc_transactions().values_list('id', flat=True)
+        active_bank_txn_ids = set(get_active_transactions().values_list('id', flat=True))
+        active_cc_txn_ids = set(get_active_cc_transactions().values_list('id', flat=True))
 
-        # Get confirmed matches (only active matches where both bank and CC transactions are from active sources)
-        matches = CreditCardPaymentMatch.objects.filter(
+        # Query durable links with DB-level filtering on active transaction IDs
+        links = CreditCardPaymentLink.objects.filter(
             is_active=True,
-            bank_transaction_id__in=active_bank_txn_ids,
-            credit_card_transaction_id__in=active_cc_txn_ids
+            bank_resolved_transaction__isnull=False,
+            cc_resolved_transaction__isnull=False,
+            bank_resolved_transaction__primary_transaction_id__in=active_bank_txn_ids,
+            cc_resolved_transaction__primary_transaction_id__in=active_cc_txn_ids,
         ).select_related(
-            'bank_transaction',
-            'bank_transaction__bank_account',
-            'credit_card_transaction',
-            'credit_card_transaction__credit_card',
+            'bank_resolved_transaction',
+            'cc_resolved_transaction',
         )
 
         year = request.GET.get('year')
         if year:
-            matches = matches.filter(bank_transaction__date__year=int(year))
+            links = links.filter(bank_resolved_transaction__date__year=int(year))
 
-        # Order by bank transaction date desc
-        matches = matches.order_by('-bank_transaction__date')
+        # Evaluate queryset once to avoid double DB hit
+        links = list(links)
+
+        # Fetch primary transactions for serialization
+        bank_txn_ids = {l.bank_resolved_transaction.primary_transaction_id for l in links}
+        cc_txn_ids = {l.cc_resolved_transaction.primary_transaction_id for l in links}
+
+        from credit_cards.models import CreditCardTransaction
+        bank_txns = {t.id: t for t in BankTransaction.objects.filter(id__in=bank_txn_ids).select_related('bank_account')}
+        cc_txns = {t.id: t for t in CreditCardTransaction.objects.filter(id__in=cc_txn_ids).select_related('credit_card')}
 
         data = []
-        for match in matches:
+        for link in links:
+            bank_txn = bank_txns.get(link.bank_resolved_transaction.primary_transaction_id)
+            cc_txn = cc_txns.get(link.cc_resolved_transaction.primary_transaction_id)
+            if not bank_txn or not cc_txn:
+                continue
             data.append({
-                'id': match.id,
+                'id': link.id,
                 'bank_transaction': {
-                    'id': match.bank_transaction.id,
-                    'date': match.bank_transaction.date.isoformat(),
-                    'narration': match.bank_transaction.narration,
-                    'amount': float(match.bank_transaction.debit_amount or match.bank_transaction.credit_amount),
-                    'is_debit': match.bank_transaction.debit_amount > 0,
+                    'id': bank_txn.id,
+                    'date': bank_txn.date.isoformat(),
+                    'narration': bank_txn.narration,
+                    'amount': float(bank_txn.debit_amount or bank_txn.credit_amount),
+                    'is_debit': bank_txn.debit_amount > 0,
                     'bank_account': {
-                        'id': match.bank_transaction.bank_account.id,
-                        'nickname': match.bank_transaction.bank_account.nickname,
-                    } if match.bank_transaction.bank_account else None,
+                        'id': bank_txn.bank_account.id,
+                        'nickname': bank_txn.bank_account.nickname,
+                    } if bank_txn.bank_account else None,
                 },
                 'credit_card_transaction': {
-                    'id': match.credit_card_transaction.id,
-                    'date': match.credit_card_transaction.date.isoformat(),
-                    'description': match.credit_card_transaction.description,
-                    'amount': float(match.credit_card_transaction.amount),
+                    'id': cc_txn.id,
+                    'date': cc_txn.date.isoformat(),
+                    'description': cc_txn.description,
+                    'amount': float(cc_txn.amount),
                     'credit_card': {
-                        'id': match.credit_card_transaction.credit_card.id,
-                        'nickname': match.credit_card_transaction.credit_card.nickname,
-                    } if match.credit_card_transaction.credit_card else None,
+                        'id': cc_txn.credit_card.id,
+                        'nickname': cc_txn.credit_card.nickname,
+                    } if cc_txn.credit_card else None,
                 },
-                'offset': float(match.offset),
-                'confidence_score': match.confidence_score,
-                'match_reasons': match.match_reasons,
-                'created_at': match.created_at.isoformat(),
+                'offset': float(link.offset),
+                'confidence_score': link.confidence_score,
+                'match_reasons': link.match_reasons,
+                'created_at': link.created_at.isoformat(),
             })
+
+        # Sort by bank transaction date desc
+        data.sort(key=lambda d: d['bank_transaction']['date'], reverse=True)
 
         return JsonResponse({
             'data': data,
@@ -2525,38 +2576,70 @@ def api_cc_payment_matches(request):
         # Delete the inactive/orphaned match so we can re-match
         existing_match.delete()
 
-    match = CreditCardPaymentMatch.objects.create(
-        bank_transaction=bank_txn,
-        credit_card_transaction=cc_txn,
-        offset=body.get('offset', 0),
-        confidence_score=body.get('confidence_score', 0),
-        match_reasons=body.get('match_reasons', []),
-    )
+    from django.db import transaction as db_transaction
 
-    if bank_txn.resolved_transaction_id and cc_txn.resolved_transaction_id:
+    with db_transaction.atomic():
+        match = CreditCardPaymentMatch.objects.create(
+            bank_transaction=bank_txn,
+            credit_card_transaction=cc_txn,
+            offset=body.get('offset', 0),
+            confidence_score=body.get('confidence_score', 0),
+            match_reasons=body.get('match_reasons', []),
+        )
+
+        # Sync any legacy matches that don't have links yet, then create link for this match
+        _ensure_cc_payment_links_synced()
+
+        if bank_txn.resolved_transaction_id and cc_txn.resolved_transaction_id:
+            try:
+                from links.models import CreditCardPaymentLink
+                CreditCardPaymentLink.objects.get_or_create(
+                    bank_resolved_transaction_id=bank_txn.resolved_transaction_id,
+                    cc_resolved_transaction_id=cc_txn.resolved_transaction_id,
+                    defaults={
+                        'offset': match.offset,
+                        'confidence_score': match.confidence_score,
+                        'match_reasons': match.match_reasons or [],
+                        'origin_bank_transaction_id': bank_txn.id,
+                        'origin_cc_transaction_id': cc_txn.id,
+                    },
+                )
+            except ImportError:
+                import logging
+                logging.getLogger(__name__).warning('links app not available, skipping CreditCardPaymentLink creation')
+
+        # Tag both transactions as matched payments
+        if cc_txn.category != 'Credit Card Payment':
+            cc_txn.category = 'Credit Card Payment'
+            cc_txn.save(update_fields=['category'])
+        if bank_txn.category != 'Credit Card Payment':
+            bank_txn.category = 'Credit Card Payment'
+            bank_txn.save(update_fields=['category'])
+
+        # Also create CategoryLink on resolved_transactions for durable category filtering
         try:
-            from links.models import CreditCardPaymentLink
-            CreditCardPaymentLink.objects.get_or_create(
-                bank_resolved_transaction_id=bank_txn.resolved_transaction_id,
-                cc_resolved_transaction_id=cc_txn.resolved_transaction_id,
-                defaults={
-                    'offset': match.offset,
-                    'confidence_score': match.confidence_score,
-                    'match_reasons': match.match_reasons or [],
-                    'origin_bank_transaction_id': bank_txn.id,
-                    'origin_cc_transaction_id': cc_txn.id,
-                },
-            )
+            from links.models import CategoryLink
+            if bank_txn.resolved_transaction_id:
+                CategoryLink.objects.update_or_create(
+                    resolved_transaction_id=bank_txn.resolved_transaction_id,
+                    defaults={
+                        'category': 'Credit Card Payment',
+                        'origin_transaction_type': 'bank',
+                        'origin_transaction_id': bank_txn.id,
+                    },
+                )
+            if cc_txn.resolved_transaction_id:
+                CategoryLink.objects.update_or_create(
+                    resolved_transaction_id=cc_txn.resolved_transaction_id,
+                    defaults={
+                        'category': 'Credit Card Payment',
+                        'origin_transaction_type': 'credit_card',
+                        'origin_transaction_id': cc_txn.id,
+                    },
+                )
         except ImportError:
-            pass
-
-    # Tag both transactions as matched payments
-    if cc_txn.category != 'Credit Card Payment':
-        cc_txn.category = 'Credit Card Payment'
-        cc_txn.save(update_fields=['category'])
-    if bank_txn.category != 'Credit Card Payment':
-        bank_txn.category = 'Credit Card Payment'
-        bank_txn.save(update_fields=['category'])
+            import logging
+            logging.getLogger(__name__).warning('links app not available, skipping CategoryLink creation')
 
     return JsonResponse({
         'id': match.id,
@@ -2596,7 +2679,8 @@ def api_cc_payment_match_delete(request, match_id):
                 link.save()
                 return JsonResponse({'success': True})
         except ImportError:
-            pass
+            import logging
+            logging.getLogger(__name__).warning('links app not available, skipping CreditCardPaymentLink lookup')
         return JsonResponse({'error': 'Match not found'}, status=404)
 
     if match.bank_transaction_id and match.credit_card_transaction_id:
@@ -2610,7 +2694,8 @@ def api_cc_payment_match_delete(request, match_id):
                     cc_resolved_transaction_id=ct.resolved_transaction_id,
                 ).update(is_active=False)
             except ImportError:
-                pass
+                import logging
+                logging.getLogger(__name__).warning('links app not available, skipping CreditCardPaymentLink deactivation')
 
     match.delete()
     return JsonResponse({'success': True})
@@ -2635,20 +2720,20 @@ def api_cc_payment_match_years(request):
     from django.db.models import Count
     from django.db.models.functions import ExtractYear
     from credit_cards.views import get_active_cc_transactions
+    from links.models import CreditCardPaymentLink
 
-    # Get IDs of active transactions (consistent with matches endpoint)
-    active_bank_txn_ids = get_active_transactions().values_list('id', flat=True)
-    active_cc_txn_ids = get_active_cc_transactions().values_list('id', flat=True)
+    active_bank_txn_ids = set(get_active_transactions().values_list('id', flat=True))
+    active_cc_txn_ids = set(get_active_cc_transactions().values_list('id', flat=True))
 
-    # Count matches by year (only active matches where both bank and CC transactions are from active sources)
     year_counts = (
-        CreditCardPaymentMatch.objects
-        .filter(
+        CreditCardPaymentLink.objects.filter(
             is_active=True,
-            bank_transaction_id__in=active_bank_txn_ids,
-            credit_card_transaction_id__in=active_cc_txn_ids
+            bank_resolved_transaction__isnull=False,
+            cc_resolved_transaction__isnull=False,
+            bank_resolved_transaction__primary_transaction_id__in=active_bank_txn_ids,
+            cc_resolved_transaction__primary_transaction_id__in=active_cc_txn_ids,
         )
-        .annotate(year=ExtractYear('bank_transaction__date'))
+        .annotate(year=ExtractYear('bank_resolved_transaction__date'))
         .values('year')
         .annotate(count=Count('id'))
         .order_by('-year')
