@@ -2072,11 +2072,8 @@ def api_cc_payment_suggestions(request):
             'suggestions': suggestions,
         })
 
-    # Sort: entries with suggestions first (by highest confidence score), then entries without
-    data.sort(key=lambda x: (
-        0 if x['suggestions'] else 1,  # Has suggestions = 0 (first), no suggestions = 1 (last)
-        -(x['suggestions'][0]['confidence_score'] if x['suggestions'] else 0),  # Higher score first
-    ))
+    # Sort by date descending (latest first)
+    data.sort(key=lambda x: x['bank_transaction']['date'], reverse=True)
 
     return JsonResponse({
         'data': data,
@@ -2215,11 +2212,8 @@ def api_cc_payment_suggestions_reverse(request):
             'suggestions': suggestions,
         })
 
-    # Sort: entries with suggestions first (by highest confidence score), then entries without
-    data.sort(key=lambda x: (
-        0 if x['suggestions'] else 1,
-        -(x['suggestions'][0]['confidence_score'] if x['suggestions'] else 0),
-    ))
+    # Sort by date descending (latest first)
+    data.sort(key=lambda x: x['credit_card_transaction']['date'], reverse=True)
 
     return JsonResponse({
         'data': data,
