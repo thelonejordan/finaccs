@@ -1945,13 +1945,6 @@ def overlapping_group_list_create(request):
         if bank_accounts and credit_cards:
             return JsonResponse({'error': 'Cannot mix bank and credit card artifacts'}, status=400)
 
-        # Check artifacts not already in a group
-        for artifact in artifacts:
-            if artifact.overlapping_groups.exists():
-                return JsonResponse({
-                    'error': f'Artifact {artifact.artifact_id} is already in another overlapping group'
-                }, status=400)
-
         # Create group
         group = OverlappingSourceGroup.objects.create(
             name=name,
