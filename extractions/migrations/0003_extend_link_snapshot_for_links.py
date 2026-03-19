@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('extractions', '0003_ensure_resolved_for_all_transactions'),
+        ('extractions', '0002_add_transaction_resolution'),
     ]
 
     operations = [

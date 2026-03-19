@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('entities', '0001_initial'),
-        ('extractions', '0003_ensure_resolved_for_all_transactions'),
+        ('extractions', '0002_add_transaction_resolution'),
         ('stories', '0001_initial'),
     ]
 

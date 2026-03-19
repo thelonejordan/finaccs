@@ -2,13 +2,8 @@
 Backfill ResolvedTransaction for all BankTransaction and CreditCardTransaction
 rows that have resolved_transaction_id=NULL.
 
-Use when migration extractions.0003_ensure_resolved_for_all_transactions fails
-with lock timeout (e.g. MySQL 1205). Run with no other DB traffic, then:
-
-  uv run python manage.py migrate extractions 0003 --fake
-  uv run python manage.py migrate
-
-Or run this command instead of the migration for the same effect (then --fake the migration).
+Usage:
+  uv run python manage.py backfill_resolved_transactions
 """
 from django.core.management.base import BaseCommand
 
