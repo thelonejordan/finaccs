@@ -2356,36 +2356,81 @@ def api_bank_suggestions_for_cc_transaction(request, cc_txn_id):
     return JsonResponse({'suggestions': suggestions})
 
 
+def _ensure_resolved_transaction(txn, txn_type):
+    """Create a ResolvedTransaction for a transaction if it doesn't have one."""
+    if txn.resolved_transaction_id:
+        return
+    from extractions.models import ResolvedTransaction
+    if txn_type == 'bank':
+        rt = ResolvedTransaction.objects.create(
+            transaction_type='bank',
+            primary_transaction_id=txn.id,
+            date=txn.date,
+            amount=txn.credit_amount - txn.debit_amount,
+            bank_account_id=txn.bank_account_id,
+        )
+    else:
+        rt = ResolvedTransaction.objects.create(
+            transaction_type='credit_card',
+            primary_transaction_id=txn.id,
+            date=txn.date,
+            amount=txn.amount,
+            credit_card_id=txn.credit_card_id,
+        )
+    txn.resolved_transaction_id = rt.id
+    txn.is_primary = True
+    txn.save(update_fields=['resolved_transaction_id', 'is_primary'])
+
+
 def _ensure_cc_payment_links_synced():
     """Ensure CreditCardPaymentLink exists for all active CreditCardPaymentMatch."""
     from links.models import CreditCardPaymentLink
 
     matches = CreditCardPaymentMatch.objects.filter(
         is_active=True,
-        bank_transaction__resolved_transaction__isnull=False,
-        credit_card_transaction__resolved_transaction__isnull=False,
     ).select_related('bank_transaction', 'credit_card_transaction')
 
-    existing_pairs = set(
+    # Ensure resolved transactions exist for all matched transactions
+    for m in matches:
+        _ensure_resolved_transaction(m.bank_transaction, 'bank')
+        _ensure_resolved_transaction(m.credit_card_transaction, 'credit_card')
+
+    active_pairs = set(
         CreditCardPaymentLink.objects.filter(is_active=True)
         .values_list('bank_resolved_transaction_id', 'cc_resolved_transaction_id')
     )
+
+    inactive_links = {
+        (link.bank_resolved_transaction_id, link.cc_resolved_transaction_id): link
+        for link in CreditCardPaymentLink.objects.filter(is_active=False)
+    }
 
     to_create = []
     for m in matches:
         pair = (m.bank_transaction.resolved_transaction_id,
                 m.credit_card_transaction.resolved_transaction_id)
-        if pair not in existing_pairs:
-            to_create.append(CreditCardPaymentLink(
-                bank_resolved_transaction_id=pair[0],
-                cc_resolved_transaction_id=pair[1],
-                offset=m.offset,
-                confidence_score=m.confidence_score,
-                match_reasons=m.match_reasons,
-                origin_bank_transaction_id=m.bank_transaction_id,
-                origin_cc_transaction_id=m.credit_card_transaction_id,
-            ))
-            existing_pairs.add(pair)
+        if pair not in active_pairs:
+            if pair in inactive_links:
+                # Reactivate existing inactive link
+                link = inactive_links[pair]
+                link.is_active = True
+                link.offset = m.offset
+                link.confidence_score = m.confidence_score
+                link.match_reasons = m.match_reasons
+                link.origin_bank_transaction_id = m.bank_transaction_id
+                link.origin_cc_transaction_id = m.credit_card_transaction_id
+                link.save()
+            else:
+                to_create.append(CreditCardPaymentLink(
+                    bank_resolved_transaction_id=pair[0],
+                    cc_resolved_transaction_id=pair[1],
+                    offset=m.offset,
+                    confidence_score=m.confidence_score,
+                    match_reasons=m.match_reasons,
+                    origin_bank_transaction_id=m.bank_transaction_id,
+                    origin_cc_transaction_id=m.credit_card_transaction_id,
+                ))
+            active_pairs.add(pair)
 
     if to_create:
         CreditCardPaymentLink.objects.bulk_create(to_create, ignore_conflicts=True)
@@ -2587,26 +2632,48 @@ def api_cc_payment_matches(request):
             match_reasons=body.get('match_reasons', []),
         )
 
+        # Ensure both transactions have ResolvedTransaction records
+        _ensure_resolved_transaction(bank_txn, 'bank')
+        _ensure_resolved_transaction(cc_txn, 'credit_card')
+
         # Sync any legacy matches that don't have links yet, then create link for this match
         _ensure_cc_payment_links_synced()
 
-        if bank_txn.resolved_transaction_id and cc_txn.resolved_transaction_id:
-            try:
-                from links.models import CreditCardPaymentLink
-                CreditCardPaymentLink.objects.get_or_create(
+        try:
+            from links.models import CreditCardPaymentLink
+            existing_link = CreditCardPaymentLink.objects.filter(
+                bank_resolved_transaction_id=bank_txn.resolved_transaction_id,
+                cc_resolved_transaction_id=cc_txn.resolved_transaction_id,
+                is_active=True,
+            ).first()
+            if not existing_link:
+                # Reactivate an inactive link if one exists, otherwise create
+                inactive = CreditCardPaymentLink.objects.filter(
                     bank_resolved_transaction_id=bank_txn.resolved_transaction_id,
                     cc_resolved_transaction_id=cc_txn.resolved_transaction_id,
-                    defaults={
-                        'offset': match.offset,
-                        'confidence_score': match.confidence_score,
-                        'match_reasons': match.match_reasons or [],
-                        'origin_bank_transaction_id': bank_txn.id,
-                        'origin_cc_transaction_id': cc_txn.id,
-                    },
-                )
-            except ImportError:
-                import logging
-                logging.getLogger(__name__).warning('links app not available, skipping CreditCardPaymentLink creation')
+                    is_active=False,
+                ).first()
+                if inactive:
+                    inactive.is_active = True
+                    inactive.offset = match.offset
+                    inactive.confidence_score = match.confidence_score
+                    inactive.match_reasons = match.match_reasons or []
+                    inactive.origin_bank_transaction_id = bank_txn.id
+                    inactive.origin_cc_transaction_id = cc_txn.id
+                    inactive.save()
+                else:
+                    CreditCardPaymentLink.objects.create(
+                        bank_resolved_transaction_id=bank_txn.resolved_transaction_id,
+                        cc_resolved_transaction_id=cc_txn.resolved_transaction_id,
+                        offset=match.offset,
+                        confidence_score=match.confidence_score,
+                        match_reasons=match.match_reasons or [],
+                        origin_bank_transaction_id=bank_txn.id,
+                        origin_cc_transaction_id=cc_txn.id,
+                    )
+        except ImportError:
+            import logging
+            logging.getLogger(__name__).warning('links app not available, skipping CreditCardPaymentLink creation')
 
         # Tag both transactions as matched payments
         if cc_txn.category != 'Credit Card Payment':
