@@ -2161,6 +2161,50 @@ def resolution_session_suggest(request, session_id):
             key = (txn.date, txn.amount)
         groups_by_key[key].append(txn)
 
+    # Precompute neighbor balances per source for tiebreaking
+    # When multiple transactions share the same (date, amount, closing_balance),
+    # we use the closing_balance of contiguous prev/next rows to disambiguate.
+    # See docs/RESOLUTION-NEIGHBOR-TIEBREAKER.md for a real example.
+    neighbor_balances = {}  # txn.id -> (prev_bal, next_bal)
+    if txn_type == 'bank':
+        txns_by_source = defaultdict(list)
+        for txn in transactions:
+            txns_by_source[txn.data_source_artifact_id].append(txn)
+        for source_id, source_txns in txns_by_source.items():
+            source_txns.sort(key=lambda t: t.row_number)
+            for i, t in enumerate(source_txns):
+                prev_bal = source_txns[i-1].closing_balance if i > 0 and source_txns[i-1].row_number == t.row_number - 1 else None
+                next_bal = source_txns[i+1].closing_balance if i < len(source_txns)-1 and source_txns[i+1].row_number == t.row_number + 1 else None
+                neighbor_balances[t.id] = (prev_bal, next_bal)
+
+    def _create_suggestion(match_candidates, balance_match, neighbor_match=False):
+        score = 1.0 if balance_match else 0.7
+        if balance_match and neighbor_match:
+            score = 0.95
+        return ResolutionSuggestion.objects.create(
+            session=session,
+            suggested_transaction_ids=[{'type': txn_type, 'id': t.id} for t in match_candidates],
+            suggestion_score=score,
+            match_signals={
+                'date': True,
+                'amount': True,
+                'closing_balance': balance_match,
+                'neighbor_balance': neighbor_match,
+            }
+        )
+
+    def _create_paired_suggestions(by_source_dict, balance_match, neighbor_match=False):
+        """Pair transactions across sources by index (sorted by row_number).
+        Creates min(N, M, ...) suggestions for N:M:... mappings."""
+        count = 0
+        sorted_lists = [sorted(v, key=lambda t: t.row_number) for v in by_source_dict.values()]
+        pair_count = min(len(sl) for sl in sorted_lists)
+        for i in range(pair_count):
+            match_candidates = [sl[i] for sl in sorted_lists]
+            _create_suggestion(match_candidates, balance_match, neighbor_match)
+            count += 1
+        return count
+
     # Create suggestions for groups with multiple transactions FROM DIFFERENT SOURCES
     suggestions_created = 0
     for key, txns in groups_by_key.items():
@@ -2173,36 +2217,45 @@ def resolution_session_suggest(request, session_id):
 
             # Only create suggestion if transactions come from DIFFERENT sources
             if len(by_source) < 2:
-                # All transactions from same source - not a duplicate match
                 continue
 
-            # Pick one transaction from each source for matching
-            match_candidates = []
-            for source_txns in by_source.values():
-                match_candidates.append(source_txns[0])  # Take first from each source
+            # Check if this is a simple 1:1 mapping (one txn per source)
+            is_one_to_one = all(len(v) == 1 for v in by_source.values())
 
-            # Check closing balance match (for bank transactions)
-            # date + amount + closing_balance = nearly perfect match
-            balance_match = False
-            if txn_type == 'bank':
-                balances = [t.closing_balance for t in match_candidates]
-                if all(b is not None for b in balances):
-                    balance_match = len(set(balances)) == 1
+            if is_one_to_one:
+                match_candidates = [v[0] for v in by_source.values()]
+                balance_match = False
+                if txn_type == 'bank':
+                    balances = [t.closing_balance for t in match_candidates]
+                    if all(b is not None for b in balances):
+                        balance_match = len(set(balances)) == 1
+                _create_suggestion(match_candidates, balance_match)
+                suggestions_created += 1
+            elif txn_type == 'bank' and neighbor_balances:
+                # N:M case — refine using neighbor balances as tiebreaker
+                refined = defaultdict(lambda: defaultdict(list))
+                for src_id, src_txns in by_source.items():
+                    for t in src_txns:
+                        nb = neighbor_balances.get(t.id, (None, None))
+                        refined[nb][src_id].append(t)
 
-            # Score: 1.0 if all signals match, 0.7 for date+amount only
-            score = 1.0 if balance_match else 0.7
-
-            suggestion = ResolutionSuggestion.objects.create(
-                session=session,
-                suggested_transaction_ids=[{'type': txn_type, 'id': t.id} for t in match_candidates],
-                suggestion_score=score,
-                match_signals={
-                    'date': True,
-                    'amount': True,
-                    'closing_balance': balance_match,
-                }
-            )
-            suggestions_created += 1
+                for nb_key, nb_by_source in refined.items():
+                    if len(nb_by_source) < 2:
+                        continue
+                    suggestions_created += _create_paired_suggestions(
+                        nb_by_source, balance_match=True, neighbor_match=True
+                    )
+            else:
+                # Fallback: pair by row_number order
+                balance_match = False
+                if txn_type == 'bank':
+                    sample = [v[0] for v in by_source.values()]
+                    balances = [t.closing_balance for t in sample]
+                    if all(b is not None for b in balances):
+                        balance_match = len(set(balances)) == 1
+                suggestions_created += _create_paired_suggestions(
+                    by_source, balance_match
+                )
 
     session.status = 'review'
     session.stats = {

@@ -698,3 +698,176 @@ class ResolvedTransactionAPITests(TestCase):
         data = response.json()
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['uuid'], str(self.resolved.uuid))
+
+
+# =============================================================================
+# Resolution Suggestion Algorithm Tests
+# =============================================================================
+
+
+class ResolutionSuggestionAlgorithmTests(TestCase):
+    """Tests for the suggestion generation algorithm, including the neighbor balance tiebreaker."""
+
+    def setUp(self):
+        """Create two data source artifacts for the same bank account."""
+        self.client = Client()
+        self.bank_account = BankAccount.objects.create(
+            nickname='Test SBI', bank_name='SBI',
+            account_number='8645978307', ifsc_code='SBIN0001234'
+        )
+
+        # Source 1: PDF statement
+        sf1 = SourceFile.objects.create(filename='statement.pdf', domain='bank_account')
+        ext1 = Extraction.objects.create(source_file=sf1, extractor_name='test', status='completed')
+        ea1 = ExtractionArtifact.objects.create(
+            extraction=ext1, artifact_type='transactions', content=b'test', content_hash='h1'
+        )
+        self.dsa1 = DataSourceArtifact.objects.create(
+            source_artifact=ea1, data_source_target='bank_account_transactions',
+            content=b'test', content_hash='h1', transformer='test',
+            bank_account=self.bank_account, status='loaded'
+        )
+
+        # Source 2: Email statement
+        sf2 = SourceFile.objects.create(filename='email_statement.xlsx', domain='bank_account')
+        ext2 = Extraction.objects.create(source_file=sf2, extractor_name='test', status='completed')
+        ea2 = ExtractionArtifact.objects.create(
+            extraction=ext2, artifact_type='transactions', content=b'test', content_hash='h2'
+        )
+        self.dsa2 = DataSourceArtifact.objects.create(
+            source_artifact=ea2, data_source_target='bank_account_transactions',
+            content=b'test', content_hash='h2', transformer='test',
+            bank_account=self.bank_account, status='loaded'
+        )
+
+        # Create overlapping group with both artifacts
+        self.group = OverlappingSourceGroup.objects.create(
+            name='Test Group', bank_account=self.bank_account
+        )
+        self.group.data_source_artifacts.add(self.dsa1, self.dsa2)
+
+    def _create_txn(self, dsa, row, narration, debit, credit, balance, txn_date=None):
+        return BankTransaction.objects.create(
+            date=txn_date or date(2025, 10, 23),
+            narration=narration,
+            value_date=txn_date or date(2025, 10, 23),
+            debit_amount=Decimal(str(debit)),
+            credit_amount=Decimal(str(credit)),
+            reference_number='',
+            closing_balance=Decimal(str(balance)),
+            bank_account=self.bank_account,
+            data_source_artifact=dsa,
+            row_number=row,
+        )
+
+    def _run_suggest(self):
+        """Create a session and hit the suggest endpoint. Returns the response data."""
+        session = ResolutionSession.objects.create(overlapping_group=self.group)
+        response = self.client.post(f'/api/transactions/resolve/{session.session_id}/suggest/')
+        return response.json(), session
+
+    def test_one_to_one_match(self):
+        """Simple 1:1 mapping should create one suggestion with score 1.0."""
+        self._create_txn(self.dsa1, 1, 'UPI/DR/123', 500, 0, 10000)
+        self._create_txn(self.dsa2, 1, 'WDL TFR UPI/DR/123', 500, 0, 10000)
+
+        data, session = self._run_suggest()
+        self.assertEqual(data['stats']['suggestions_created'], 1)
+
+        suggestion = ResolutionSuggestion.objects.get(session=session)
+        self.assertEqual(suggestion.suggestion_score, 1.0)
+        self.assertTrue(suggestion.match_signals['closing_balance'])
+        self.assertFalse(suggestion.match_signals['neighbor_balance'])
+
+    def test_nm_match_with_neighbor_tiebreaker(self):
+        """N:M mapping should use neighbor balances to disambiguate.
+
+        Real scenario: UPI debit + reversal + INB retry, producing two
+        transactions with identical (date, amount, closing_balance) but
+        different neighboring balances.
+        """
+        # Source 1 (PDF): rows 53-57
+        self._create_txn(self.dsa1, 53, 'ACHDr ETMONEY', 500, 0, 1604618.47, date(2025, 10, 22))
+        self._create_txn(self.dsa1, 54, 'UPI/DR/529613337982/FOURDEGR', 9985.62, 0, 1594632.85)
+        self._create_txn(self.dsa1, 55, 'UPI/REV/529613337982', 0, 9985.62, 1604618.47)
+        self._create_txn(self.dsa1, 56, 'INB Wint Wealth', 9985.62, 0, 1594632.85)
+        self._create_txn(self.dsa1, 57, 'INB E mandate', 59, 0, 1594573.85)
+
+        # Source 2 (Email): rows 481-485, same structure
+        self._create_txn(self.dsa2, 481, 'DEBIT ACHDr ETMONEY', 500, 0, 1604618.47, date(2025, 10, 22))
+        self._create_txn(self.dsa2, 482, 'WDL TFR UPI/DR/529613337982', 9985.62, 0, 1594632.85)
+        self._create_txn(self.dsa2, 483, 'DEP TFR UPI/REV/529613337982', 0, 9985.62, 1604618.47)
+        self._create_txn(self.dsa2, 484, 'WDL TFR INB Wint Wealth', 9985.62, 0, 1594632.85)
+        self._create_txn(self.dsa2, 485, 'WDL TFR INB E mandate', 59, 0, 1594573.85)
+
+        data, session = self._run_suggest()
+
+        # Should create 5 suggestions: ACHDr, UPI/DR, UPI/REV, INB Wint, INB E mandate
+        self.assertEqual(data['stats']['suggestions_created'], 5)
+
+        # Check the two ₹9,985.62 debit suggestions used neighbor tiebreaker
+        neighbor_suggestions = ResolutionSuggestion.objects.filter(
+            session=session, match_signals__neighbor_balance=True
+        )
+        self.assertEqual(neighbor_suggestions.count(), 2)
+
+        # Verify correct pairing: UPI/DR rows paired together, INB rows paired together
+        for suggestion in neighbor_suggestions:
+            txn_ids = [item['id'] for item in suggestion.suggested_transaction_ids]
+            txns = list(BankTransaction.objects.filter(id__in=txn_ids))
+            narrations = [t.narration for t in txns]
+            # Both should be UPI/DR variants or both should be INB variants
+            has_upi = any('UPI/DR' in n for n in narrations)
+            has_inb = any('INB Wint' in n or 'WDL TFR   INB Wint' in n for n in narrations)
+            self.assertTrue(
+                (has_upi and not has_inb) or (has_inb and not has_upi),
+                f'Mismatched pairing: {narrations}'
+            )
+
+    def test_nm_match_fallback_pairs_by_row_order(self):
+        """When neighbor tiebreaker can't disambiguate, pair by row_number order."""
+        # Two identical transactions per source with same neighbors (non-contiguous rows → None neighbors)
+        self._create_txn(self.dsa1, 10, 'TXN A', 1000, 0, 50000)
+        self._create_txn(self.dsa1, 20, 'TXN B', 1000, 0, 50000)  # gap in row_number
+        self._create_txn(self.dsa2, 10, 'TXN A copy', 1000, 0, 50000)
+        self._create_txn(self.dsa2, 20, 'TXN B copy', 1000, 0, 50000)
+
+        data, session = self._run_suggest()
+
+        # Both should match via neighbor tiebreaker (both have None, None neighbors)
+        # and pair by row_number order: row 10↔10, row 20↔20
+        self.assertEqual(data['stats']['suggestions_created'], 2)
+
+        suggestions = ResolutionSuggestion.objects.filter(session=session).order_by('id')
+        for suggestion in suggestions:
+            txn_ids = [item['id'] for item in suggestion.suggested_transaction_ids]
+            txns = list(BankTransaction.objects.filter(id__in=txn_ids))
+            # Both txns in a pair should have the same row_number
+            self.assertEqual(txns[0].row_number, txns[1].row_number)
+
+    def test_no_match_same_source(self):
+        """Transactions from the same source should NOT be matched."""
+        self._create_txn(self.dsa1, 1, 'TXN A', 500, 0, 10000)
+        self._create_txn(self.dsa1, 2, 'TXN B', 500, 0, 10000)
+
+        data, session = self._run_suggest()
+        self.assertEqual(data['stats']['suggestions_created'], 0)
+
+    def test_score_for_neighbor_match(self):
+        """Neighbor-disambiguated matches should get score 0.95."""
+        # Contiguous rows with different next balances
+        self._create_txn(self.dsa1, 1, 'TXN A', 1000, 0, 50000)
+        self._create_txn(self.dsa1, 2, 'TXN B', 1000, 0, 50000)
+        self._create_txn(self.dsa1, 3, 'NEXT A', 200, 0, 49800)  # next for row 2
+
+        self._create_txn(self.dsa2, 1, 'TXN A copy', 1000, 0, 50000)
+        self._create_txn(self.dsa2, 2, 'TXN B copy', 1000, 0, 50000)
+        self._create_txn(self.dsa2, 3, 'NEXT A copy', 200, 0, 49800)
+
+        data, session = self._run_suggest()
+
+        neighbor_suggestions = ResolutionSuggestion.objects.filter(
+            session=session, match_signals__neighbor_balance=True
+        )
+        for s in neighbor_suggestions:
+            self.assertEqual(s.suggestion_score, 0.95)
