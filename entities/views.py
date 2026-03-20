@@ -21,7 +21,7 @@ except ImportError:
     OpenApiExample = _MockCallable
     OpenApiTypes = type('OpenApiTypes', (), {'OBJECT': object, 'INT': int, 'STR': str, 'BOOL': bool})()
 
-from .models import Entity, EntityTransaction
+from .models import Entity
 from bank_accounts.models import BankTransaction
 from credit_cards.models import CreditCardTransaction
 from extractions.models import ResolvedTransaction
@@ -388,23 +388,37 @@ def entity_transactions(request, entity_id):
             txn_type = txn.get('type')
             txn_id = txn.get('id')
             if txn_type in ('bank', 'credit_card') and txn_id:
-                _, created = EntityTransaction.objects.get_or_create(
+                if txn_type == 'bank':
+                    t = BankTransaction.objects.filter(id=txn_id).first()
+                else:
+                    t = CreditCardTransaction.objects.filter(id=txn_id).first()
+                if not t:
+                    continue
+                if not t.resolved_transaction_id:
+                    from django.db import transaction
+                    from extractions.models import ResolvedTransaction
+                    with transaction.atomic():
+                        if txn_type == 'bank':
+                            rt = ResolvedTransaction.objects.create(
+                                transaction_type='bank', primary_transaction_id=t.id,
+                                date=t.date, amount=(t.credit_amount or 0) - (t.debit_amount or 0),
+                                bank_account_id=t.bank_account_id,
+                            )
+                        else:
+                            rt = ResolvedTransaction.objects.create(
+                                transaction_type='credit_card', primary_transaction_id=t.id,
+                                date=t.date, amount=t.amount, credit_card_id=t.credit_card_id,
+                            )
+                        t.resolved_transaction_id = rt.id
+                        t.is_primary = True
+                        t.save(update_fields=['resolved_transaction_id', 'is_primary'])
+                _, created = EntityLink.objects.get_or_create(
+                    resolved_transaction_id=t.resolved_transaction_id,
                     entity=entity,
-                    transaction_type=txn_type,
-                    transaction_id=txn_id,
+                    defaults={'origin_transaction_type': txn_type, 'origin_transaction_id': txn_id},
                 )
                 if created:
                     added += 1
-                    if txn_type == 'bank':
-                        t = BankTransaction.objects.filter(id=txn_id).first()
-                    else:
-                        t = CreditCardTransaction.objects.filter(id=txn_id).first()
-                    if t and t.resolved_transaction_id:
-                        EntityLink.objects.get_or_create(
-                            resolved_transaction_id=t.resolved_transaction_id,
-                            entity=entity,
-                            defaults={'origin_transaction_type': txn_type, 'origin_transaction_id': txn_id},
-                        )
         return JsonResponse({'success': True, 'added': added})
 
     elif request.method == "DELETE":
@@ -418,16 +432,11 @@ def entity_transactions(request, entity_id):
                 else:
                     t = CreditCardTransaction.objects.filter(id=txn_id).first()
                 if t and t.resolved_transaction_id:
-                    EntityLink.objects.filter(
+                    deleted, _ = EntityLink.objects.filter(
                         resolved_transaction_id=t.resolved_transaction_id,
                         entity=entity,
                     ).delete()
-                deleted, _ = EntityTransaction.objects.filter(
-                    entity=entity,
-                    transaction_type=txn_type,
-                    transaction_id=txn_id,
-                ).delete()
-                removed += deleted
+                    removed += deleted
         return JsonResponse({'success': True, 'removed': removed})
 
 

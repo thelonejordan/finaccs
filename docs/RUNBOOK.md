@@ -74,7 +74,7 @@ curl http://localhost:8000/api/health/
 
 ### `backfill_resolved_transactions`
 
-Creates single-member `ResolvedTransaction` records for any transactions that don't have one. Used when the data migration times out or for manual backfill.
+Creates single-member `ResolvedTransaction` records for any transactions that don't have one. Should be run after initial setup or deployment to ensure all transactions have a `resolved_transaction_id`, which is required for story/entity tags to work correctly.
 
 ```bash
 uv run python manage.py backfill_resolved_transactions

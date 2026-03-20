@@ -11,8 +11,9 @@ from django.db import IntegrityError
 
 from bank_accounts.models import BankAccount, BankTransaction
 from credit_cards.models import CreditCard, CreditCardTransaction
-from stories.models import Story, StoryTransaction
-from entities.models import Entity, EntityTransaction
+from stories.models import Story
+from entities.models import Entity
+from links.models import StoryLink, EntityLink
 from extractions.models import (
     DataSourceArtifact, ExtractionArtifact, Extraction, SourceFile,
     ResolvedTransaction, OverlappingSourceGroup, ResolutionSession, ResolutionSuggestion
@@ -226,25 +227,6 @@ class LinkageAggregationTests(TestCase):
             bank_account=self.bank_account
         )
 
-        # Add story to txn1
-        StoryTransaction.objects.create(
-            story=self.story1,
-            transaction_type='bank',
-            transaction_id=self.bank_txn1.id
-        )
-        # Add different story to txn2
-        StoryTransaction.objects.create(
-            story=self.story2,
-            transaction_type='bank',
-            transaction_id=self.bank_txn2.id
-        )
-        # Add entity to txn1
-        EntityTransaction.objects.create(
-            entity=self.entity1,
-            transaction_type='bank',
-            transaction_id=self.bank_txn1.id
-        )
-
     def test_get_stories_aggregates_from_all_sources(self):
         """get_stories() should return stories from all member transactions."""
         resolved = ResolvedTransaction.objects.create(
@@ -260,6 +242,20 @@ class LinkageAggregationTests(TestCase):
         self.bank_txn2.resolved_transaction = resolved
         self.bank_txn2.is_primary = False
         self.bank_txn2.save()
+
+        # Add stories via StoryLink (attached to resolved transaction)
+        StoryLink.objects.create(
+            resolved_transaction=resolved,
+            story=self.story1,
+            origin_transaction_type='bank',
+            origin_transaction_id=self.bank_txn1.id,
+        )
+        StoryLink.objects.create(
+            resolved_transaction=resolved,
+            story=self.story2,
+            origin_transaction_type='bank',
+            origin_transaction_id=self.bank_txn2.id,
+        )
 
         stories = resolved.get_stories()
         self.assertEqual(stories.count(), 2)
@@ -281,6 +277,14 @@ class LinkageAggregationTests(TestCase):
         self.bank_txn2.resolved_transaction = resolved
         self.bank_txn2.is_primary = False
         self.bank_txn2.save()
+
+        # Add entity via EntityLink (attached to resolved transaction)
+        EntityLink.objects.create(
+            resolved_transaction=resolved,
+            entity=self.entity1,
+            origin_transaction_type='bank',
+            origin_transaction_id=self.bank_txn1.id,
+        )
 
         entities = resolved.get_entities()
         self.assertEqual(entities.count(), 1)

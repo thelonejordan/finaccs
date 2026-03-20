@@ -116,8 +116,8 @@ def _load_bank_transactions(artifact: DataSourceArtifact, reader) -> int:
     )
     if not created:
         return len(transactions)
-    resolved_list = [
-        ResolvedTransaction(
+    for txn in created:
+        rt = ResolvedTransaction.objects.create(
             transaction_type='bank',
             primary_transaction_id=txn.id,
             date=txn.date,
@@ -125,13 +125,9 @@ def _load_bank_transactions(artifact: DataSourceArtifact, reader) -> int:
             bank_account=artifact.bank_account,
             credit_card=None,
         )
-        for txn in created
-    ]
-    ResolvedTransaction.objects.bulk_create(resolved_list)
-    for i, txn in enumerate(created):
-        txn.resolved_transaction_id = resolved_list[i].id
+        txn.resolved_transaction_id = rt.id
         txn.is_primary = True
-    BankTransaction.objects.bulk_update(created, ['resolved_transaction_id', 'is_primary'])
+        txn.save(update_fields=['resolved_transaction_id', 'is_primary'])
     return len(transactions)
 
 
@@ -178,8 +174,8 @@ def _load_cc_transactions(artifact: DataSourceArtifact, reader) -> int:
     )
     if not created:
         return len(transactions)
-    resolved_list = [
-        ResolvedTransaction(
+    for txn in created:
+        rt = ResolvedTransaction.objects.create(
             transaction_type='credit_card',
             primary_transaction_id=txn.id,
             date=txn.date,
@@ -187,13 +183,9 @@ def _load_cc_transactions(artifact: DataSourceArtifact, reader) -> int:
             bank_account=None,
             credit_card=artifact.credit_card,
         )
-        for txn in created
-    ]
-    ResolvedTransaction.objects.bulk_create(resolved_list)
-    for i, txn in enumerate(created):
-        txn.resolved_transaction_id = resolved_list[i].id
+        txn.resolved_transaction_id = rt.id
         txn.is_primary = True
-    CreditCardTransaction.objects.bulk_update(created, ['resolved_transaction_id', 'is_primary'])
+        txn.save(update_fields=['resolved_transaction_id', 'is_primary'])
     return len(transactions)
 
 
@@ -401,15 +393,9 @@ def _snapshot_category_story_entity(artifact: DataSourceArtifact, snapshots: lis
     )
     if not txns:
         return
-    try:
-        from links.models import CategoryLink, StoryLink, EntityLink
-        use_links = True
-    except ImportError:
-        use_links = False
-    from stories.models import StoryTransaction
-    from entities.models import EntityTransaction
+    from links.models import CategoryLink, StoryLink, EntityLink
     for txn in txns:
-        if use_links and txn.resolved_transaction_id:
+        if txn.resolved_transaction_id:
             cat_links = CategoryLink.objects.filter(resolved_transaction_id=txn.resolved_transaction_id).order_by('-created_at')[:1]
             if cat_links:
                 snapshots.append(TransactionLinkSnapshot(
@@ -434,31 +420,6 @@ def _snapshot_category_story_entity(artifact: DataSourceArtifact, snapshots: lis
                     source_row_id=txn.artifact_row_id,
                     target_row_id='',
                     link_metadata={'entity_id': el.entity.entity_id},
-                ))
-        else:
-            if txn.category:
-                snapshots.append(TransactionLinkSnapshot(
-                    data_source_artifact=artifact,
-                    link_type='category',
-                    source_row_id=txn.artifact_row_id,
-                    target_row_id='',
-                    link_metadata={'category': txn.category},
-                ))
-            for st in StoryTransaction.objects.filter(transaction_type='bank', transaction_id=txn.id).select_related('story'):
-                snapshots.append(TransactionLinkSnapshot(
-                    data_source_artifact=artifact,
-                    link_type='story',
-                    source_row_id=txn.artifact_row_id,
-                    target_row_id='',
-                    link_metadata={'story_id': st.story.story_id},
-                ))
-            for et in EntityTransaction.objects.filter(transaction_type='bank', transaction_id=txn.id).select_related('entity'):
-                snapshots.append(TransactionLinkSnapshot(
-                    data_source_artifact=artifact,
-                    link_type='entity',
-                    source_row_id=txn.artifact_row_id,
-                    target_row_id='',
-                    link_metadata={'entity_id': et.entity.entity_id},
                 ))
 
 

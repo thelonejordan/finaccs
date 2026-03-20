@@ -32,8 +32,8 @@ class Command(BaseCommand):
             )
             if not txns:
                 break
-            resolved_list = [
-                ResolvedTransaction(
+            for txn in txns:
+                rt = ResolvedTransaction.objects.create(
                     transaction_type='bank',
                     primary_transaction_id=txn.id,
                     date=txn.date,
@@ -41,13 +41,9 @@ class Command(BaseCommand):
                     bank_account=txn.bank_account,
                     credit_card=None,
                 )
-                for txn in txns
-            ]
-            ResolvedTransaction.objects.bulk_create(resolved_list)
-            for i, txn in enumerate(txns):
-                txn.resolved_transaction_id = resolved_list[i].id
+                txn.resolved_transaction_id = rt.id
                 txn.is_primary = True
-            BankTransaction.objects.bulk_update(txns, ['resolved_transaction_id', 'is_primary'])
+                txn.save(update_fields=['resolved_transaction_id', 'is_primary'])
             bank_done += len(txns)
             self.stdout.write(f"Bank backfill: {bank_done} rows")
 
@@ -58,8 +54,8 @@ class Command(BaseCommand):
             )
             if not txns:
                 break
-            resolved_list = [
-                ResolvedTransaction(
+            for txn in txns:
+                rt = ResolvedTransaction.objects.create(
                     transaction_type='credit_card',
                     primary_transaction_id=txn.id,
                     date=txn.date,
@@ -67,13 +63,9 @@ class Command(BaseCommand):
                     bank_account=None,
                     credit_card=txn.credit_card,
                 )
-                for txn in txns
-            ]
-            ResolvedTransaction.objects.bulk_create(resolved_list)
-            for i, txn in enumerate(txns):
-                txn.resolved_transaction_id = resolved_list[i].id
+                txn.resolved_transaction_id = rt.id
                 txn.is_primary = True
-            CreditCardTransaction.objects.bulk_update(txns, ['resolved_transaction_id', 'is_primary'])
+                txn.save(update_fields=['resolved_transaction_id', 'is_primary'])
             cc_done += len(txns)
             self.stdout.write(f"CC backfill: {cc_done} rows")
 
