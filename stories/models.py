@@ -22,27 +22,3 @@ class Story(models.Model):
 
     def __str__(self):
         return f"{self.icon} {self.name}"
-
-
-class StoryTransaction(models.Model):
-    TRANSACTION_TYPE_CHOICES = [
-        ('bank', 'Bank Transaction'),
-        ('credit_card', 'Credit Card Transaction'),
-    ]
-
-    story = models.ForeignKey(
-        Story,
-        on_delete=models.CASCADE,
-        related_name='story_transactions'
-    )
-    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPE_CHOICES)
-    transaction_id = models.IntegerField()
-    added_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['-added_at']
-        db_table = 'stories_storytransaction'
-        unique_together = [['story', 'transaction_type', 'transaction_id']]
-
-    def __str__(self):
-        return f"{self.story.name} - {self.transaction_type}:{self.transaction_id}"

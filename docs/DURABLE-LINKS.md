@@ -159,3 +159,8 @@ flowchart LR
 - **Frontend confirmation guard:** Delete action on completed overlapping groups shows a confirmation dialog before proceeding.
 - **JIT ResolvedTransaction in story/entity endpoints:** The story-add and entity-add endpoints now create a single-member `ResolvedTransaction` on the fly if the transaction doesn't have one, ensuring `StoryLink`/`EntityLink` are always created. Old `StoryTransaction`/`EntityTransaction` models are no longer used in views, admin, loader, or tests.
 - **Backfill command:** Run `uv run python manage.py backfill_resolved_transactions` to create `ResolvedTransaction` for all existing NULL rows.
+- **Shared `ensure_resolved_transaction` utility:** Extracted JIT RT creation into `links/utils.py`, replacing 3 duplicate implementations in `stories/views.py`, `entities/views.py`, `dashboard/views.py`, and `recover_orphaned_links.py`.
+- **Removed `StoryTransaction` and `EntityTransaction` models:** Dead models deleted from `stories/models.py` and `entities/models.py`; tables dropped via migration. All read/write paths already use `StoryLink`/`EntityLink`.
+- **CC category endpoint creates `CategoryLink`:** `credit_cards/views.py` category update now creates JIT RT + `CategoryLink`, matching the bank transaction pattern.
+- **Self-transfer link with JIT RT:** The link endpoint now ensures both transactions have `ResolvedTransaction` before creating `SelfTransferLink`, rather than skipping link creation when RTs are missing.
+- **Removed `try/except ImportError` guards:** All 10 occurrences in `dashboard/views.py` replaced with direct imports since `links` is a core app.

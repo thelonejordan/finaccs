@@ -9,38 +9,9 @@ from django.core.management.base import BaseCommand
 from django.db import IntegrityError, transaction
 
 from links.models import CategoryLink, StoryLink, EntityLink, SelfTransferLink, CreditCardPaymentLink
-from extractions.models import ResolvedTransaction
+from links.utils import ensure_resolved_transaction as _get_or_create_rt
 from bank_accounts.models import BankTransaction
 from credit_cards.models import CreditCardTransaction
-
-
-def _get_or_create_rt(txn, txn_type):
-    """Get existing RT for a transaction, or create a new one."""
-    if txn.resolved_transaction_id:
-        return txn.resolved_transaction_id
-
-    if txn_type == 'bank':
-        amount = txn.credit_amount - txn.debit_amount
-        rt = ResolvedTransaction.objects.create(
-            transaction_type='bank',
-            primary_transaction_id=txn.id,
-            date=txn.date,
-            amount=amount,
-            bank_account_id=txn.bank_account_id,
-        )
-    else:
-        rt = ResolvedTransaction.objects.create(
-            transaction_type='credit_card',
-            primary_transaction_id=txn.id,
-            date=txn.date,
-            amount=txn.amount,
-            credit_card_id=txn.credit_card_id,
-        )
-
-    txn.resolved_transaction = rt
-    txn.is_primary = True
-    txn.save()
-    return rt.id
 
 
 def _resolve_origin(origin_type, origin_id):

@@ -736,6 +736,18 @@ def credit_card_transaction_category(request, transaction_id):
         transaction.category = new_category
         transaction.save()
 
+        from links.utils import ensure_resolved_transaction
+        from links.models import CategoryLink
+        ensure_resolved_transaction(transaction, 'credit_card')
+        CategoryLink.objects.filter(resolved_transaction_id=transaction.resolved_transaction_id).delete()
+        if new_category:
+            CategoryLink.objects.create(
+                resolved_transaction_id=transaction.resolved_transaction_id,
+                category=new_category,
+                origin_transaction_type='credit_card',
+                origin_transaction_id=transaction.id,
+            )
+
     return JsonResponse({
         'id': transaction.id,
         'category': transaction.category or 'Uncategorized',

@@ -386,23 +386,8 @@ def story_transactions(request, story_id):
                 if not t:
                     continue
                 if not t.resolved_transaction_id:
-                    from django.db import transaction
-                    from extractions.models import ResolvedTransaction
-                    with transaction.atomic():
-                        if txn_type == 'bank':
-                            rt = ResolvedTransaction.objects.create(
-                                transaction_type='bank', primary_transaction_id=t.id,
-                                date=t.date, amount=(t.credit_amount or 0) - (t.debit_amount or 0),
-                                bank_account_id=t.bank_account_id,
-                            )
-                        else:
-                            rt = ResolvedTransaction.objects.create(
-                                transaction_type='credit_card', primary_transaction_id=t.id,
-                                date=t.date, amount=t.amount, credit_card_id=t.credit_card_id,
-                            )
-                        t.resolved_transaction_id = rt.id
-                        t.is_primary = True
-                        t.save(update_fields=['resolved_transaction_id', 'is_primary'])
+                    from links.utils import ensure_resolved_transaction
+                    ensure_resolved_transaction(t, txn_type)
                 _, created = StoryLink.objects.get_or_create(
                     resolved_transaction_id=t.resolved_transaction_id,
                     story=story,

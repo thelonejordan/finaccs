@@ -28,27 +28,3 @@ class Entity(models.Model):
 
     def __str__(self):
         return f"{self.icon} {self.name}"
-
-
-class EntityTransaction(models.Model):
-    TRANSACTION_TYPE_CHOICES = [
-        ('bank', 'Bank Transaction'),
-        ('credit_card', 'Credit Card Transaction'),
-    ]
-
-    entity = models.ForeignKey(
-        Entity,
-        on_delete=models.CASCADE,
-        related_name='entity_transactions'
-    )
-    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPE_CHOICES)
-    transaction_id = models.IntegerField()
-    added_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['-added_at']
-        db_table = 'entities_entitytransaction'
-        unique_together = [['entity', 'transaction_type', 'transaction_id']]
-
-    def __str__(self):
-        return f"{self.entity.name} - {self.transaction_type}:{self.transaction_id}"
