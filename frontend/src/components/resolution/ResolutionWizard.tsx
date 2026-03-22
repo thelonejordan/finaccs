@@ -122,9 +122,12 @@ export function ResolutionWizard({ sessionId, open, onOpenChange, onComplete }: 
   const generateAndLoadSuggestions = async () => {
     setLoading(true)
     try {
-      const data = await generateSuggestions(sessionId)
-      setSuggestions(data.suggestions || [])
-      setCurrentIndex(0)
+      await generateSuggestions(sessionId)
+      // Refresh session to pick up updated stats
+      const updatedSession = await fetchResolutionSession(sessionId)
+      setSession(updatedSession)
+      // Fetch detailed suggestions from review endpoint
+      await loadSuggestions()
       setStep("review")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate suggestions")
@@ -297,6 +300,25 @@ export function ResolutionWizard({ sessionId, open, onOpenChange, onComplete }: 
 
             {step === "review" && currentSuggestion && (
               <div className="space-y-4">
+                {/* Match Stats Summary */}
+                {session?.stats?.suggestions_created != null && (
+                  <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm">
+                    <p className="font-medium">
+                      {session.stats.suggestions_created} transaction pairs matched
+                      {session.stats.sources && (
+                        <> across {Object.values(session.stats.sources).map(
+                          (src, i, arr) => (
+                            <span key={i}>
+                              {i > 0 && (i === arr.length - 1 ? " and " : ", ")}
+                              {src.filename} ({src.txn_count} txns)
+                            </span>
+                          )
+                        )}</>
+                      )}
+                    </p>
+                  </div>
+                )}
+
                 {/* Bulk Primary Source Selection */}
                 {suggestions.length > 1 && (
                   <div className="p-3 rounded-lg bg-muted/50 border border-border">

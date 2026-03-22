@@ -24,9 +24,10 @@ interface OverlappingGroupsProps {
   dataSources: DataSourceArtifact[]
   onStartResolution?: (sessionId: string) => void
   onRefresh?: () => void
+  refreshTrigger?: number
 }
 
-export function OverlappingGroups({ dataSources, onStartResolution, onRefresh }: OverlappingGroupsProps) {
+export function OverlappingGroups({ dataSources, onStartResolution, onRefresh, refreshTrigger }: OverlappingGroupsProps) {
   const [groups, setGroups] = useState<OverlappingSourceGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [createModalOpen, setCreateModalOpen] = useState(false)
@@ -39,7 +40,7 @@ export function OverlappingGroups({ dataSources, onStartResolution, onRefresh }:
 
   useEffect(() => {
     loadGroups()
-  }, [])
+  }, [refreshTrigger])
 
   const loadGroups = async () => {
     try {
@@ -215,7 +216,7 @@ export function OverlappingGroups({ dataSources, onStartResolution, onRefresh }:
                         value={groupName}
                         onChange={(e) => setGroupName(e.target.value)}
                         placeholder="e.g., 2024 Bank Statements"
-                        className="w-full px-3 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        className="w-full px-3 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground"
                       />
                     </div>
 

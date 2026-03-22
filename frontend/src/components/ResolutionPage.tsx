@@ -21,6 +21,7 @@ export function ResolutionPage() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [groupsRefreshKey, setGroupsRefreshKey] = useState(0)
 
   useEffect(() => {
     loadDataSources()
@@ -56,6 +57,7 @@ export function ResolutionPage() {
   const handleResolutionComplete = () => {
     loadDataSources()
     loadResolvedTransactions()
+    setGroupsRefreshKey((prev) => prev + 1)
   }
 
   const formatDate = (dateStr: string) => {
@@ -118,7 +120,7 @@ export function ResolutionPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
                 placeholder="Enter UUID or short ID (e.g., a1b2c3d4)"
-                className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-sm"
+                className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-sm placeholder:text-muted-foreground"
               />
             </div>
             <button
@@ -143,6 +145,7 @@ export function ResolutionPage() {
             dataSources={dataSources}
             onStartResolution={handleStartResolution}
             onRefresh={loadDataSources}
+            refreshTrigger={groupsRefreshKey}
           />
         )}
 

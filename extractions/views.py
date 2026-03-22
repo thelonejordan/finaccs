@@ -2150,6 +2150,9 @@ def resolution_session_suggest(request, session_id):
 
     group = session.overlapping_group
 
+    # Clear any existing suggestions to prevent duplicates on re-run
+    session.suggestions.all().delete()
+
     # Get all transactions from the artifacts in this group
     if group.bank_account_id:
         from bank_accounts.models import BankTransaction
@@ -2190,7 +2193,13 @@ def resolution_session_suggest(request, session_id):
                 next_bal = source_txns[i+1].closing_balance if i < len(source_txns)-1 and source_txns[i+1].row_number == t.row_number + 1 else None
                 neighbor_balances[t.id] = (prev_bal, next_bal)
 
+    seen_pairs = set()
+
     def _create_suggestion(match_candidates, balance_match, neighbor_match=False):
+        pair_key = frozenset(t.id for t in match_candidates)
+        if pair_key in seen_pairs:
+            return None
+        seen_pairs.add(pair_key)
         score = 1.0 if balance_match else 0.7
         if balance_match and neighbor_match:
             score = 0.95
@@ -2214,8 +2223,8 @@ def resolution_session_suggest(request, session_id):
         pair_count = min(len(sl) for sl in sorted_lists)
         for i in range(pair_count):
             match_candidates = [sl[i] for sl in sorted_lists]
-            _create_suggestion(match_candidates, balance_match, neighbor_match)
-            count += 1
+            if _create_suggestion(match_candidates, balance_match, neighbor_match) is not None:
+                count += 1
         return count
 
     # Create suggestions for groups with multiple transactions FROM DIFFERENT SOURCES
@@ -2242,8 +2251,8 @@ def resolution_session_suggest(request, session_id):
                     balances = [t.closing_balance for t in match_candidates]
                     if all(b is not None for b in balances):
                         balance_match = len(set(balances)) == 1
-                _create_suggestion(match_candidates, balance_match)
-                suggestions_created += 1
+                if _create_suggestion(match_candidates, balance_match) is not None:
+                    suggestions_created += 1
             elif txn_type == 'bank' and neighbor_balances:
                 # N:M case — refine using neighbor balances as tiebreaker
                 refined = defaultdict(lambda: defaultdict(list))
@@ -2270,11 +2279,32 @@ def resolution_session_suggest(request, session_id):
                     by_source, balance_match
                 )
 
+    # Compute per-source stats
+    txns_by_source_global = defaultdict(list)
+    for txn in transactions:
+        txns_by_source_global[txn.data_source_artifact_id].append(txn)
+
+    source_stats = {}
+    for src_id, src_txns in txns_by_source_global.items():
+        filename = None
+        try:
+            dsa = DataSourceArtifact.objects.select_related(
+                'source_artifact__extraction__source_file'
+            ).get(id=src_id)
+            filename = dsa.source_artifact.extraction.source_file.filename
+        except (DataSourceArtifact.DoesNotExist, AttributeError):
+            pass
+        source_stats[str(src_id)] = {
+            'filename': filename or f'Source {src_id}',
+            'txn_count': len(src_txns),
+        }
+
     session.status = 'review'
     session.stats = {
         'total_transactions': len(transactions),
         'suggestions_created': suggestions_created,
         'unmatched': len([g for g in groups_by_key.values() if len(g) == 1]),
+        'sources': source_stats,
     }
     session.save()
 

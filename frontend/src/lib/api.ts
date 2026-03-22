@@ -1643,7 +1643,13 @@ export interface ResolutionSession {
   session_id: string
   overlapping_group: string
   status: 'suggesting' | 'review' | 'executing' | 'completed' | 'cancelled'
-  stats: Record<string, number>
+  stats: {
+    total_transactions?: number
+    suggestions_created?: number
+    unmatched?: number
+    resolved_created?: number
+    sources?: Record<string, { filename: string; txn_count: number }>
+  }
   created_at: string
 }
 
@@ -1747,7 +1753,7 @@ export async function fetchResolutionSession(sessionId: string): Promise<Resolut
   return res.json()
 }
 
-export async function generateSuggestions(sessionId: string): Promise<{ suggestions: ResolutionSuggestion[] }> {
+export async function generateSuggestions(sessionId: string): Promise<{ session_id: string; status: string; stats: Record<string, unknown> }> {
   const res = await fetch(`${API_BASE}/api/transactions/resolve/${sessionId}/suggest/`, {
     method: 'POST',
   })

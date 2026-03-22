@@ -872,6 +872,69 @@ class ResolutionSuggestionAlgorithmTests(TestCase):
         for s in neighbor_suggestions:
             self.assertEqual(s.suggestion_score, 0.95)
 
+    def test_suggest_clears_old_suggestions_on_rerun(self):
+        """Calling suggest twice on the same session should not double suggestions."""
+        self._create_txn(self.dsa1, 1, 'UPI/DR/123', 500, 0, 10000)
+        self._create_txn(self.dsa2, 1, 'WDL TFR UPI/DR/123', 500, 0, 10000)
+
+        session = ResolutionSession.objects.create(overlapping_group=self.group)
+        url = f'/api/transactions/resolve/{session.session_id}/suggest/'
+
+        # First run
+        resp1 = self.client.post(url)
+        count1 = resp1.json()['stats']['suggestions_created']
+
+        # Second run on same session
+        resp2 = self.client.post(url)
+        count2 = resp2.json()['stats']['suggestions_created']
+
+        self.assertEqual(count1, count2)
+        # Total in DB should equal one run, not doubled
+        self.assertEqual(
+            ResolutionSuggestion.objects.filter(session=session).count(),
+            count1,
+        )
+
+    def test_no_duplicate_pairs_in_suggestions(self):
+        """All suggestion pairs should be unique (no duplicate transaction ID sets)."""
+        # N:M case with identical neighbor balances — could produce duplicates
+        self._create_txn(self.dsa1, 10, 'TXN A', 1000, 0, 50000)
+        self._create_txn(self.dsa1, 20, 'TXN B', 1000, 0, 50000)
+        self._create_txn(self.dsa2, 10, 'TXN A copy', 1000, 0, 50000)
+        self._create_txn(self.dsa2, 20, 'TXN B copy', 1000, 0, 50000)
+
+        data, session = self._run_suggest()
+
+        suggestions = ResolutionSuggestion.objects.filter(session=session)
+        seen = set()
+        for s in suggestions:
+            pair_key = frozenset(t['id'] for t in s.suggested_transaction_ids)
+            self.assertNotIn(pair_key, seen, f'Duplicate pair found: {s.suggested_transaction_ids}')
+            seen.add(pair_key)
+
+    def test_suggest_returns_source_stats(self):
+        """Session stats should include per-source info after suggest."""
+        self._create_txn(self.dsa1, 1, 'UPI/DR/123', 500, 0, 10000)
+        self._create_txn(self.dsa1, 2, 'NEFT/456', 1000, 0, 9000)
+        self._create_txn(self.dsa2, 1, 'WDL TFR UPI/DR/123', 500, 0, 10000)
+
+        data, session = self._run_suggest()
+        session.refresh_from_db()
+
+        # Stats should contain 'sources' dict
+        self.assertIn('sources', session.stats)
+        sources = session.stats['sources']
+        self.assertEqual(len(sources), 2)
+
+        # Each source should have filename and txn_count
+        for src_id, info in sources.items():
+            self.assertIn('filename', info)
+            self.assertIn('txn_count', info)
+
+        # dsa1 has 2 txns, dsa2 has 1
+        src_counts = {info['txn_count'] for info in sources.values()}
+        self.assertEqual(src_counts, {1, 2})
+
 
 class DuplicateExtractionGuardTests(TestCase):
     """Test that re-extracting an already-extracted file is blocked."""
