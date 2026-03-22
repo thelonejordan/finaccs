@@ -3,6 +3,7 @@ import { Dashboard } from "@/components/Dashboard"
 import { TransactionsPage } from "@/components/TransactionsPage"
 import { TransactionDetailPage } from "@/components/TransactionDetailPage"
 import { ResolutionPage } from "@/components/ResolutionPage"
+import { ResolvedTransactionsPage } from "@/components/ResolvedTransactionsPage"
 import { ConsolePage } from "@/components/ConsolePage"
 import { AnomaliesPage } from "@/components/AnomaliesPage"
 import { ActivityLogsPage } from "@/components/ActivityLogsPage"
@@ -42,6 +43,7 @@ function App() {
             <Route path="/entities" element={<EntitiesPage />} />
             <Route path="/entities/:entityId" element={<EntityDetailPage />} />
             <Route path="/resolution" element={<ResolutionPage />} />
+            <Route path="/experimental" element={<ResolvedTransactionsPage />} />
             <Route path="/transactions/resolved" element={<TransactionDetailPage />} />
             <Route path="/transactions/resolved/:uuid" element={<TransactionDetailPage />} />
           </Route>

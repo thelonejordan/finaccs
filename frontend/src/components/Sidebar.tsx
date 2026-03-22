@@ -14,6 +14,7 @@ import {
   FileIcon,
   WalletIcon,
   LayersIcon,
+  FlaskConicalIcon,
 } from "lucide-react"
 
 /** Maximum badge count to display before showing "99+" */
@@ -44,6 +45,12 @@ const NAV_SECTIONS = [
       { path: "/anomalies", label: "Anomalies", icon: AlertTriangleIcon, badgeKey: "anomalies" as const },
       { path: "/resolution", label: "Resolution", icon: LayersIcon },
       { path: "/activity", label: "Activity", icon: ActivityIcon },
+    ],
+  },
+  {
+    label: "Experimental",
+    items: [
+      { path: "/experimental", label: "Resolved Txns", icon: FlaskConicalIcon },
     ],
   },
 ]

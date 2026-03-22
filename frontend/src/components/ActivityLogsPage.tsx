@@ -80,7 +80,7 @@ export function ActivityLogsPage() {
   const pageSize = 50
 
   useEffect(() => {
-    document.title = "Activity Log | FinAccs"
+    document.title = "Activity | FinAccs"
   }, [])
 
   const toggleExpanded = (logId: string) => {

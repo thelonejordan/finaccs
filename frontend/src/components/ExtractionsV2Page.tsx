@@ -1351,6 +1351,7 @@ export function ExtractionsV2Page() {
   }, [sourceFilesVisibility, extractionsVisibility, dataSourcesVisibility, domainFilter])
 
   useEffect(() => {
+    document.title = "Extractions v2 | FinAccs"
     loadData()
   }, [loadData])
 
