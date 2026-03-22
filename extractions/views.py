@@ -655,6 +655,19 @@ def source_file_extract(request, source_file_id):
     if not extractor_name:
         return JsonResponse({'error': f'No extractor found for file: {sf.filename}'}, status=400)
 
+    # Guard against duplicate extractions
+    existing = Extraction.objects.filter(
+        source_file=sf, extractor_name=extractor_name, status='completed',
+    ).first()
+    if existing:
+        force = data.get('force', False)
+        if not force:
+            return JsonResponse({
+                'error': f'File already has a completed extraction (#{existing.id}) with extractor "{extractor_name}". '
+                         f'Pass "force": true to re-extract.',
+                'existing_extraction_id': existing.id,
+            }, status=409)
+
     extractor = get_extractor(extractor_name)
     if not extractor:
         return JsonResponse({'error': f'Unknown extractor: {extractor_name}'}, status=400)

@@ -195,7 +195,6 @@ function SourceFilesSection({
 
   const bulkActions: BulkAction[] = [
     { label: 'Extract', icon: <PlayIcon className="h-4 w-4" />, action: 'extract' },
-    { label: 'Transform All', icon: <WandIcon className="h-4 w-4" />, action: 'transform_all' },
     { label: 'Set Password', icon: <KeyIcon className="h-4 w-4" />, action: 'set_password' },
     { label: 'Set Extractor', icon: <SettingsIcon className="h-4 w-4" />, action: 'set_extractor' },
     { label: 'Set Domain', icon: <TagIcon className="h-4 w-4" />, action: 'set_domain' },
@@ -1433,38 +1432,6 @@ export function ExtractionsV2Page() {
       await loadData()
       setSelectedSourceFiles(new Set())
       alert(`Extraction complete: ${successCount} succeeded, ${errorCount} failed`)
-    } else if (action === 'transform_all') {
-      const selectedFiles = sourceFiles.filter(f => selectedSourceFiles.has(f.id))
-      const sourceFileIds = new Set(selectedFiles.map(f => f.source_file_id))
-
-      const artifactIds: string[] = []
-      extractions.forEach(extraction => {
-        if (sourceFileIds.has(extraction.source_file_id) && extraction.artifacts) {
-          extraction.artifacts.forEach(artifact => {
-            if (artifact.transformation_status === 'not_transformed' && artifact.transformer) {
-              artifactIds.push(artifact.artifact_id)
-            }
-          })
-        }
-      })
-
-      if (artifactIds.length === 0) {
-        alert('No transformable artifacts found for selected files')
-        return
-      }
-
-      setIsTransforming(true)
-      try {
-        await bulkTransformArtifacts(artifactIds)
-        await loadData()
-        setSelectedSourceFiles(new Set())
-        alert(`Transformed ${artifactIds.length} artifact(s)`)
-      } catch (error) {
-        logError("Transform failed", error)
-        alert('Transform failed')
-      } finally {
-        setIsTransforming(false)
-      }
     }
   }
 

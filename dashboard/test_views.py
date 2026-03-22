@@ -303,6 +303,162 @@ class CreditCardPaymentLinkTests(TestCase):
             is_active=True,
         ).exists())
 
+    def test_matched_cc_excluded_from_reverse_suggestions_with_resolved_group(self):
+        """CC payment matched via non-primary duplicate must not appear in unmatched reverse view."""
+        # Create two CC transaction duplicates in a resolved group (overlapping data sources)
+        dsa2 = _create_extraction_pipeline('credit_card')
+        cc_txn_old = CreditCardTransaction.objects.create(
+            date=date(2024, 3, 1), description='Payment Received',
+            amount=Decimal('-5000.00'), credit_card=self.credit_card,
+            category='Credit Card Payment',
+            data_source_artifact=dsa2,
+        )
+        cc_txn_primary = CreditCardTransaction.objects.create(
+            date=date(2024, 3, 1), description='Payment Received',
+            amount=Decimal('-5000.00'), credit_card=self.credit_card,
+            category='Credit Card Payment',
+            data_source_artifact=dsa2,
+        )
+
+        # Create resolved transaction grouping them, with cc_txn_primary as primary
+        cc_rt = ResolvedTransaction.objects.create(
+            transaction_type='credit_card', primary_transaction_id=cc_txn_primary.id,
+            date=date(2024, 3, 1), amount=Decimal('-5000.00'),
+            credit_card=self.credit_card,
+        )
+        cc_txn_old.resolved_transaction = cc_rt
+        cc_txn_old.is_primary = False
+        cc_txn_old.save()
+        cc_txn_primary.resolved_transaction = cc_rt
+        cc_txn_primary.is_primary = True
+        cc_txn_primary.save()
+
+        # Match was created on the NON-primary CC transaction
+        CreditCardPaymentMatch.objects.create(
+            bank_transaction=self.bank_txn,
+            credit_card_transaction=cc_txn_old,
+            is_active=True,
+        )
+
+        # The primary CC transaction should NOT show up in unmatched reverse suggestions
+        response = self.client.get(reverse('dashboard:api_cc_payment_suggestions_reverse'))
+        data = response.json()['data']
+        cc_ids_in_unmatched = [item['credit_card_transaction']['id'] for item in data]
+        self.assertNotIn(cc_txn_primary.id, cc_ids_in_unmatched,
+            "Primary CC txn should be excluded when non-primary duplicate in same resolved group is matched")
+
+    def test_matched_cc_excluded_from_suggestions_pool_with_resolved_group(self):
+        """CC payment matched via non-primary duplicate must not appear in bank-first suggestion pool."""
+        # Create two CC transaction duplicates in a resolved group
+        dsa2 = _create_extraction_pipeline('credit_card')
+        cc_txn_old = CreditCardTransaction.objects.create(
+            date=date(2024, 3, 1), description='Payment Received',
+            amount=Decimal('-5000.00'), credit_card=self.credit_card,
+            category='Credit Card Payment',
+            data_source_artifact=dsa2,
+        )
+        cc_txn_primary = CreditCardTransaction.objects.create(
+            date=date(2024, 3, 1), description='Payment Received',
+            amount=Decimal('-5000.00'), credit_card=self.credit_card,
+            category='Credit Card Payment',
+            data_source_artifact=dsa2,
+        )
+
+        cc_rt = ResolvedTransaction.objects.create(
+            transaction_type='credit_card', primary_transaction_id=cc_txn_primary.id,
+            date=date(2024, 3, 1), amount=Decimal('-5000.00'),
+            credit_card=self.credit_card,
+        )
+        cc_txn_old.resolved_transaction = cc_rt
+        cc_txn_old.is_primary = False
+        cc_txn_old.save()
+        cc_txn_primary.resolved_transaction = cc_rt
+        cc_txn_primary.is_primary = True
+        cc_txn_primary.save()
+
+        # Match on non-primary
+        CreditCardPaymentMatch.objects.create(
+            bank_transaction=self.bank_txn,
+            credit_card_transaction=cc_txn_old,
+            is_active=True,
+        )
+
+        # Create an unmatched bank txn that would get suggestions
+        bank_txn2 = BankTransaction.objects.create(
+            date=date(2024, 3, 1), narration='Another CC Payment',
+            value_date=date(2024, 3, 1),
+            debit_amount=Decimal('5000.00'), credit_amount=Decimal('0.00'),
+            reference_number='REF2', closing_balance=Decimal('5000.00'),
+            bank_account=self.bank_account, data_source_artifact=self.dsa,
+            category='Credit Card Payment', is_primary=True,
+        )
+
+        # The primary CC txn should NOT appear as a suggestion for bank-first view
+        response = self.client.get(reverse('dashboard:api_cc_payment_suggestions'))
+        data = response.json()['data']
+        all_suggestion_cc_ids = []
+        for item in data:
+            for s in item['suggestions']:
+                all_suggestion_cc_ids.append(s['credit_card_transaction']['id'])
+        self.assertNotIn(cc_txn_primary.id, all_suggestion_cc_ids,
+            "Primary CC txn should not be suggested when non-primary duplicate in same resolved group is matched")
+
+    def test_matched_bank_excluded_from_reverse_suggestions_pool_with_resolved_group(self):
+        """Bank txn matched via non-primary duplicate must not appear in CC-first suggestion pool."""
+        # Create two bank transaction duplicates in a resolved group
+        bank_txn_old = BankTransaction.objects.create(
+            date=date(2024, 3, 1), narration='CC Payment',
+            value_date=date(2024, 3, 1),
+            debit_amount=Decimal('5000.00'), credit_amount=Decimal('0.00'),
+            reference_number='REF_OLD', closing_balance=Decimal('10000.00'),
+            bank_account=self.bank_account, data_source_artifact=self.dsa,
+        )
+        bank_txn_primary = BankTransaction.objects.create(
+            date=date(2024, 3, 1), narration='CC Payment',
+            value_date=date(2024, 3, 1),
+            debit_amount=Decimal('5000.00'), credit_amount=Decimal('0.00'),
+            reference_number='REF_PRI', closing_balance=Decimal('10000.00'),
+            bank_account=self.bank_account, data_source_artifact=self.dsa,
+        )
+
+        bank_rt = ResolvedTransaction.objects.create(
+            transaction_type='bank', primary_transaction_id=bank_txn_primary.id,
+            date=date(2024, 3, 1), amount=Decimal('-5000.00'),
+            bank_account=self.bank_account,
+        )
+        bank_txn_old.resolved_transaction = bank_rt
+        bank_txn_old.is_primary = False
+        bank_txn_old.save()
+        bank_txn_primary.resolved_transaction = bank_rt
+        bank_txn_primary.is_primary = True
+        bank_txn_primary.save()
+
+        # Create a CC txn to match against
+        dsa2 = _create_extraction_pipeline('credit_card')
+        cc_txn = CreditCardTransaction.objects.create(
+            date=date(2024, 3, 1), description='Payment Received',
+            amount=Decimal('-5000.00'), credit_card=self.credit_card,
+            category='Credit Card Payment',
+            data_source_artifact=dsa2,
+        )
+
+        # Match on non-primary bank txn
+        CreditCardPaymentMatch.objects.create(
+            bank_transaction=bank_txn_old,
+            credit_card_transaction=cc_txn,
+            is_active=True,
+        )
+
+        # The primary bank txn should NOT appear as a suggestion in CC-first view
+        response = self.client.get(reverse('dashboard:api_cc_payment_suggestions_reverse'))
+        data = response.json()['data']
+        all_suggestion_bank_ids = []
+        for item in data:
+            for s in item['suggestions']:
+                all_suggestion_bank_ids.append(s['bank_transaction']['id'])
+        self.assertNotIn(bank_txn_primary.id, all_suggestion_bank_ids,
+            "Primary bank txn should not be suggested when non-primary duplicate in same resolved group is matched")
+
     def test_missing_fields_returns_400(self):
         response = self.client.post(
             self._matches_url(),

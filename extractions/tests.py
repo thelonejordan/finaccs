@@ -871,3 +871,74 @@ class ResolutionSuggestionAlgorithmTests(TestCase):
         )
         for s in neighbor_suggestions:
             self.assertEqual(s.suggestion_score, 0.95)
+
+
+class DuplicateExtractionGuardTests(TestCase):
+    """Test that re-extracting an already-extracted file is blocked."""
+
+    def setUp(self):
+        from django.test import Client
+        self.client = Client()
+        self.source_file = SourceFile.objects.create(
+            filename='test_guard.pdf',
+            domain='bank_account',
+            file_data=b'fake pdf content',
+            extraction_status='extracted',
+            extractor='test_extractor',
+        )
+        self.extraction = Extraction.objects.create(
+            source_file=self.source_file,
+            extractor_name='test_extractor',
+            status='completed',
+        )
+
+    def _extract_url(self):
+        return f'/api/extractions/source-files/{self.source_file.source_file_id}/extract/'
+
+    def test_duplicate_extraction_returns_409(self):
+        """Re-extracting with the same extractor returns 409 Conflict."""
+        import json
+        response = self.client.post(
+            self._extract_url(),
+            data=json.dumps({'extractor': 'test_extractor'}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 409)
+        body = response.json()
+        self.assertIn('already has a completed extraction', body['error'])
+        self.assertEqual(body['existing_extraction_id'], self.extraction.id)
+
+    def test_duplicate_extraction_force_bypasses_guard(self):
+        """Re-extracting with force=true bypasses the guard (may fail later on unknown extractor, not 409)."""
+        import json
+        response = self.client.post(
+            self._extract_url(),
+            data=json.dumps({'extractor': 'test_extractor', 'force': True}),
+            content_type='application/json',
+        )
+        # Should NOT be 409 — the guard was bypassed.
+        # It will fail with 400 (unknown extractor) since 'test_extractor' isn't real, which is fine.
+        self.assertNotEqual(response.status_code, 409)
+
+    def test_different_extractor_allowed(self):
+        """Extracting with a different extractor is allowed (not a duplicate)."""
+        import json
+        response = self.client.post(
+            self._extract_url(),
+            data=json.dumps({'extractor': 'other_extractor'}),
+            content_type='application/json',
+        )
+        # Should NOT be 409 — different extractor name
+        self.assertNotEqual(response.status_code, 409)
+
+    def test_no_guard_when_no_completed_extraction(self):
+        """If existing extraction is not completed, re-extraction is allowed."""
+        import json
+        self.extraction.status = 'failed'
+        self.extraction.save()
+        response = self.client.post(
+            self._extract_url(),
+            data=json.dumps({'extractor': 'test_extractor'}),
+            content_type='application/json',
+        )
+        self.assertNotEqual(response.status_code, 409)

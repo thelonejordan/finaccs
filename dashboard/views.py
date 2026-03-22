@@ -2002,7 +2002,11 @@ def api_cc_payment_suggestions(request):
     ).exclude(
         bank_payment_match__is_active=True,
         bank_payment_match__bank_transaction__data_source_artifact__isnull=False
-    ).select_related('credit_card')
+    ).exclude(
+        # Exclude CC txns whose resolved group has any member with an active match
+        Q(resolved_transaction__isnull=False) &
+        Q(resolved_transaction__credit_card_transactions__bank_payment_match__is_active=True)
+    ).select_related('credit_card').distinct()
 
     # Get offset threshold from query params (default 20%)
     offset_threshold = int(request.GET.get('offset_threshold', 20)) / 100.0
@@ -2112,6 +2116,7 @@ def api_cc_payment_suggestions(request):
 def api_cc_payment_suggestions_reverse(request):
     """Get unmatched CC payments with match suggestions from bank transactions."""
     from datetime import timedelta
+    from django.db.models import Q
     from credit_cards.models import CreditCardTransaction
     from credit_cards.views import get_active_cc_transactions
 
@@ -2122,7 +2127,11 @@ def api_cc_payment_suggestions_reverse(request):
     ).exclude(
         bank_payment_match__is_active=True,
         bank_payment_match__bank_transaction__data_source_artifact__isnull=False
-    ).select_related('credit_card')
+    ).exclude(
+        # Exclude CC txns whose resolved group has any member with an active match
+        Q(resolved_transaction__isnull=False) &
+        Q(resolved_transaction__credit_card_transactions__bank_payment_match__is_active=True)
+    ).select_related('credit_card').distinct()
 
     # Apply filters
     credit_card_id = request.GET.get('credit_card')
@@ -2141,8 +2150,11 @@ def api_cc_payment_suggestions_reverse(request):
     unmatched_bank_payments = get_active_transactions().filter(
         debit_amount__gt=0,
     ).exclude(
-        cc_payment_match__credit_card_transaction_id__in=get_active_cc_transactions().values_list('id', flat=True)
-    ).select_related('bank_account')
+        cc_payment_match__is_active=True
+    ).exclude(
+        Q(resolved_transaction__isnull=False) &
+        Q(resolved_transaction__bank_transactions__cc_payment_match__is_active=True)
+    ).select_related('bank_account').distinct()
 
     # Get offset threshold from query params (default 20%)
     offset_threshold = int(request.GET.get('offset_threshold', 20)) / 100.0
