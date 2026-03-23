@@ -22,22 +22,7 @@ import {
   searchResolvedTransactions,
   type ResolvedTransaction,
 } from "@/lib/api"
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  })
-}
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    minimumFractionDigits: 2,
-  }).format(Math.abs(amount))
-}
+import { formatDate, formatCurrencyINR as formatCurrency } from "@/lib/format"
 
 export function TransactionDetailPage() {
   const { uuid } = useParams<{ uuid: string }>()
@@ -51,6 +36,7 @@ export function TransactionDetailPage() {
   const [searchQuery, setSearchQuery] = useState(searchParams.get("q") || "")
   const [searchResults, setSearchResults] = useState<ResolvedTransaction[]>([])
   const [searching, setSearching] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
     if (uuid) {
@@ -72,16 +58,20 @@ export function TransactionDetailPage() {
   }
 
   const handleCopyUuid = async () => {
-    if (transaction) {
+    if (!transaction) return
+    try {
       await navigator.clipboard.writeText(transaction.uuid)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard API may fail in non-HTTPS contexts
     }
   }
 
   const handleChangePrimary = async (txnType: "bank" | "credit_card", txnId: number) => {
     if (!transaction) return
     setChangingPrimary(true)
+    setActionError(null)
     try {
       const updated = await changePrimarySource(transaction.uuid, {
         transaction_type: txnType,
@@ -89,7 +79,7 @@ export function TransactionDetailPage() {
       })
       setTransaction(updated)
     } catch (err) {
-      console.error("Failed to change primary:", err)
+      setActionError(err instanceof Error ? err.message : "Failed to change primary source")
     } finally {
       setChangingPrimary(false)
     }
@@ -105,7 +95,7 @@ export function TransactionDetailPage() {
         navigate(`/transactions/resolved/${results[0].uuid}`)
       }
     } catch (err) {
-      console.error("Search failed:", err)
+      setActionError(err instanceof Error ? err.message : "Search failed")
     } finally {
       setSearching(false)
     }
@@ -366,6 +356,12 @@ export function TransactionDetailPage() {
             </div>
           )}
         </div>
+
+        {actionError && (
+          <div className="p-4 mb-6 rounded-lg bg-red-500/10 text-sm text-red-500">
+            {actionError}
+          </div>
+        )}
 
         {/* Source Transactions */}
         <div className="bg-card rounded-xl border border-border p-6">

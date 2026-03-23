@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import {
   XIcon,
   CheckIcon,
@@ -61,26 +61,24 @@ export function ResolutionWizard({ sessionId, open, onOpenChange, onComplete }: 
 
     setLoading(true)
     try {
-      // Apply bulk primary to all suggestions
-      const updatedSuggestions = [...suggestions]
-      for (let i = 0; i < suggestions.length; i++) {
-        const suggestion = suggestions[i]
+      const updates = suggestions.map((suggestion, i) => {
         const txn = suggestion.transactions?.[bulkPrimarySourceIndex]
-        if (txn) {
-          await confirmSuggestion(sessionId, suggestion.id, {
-            status: "confirmed",
-            primary_id: txn.id,
-          })
-          // Update local state immediately
-          updatedSuggestions[i] = {
-            ...suggestion,
-            status: "confirmed",
-            confirmed_primary_id: txn.id,
+        if (!txn) return Promise.resolve({ index: i, suggestion, txn: null })
+        return confirmSuggestion(sessionId, suggestion.id, {
+          status: "confirmed",
+          primary_id: txn.id,
+        }).then(() => ({ index: i, suggestion, txn }))
+      })
+      const results = await Promise.all(updates)
+      setSuggestions((prev) =>
+        prev.map((s, i) => {
+          const result = results[i]
+          if (result?.txn) {
+            return { ...s, status: "confirmed" as const, confirmed_primary_id: result.txn.id }
           }
-        }
-      }
-      // Update state with new values
-      setSuggestions(updatedSuggestions)
+          return s
+        })
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to apply bulk primary")
     } finally {
@@ -88,56 +86,7 @@ export function ResolutionWizard({ sessionId, open, onOpenChange, onComplete }: 
     }
   }
 
-  useEffect(() => {
-    if (open && sessionId) {
-      loadSession()
-    }
-  }, [open, sessionId])
-
-  const loadSession = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const sessionData = await fetchResolutionSession(sessionId)
-      setSession(sessionData)
-
-      if (sessionData.status === "suggesting") {
-        setStep("generating")
-        await generateAndLoadSuggestions()
-      } else if (sessionData.status === "review") {
-        setStep("review")
-        await loadSuggestions()
-      } else if (sessionData.status === "completed") {
-        // For completed sessions, load suggestions in review mode to allow editing primaries
-        setStep("review")
-        await loadSuggestions()
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load session")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const generateAndLoadSuggestions = async () => {
-    setLoading(true)
-    try {
-      await generateSuggestions(sessionId)
-      // Refresh session to pick up updated stats
-      const updatedSession = await fetchResolutionSession(sessionId)
-      setSession(updatedSession)
-      // Fetch detailed suggestions from review endpoint
-      await loadSuggestions()
-      setStep("review")
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate suggestions")
-      setSuggestions([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const loadSuggestions = async () => {
+  const loadSuggestions = useCallback(async () => {
     setLoading(true)
     try {
       const data = await fetchSuggestions(sessionId)
@@ -158,7 +107,53 @@ export function ResolutionWizard({ sessionId, open, onOpenChange, onComplete }: 
     } finally {
       setLoading(false)
     }
-  }
+  }, [sessionId])
+
+  const generateAndLoadSuggestions = useCallback(async () => {
+    setLoading(true)
+    try {
+      await generateSuggestions(sessionId)
+      const updatedSession = await fetchResolutionSession(sessionId)
+      setSession(updatedSession)
+      await loadSuggestions()
+      setStep("review")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate suggestions")
+      setSuggestions([])
+    } finally {
+      setLoading(false)
+    }
+  }, [sessionId, loadSuggestions])
+
+  const loadSession = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const sessionData = await fetchResolutionSession(sessionId)
+      setSession(sessionData)
+
+      if (sessionData.status === "suggesting") {
+        setStep("generating")
+        await generateAndLoadSuggestions()
+      } else if (sessionData.status === "review") {
+        setStep("review")
+        await loadSuggestions()
+      } else if (sessionData.status === "completed") {
+        setStep("review")
+        await loadSuggestions()
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load session")
+    } finally {
+      setLoading(false)
+    }
+  }, [sessionId, generateAndLoadSuggestions, loadSuggestions])
+
+  useEffect(() => {
+    if (open && sessionId) {
+      loadSession()
+    }
+  }, [open, sessionId, loadSession])
 
   const handleConfirm = async (status: "confirmed" | "rejected" | "pending") => {
     const current = suggestions[currentIndex]

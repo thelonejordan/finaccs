@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import {
   LayersIcon,
   PlusIcon,
@@ -37,22 +37,23 @@ export function OverlappingGroups({ dataSources, onStartResolution, onRefresh, r
   const [createError, setCreateError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [startingId, setStartingId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadGroups()
-  }, [refreshTrigger])
-
-  const loadGroups = async () => {
+  const loadGroups = useCallback(async () => {
     try {
       const data = await fetchOverlappingGroups()
       setGroups(data.groups || [])
     } catch (err) {
-      console.error("Failed to load overlapping groups:", err)
+      setActionError(err instanceof Error ? err.message : "Failed to load overlapping groups")
       setGroups([])
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    loadGroups()
+  }, [loadGroups, refreshTrigger])
 
   const handleCreateGroup = async () => {
     if (selectedSources.length < 2) {
@@ -83,12 +84,13 @@ export function OverlappingGroups({ dataSources, onStartResolution, onRefresh, r
 
   const handleDeleteGroup = async (groupId: string) => {
     setDeletingId(groupId)
+    setActionError(null)
     try {
       await deleteOverlappingGroup(groupId)
       await loadGroups()
       onRefresh?.()
     } catch (err) {
-      console.error("Failed to delete group:", err)
+      setActionError(err instanceof Error ? err.message : "Failed to delete group")
     } finally {
       setDeletingId(null)
     }
@@ -96,12 +98,13 @@ export function OverlappingGroups({ dataSources, onStartResolution, onRefresh, r
 
   const handleStartResolution = async (groupId: string) => {
     setStartingId(groupId)
+    setActionError(null)
     try {
       const session = await startResolution(groupId)
       onStartResolution?.(session.session_id)
       await loadGroups()
     } catch (err) {
-      console.error("Failed to start resolution:", err)
+      setActionError(err instanceof Error ? err.message : "Failed to start resolution")
     } finally {
       setStartingId(null)
     }
@@ -225,7 +228,9 @@ export function OverlappingGroups({ dataSources, onStartResolution, onRefresh, r
                         Select Data Sources ({selectedSources.length} selected)
                       </label>
                       <div className="max-h-64 overflow-y-auto rounded-lg border border-border">
-                        {bankSources.length > 0 && (
+                        {bankSources.length > 0 && (() => {
+                          const available = getAvailableSources()
+                          return (
                           <div className="p-2">
                             <p className="text-xs font-medium text-muted-foreground px-2 py-1">
                               Bank Account Sources
@@ -233,7 +238,6 @@ export function OverlappingGroups({ dataSources, onStartResolution, onRefresh, r
                             {bankSources
                               .filter((ds) => ds.status === "loaded")
                               .map((ds) => {
-                                const available = getAvailableSources()
                                 const isAvailable = available.some((a) => a.artifact_id === ds.artifact_id)
                                 const isSelected = selectedSources.includes(ds.artifact_id)
                                 return (
@@ -257,8 +261,11 @@ export function OverlappingGroups({ dataSources, onStartResolution, onRefresh, r
                                 )
                               })}
                           </div>
-                        )}
-                        {ccSources.length > 0 && (
+                          )
+                        })()}
+                        {ccSources.length > 0 && (() => {
+                          const available = getAvailableSources()
+                          return (
                           <div className="p-2 border-t border-border">
                             <p className="text-xs font-medium text-muted-foreground px-2 py-1">
                               Credit Card Sources
@@ -266,7 +273,6 @@ export function OverlappingGroups({ dataSources, onStartResolution, onRefresh, r
                             {ccSources
                               .filter((ds) => ds.status === "loaded")
                               .map((ds) => {
-                                const available = getAvailableSources()
                                 const isAvailable = available.some((a) => a.artifact_id === ds.artifact_id)
                                 const isSelected = selectedSources.includes(ds.artifact_id)
                                 return (
@@ -290,7 +296,8 @@ export function OverlappingGroups({ dataSources, onStartResolution, onRefresh, r
                                 )
                               })}
                           </div>
-                        )}
+                          )
+                        })()}
                       </div>
                     </div>
 
@@ -334,6 +341,12 @@ export function OverlappingGroups({ dataSources, onStartResolution, onRefresh, r
       </header>
 
       <div className="p-6 pt-0">
+        {actionError && (
+          <div className="flex items-center gap-2 p-3 mb-3 rounded-lg bg-red-500/10 text-sm text-red-500">
+            <AlertCircleIcon className="h-4 w-4 flex-shrink-0" />
+            {actionError}
+          </div>
+        )}
         {groups.length === 0 ? (
           <div className="text-center py-8 rounded-xl bg-gradient-to-br from-muted/50 to-transparent border border-border">
             <div className="p-3 rounded-full bg-muted w-fit mx-auto mb-3">

@@ -1801,7 +1801,7 @@ export async function executeResolution(sessionId: string): Promise<{ success: b
 }
 
 export async function fetchResolvedTransaction(uuidOrShort: string): Promise<ResolvedTransaction> {
-  const res = await fetch(`${API_BASE}/api/transactions/resolved/${uuidOrShort}/`)
+  const res = await fetch(`${API_BASE}/api/transactions/resolved/${encodeURIComponent(uuidOrShort)}/`)
   if (!res.ok) {
     throw new Error('Failed to fetch resolved transaction')
   }
@@ -1835,7 +1835,7 @@ export async function changePrimarySource(
   uuidOrShort: string,
   data: { transaction_type: 'bank' | 'credit_card'; transaction_id: number }
 ): Promise<ResolvedTransaction> {
-  const res = await fetch(`${API_BASE}/api/transactions/resolved/${uuidOrShort}/primary/`, {
+  const res = await fetch(`${API_BASE}/api/transactions/resolved/${encodeURIComponent(uuidOrShort)}/primary/`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -1850,7 +1850,7 @@ export async function unlinkFromResolved(
   uuidOrShort: string,
   data: { transaction_type: 'bank' | 'credit_card'; transaction_id: number }
 ): Promise<{ success: boolean; deleted_resolved: boolean }> {
-  const res = await fetch(`${API_BASE}/api/transactions/resolved/${uuidOrShort}/unlink/`, {
+  const res = await fetch(`${API_BASE}/api/transactions/resolved/${encodeURIComponent(uuidOrShort)}/unlink/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),

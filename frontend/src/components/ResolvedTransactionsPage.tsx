@@ -9,6 +9,7 @@ import {
   FlaskConicalIcon,
 } from "lucide-react"
 import { fetchResolvedTransactions, type ResolvedTransaction } from "@/lib/api"
+import { formatDate, formatCurrency } from "@/lib/format"
 import { Footer } from "@/components/Footer"
 
 export function ResolvedTransactionsPage() {
@@ -16,6 +17,7 @@ export function ResolvedTransactionsPage() {
   const [resolvedTransactions, setResolvedTransactions] = useState<ResolvedTransaction[]>([])
   const [resolvedTotal, setResolvedTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
 
   useEffect(() => {
@@ -29,24 +31,10 @@ export function ResolvedTransactionsPage() {
       setResolvedTransactions(results)
       setResolvedTotal(total)
     } catch (err) {
-      console.error("Failed to load resolved transactions:", err)
+      setLoadError(err instanceof Error ? err.message : "Failed to load resolved transactions")
     } finally {
       setLoading(false)
     }
-  }
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    })
-  }
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-IN", {
-      minimumFractionDigits: 2,
-    }).format(Math.abs(amount))
   }
 
   const handleSearch = () => {
@@ -110,6 +98,11 @@ export function ResolvedTransactionsPage() {
         </div>
 
         {/* Resolved Transactions */}
+        {loadError && (
+          <div className="p-4 mb-6 rounded-lg bg-red-500/10 text-sm text-red-500">
+            {loadError}
+          </div>
+        )}
         {loading ? (
           <div className="bg-card rounded-xl border border-border p-12 text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
