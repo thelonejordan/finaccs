@@ -74,6 +74,17 @@ def get_active_transactions():
     )
 
 
+def _build_category_map(resolved_transaction_ids):
+    """Build a map of resolved_transaction_id -> category from CategoryLinks (latest wins)."""
+    from links.models import CategoryLink
+    category_map = {}
+    for link in CategoryLink.objects.filter(
+        resolved_transaction_id__in=resolved_transaction_ids
+    ).order_by('created_at'):
+        category_map[link.resolved_transaction_id] = link.category
+    return category_map
+
+
 @extend_schema(
     summary="Get financial summary",
     description="Get comprehensive financial summary including balance, credits, debits, income/expense breakdown, and per-account statistics.",
@@ -111,17 +122,6 @@ def get_active_transactions():
     ],
     tags=['Dashboard'],
 )
-def _build_category_map(resolved_transaction_ids):
-    """Build a map of resolved_transaction_id -> category from CategoryLinks (latest wins)."""
-    from links.models import CategoryLink
-    category_map = {}
-    for link in CategoryLink.objects.filter(
-        resolved_transaction_id__in=resolved_transaction_ids
-    ).order_by('created_at'):
-        category_map[link.resolved_transaction_id] = link.category
-    return category_map
-
-
 @api_view(['GET'])
 def api_summary(request):
     # Get active transactions (excludes disabled source files)

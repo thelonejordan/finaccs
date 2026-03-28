@@ -18,8 +18,11 @@ Complete API reference for the FinAccs financial dashboard.
 6. [Dashboard Analytics](#dashboard-analytics)
 7. [CC Payment Matching](#cc-payment-matching)
 8. [Anomaly Detection](#anomaly-detection)
-9. [Extraction Pipeline](#extraction-pipeline)
-10. [Data Models](#data-models)
+9. [Stories](#stories)
+10. [Entities](#entities)
+11. [Extraction Pipeline](#extraction-pipeline)
+12. [Transaction Resolution](#transaction-resolution)
+13. [Data Models](#data-models)
 
 ---
 
@@ -549,7 +552,7 @@ Fetch activity logs (file loads, transaction changes, account changes).
 
 ### GET /api/cc-payment-suggestions/
 
-Get unmatched bank CC payments with match suggestions.
+Get unmatched bank CC payments with match suggestions. Excludes transactions whose resolved group already has an active match.
 
 **Query Parameters:**
 | Parameter | Type | Description |
@@ -599,7 +602,7 @@ Get unmatched bank CC payments with match suggestions.
 
 ### GET /api/cc-payment-suggestions/reverse/
 
-Get unmatched CC payments with bank transaction suggestions.
+Get unmatched CC payments with bank transaction suggestions. Excludes transactions whose resolved group already has an active match.
 
 **Query Parameters:** `credit_card`, `year`, `offset_threshold`
 
@@ -777,6 +780,410 @@ Restore a dismissed CC inconsistency.
 
 ---
 
+## Stories
+
+### GET /api/stories/
+
+List all stories with transaction statistics.
+
+**Response:**
+```json
+{
+  "stories": [
+    {
+      "id": "integer",
+      "story_id": "story_xxxxxxxx",
+      "name": "string",
+      "description": "string",
+      "icon": "string",
+      "transaction_count": "integer",
+      "total_spent": "float",
+      "min_date": "ISO date | null",
+      "max_date": "ISO date | null",
+      "created_at": "ISO datetime",
+      "updated_at": "ISO datetime"
+    }
+  ]
+}
+```
+
+### POST /api/stories/
+
+Create a new story.
+
+**Request:**
+```json
+{
+  "name": "string (required)",
+  "description": "string (optional)",
+  "icon": "string (optional, default: folder emoji)"
+}
+```
+
+**Response:** `201 Created` — single story object
+
+### GET /api/stories/{story_id}/
+
+Get story details with transactions.
+
+**Response:**
+```json
+{
+  "id": "integer",
+  "story_id": "story_xxxxxxxx",
+  "name": "string",
+  "description": "string",
+  "icon": "string",
+  "transaction_count": "integer",
+  "total_spent": "float",
+  "min_date": "ISO date | null",
+  "max_date": "ISO date | null",
+  "transactions": [
+    {
+      "id": "integer",
+      "type": "bank | credit_card",
+      "date": "ISO date",
+      "description": "string",
+      "amount": "float",
+      "category": "string | null",
+      "source": "string"
+    }
+  ],
+  "created_at": "ISO datetime",
+  "updated_at": "ISO datetime"
+}
+```
+
+### PUT /api/stories/{story_id}/
+
+Update a story.
+
+**Request:**
+```json
+{
+  "name": "string (optional)",
+  "description": "string (optional)",
+  "icon": "string (optional)"
+}
+```
+
+### DELETE /api/stories/{story_id}/
+
+Delete a story.
+
+**Response:**
+```json
+{ "success": true }
+```
+
+### POST /api/stories/{story_id}/transactions/
+
+Add transactions to a story.
+
+**Request:**
+```json
+{
+  "transactions": [
+    { "type": "bank | credit_card", "id": "integer" }
+  ]
+}
+```
+
+**Response:**
+```json
+{ "success": true, "added": "integer" }
+```
+
+### DELETE /api/stories/{story_id}/transactions/
+
+Remove transactions from a story.
+
+**Request:**
+```json
+{
+  "transactions": [
+    { "type": "bank | credit_card", "id": "integer" }
+  ]
+}
+```
+
+**Response:**
+```json
+{ "success": true, "removed": "integer" }
+```
+
+### POST /api/stories/transaction-stories/
+
+Get stories associated with given transactions.
+
+**Request:**
+```json
+{
+  "transactions": [
+    { "type": "bank | credit_card", "id": "integer" }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "transaction_stories": {
+    "bank:123": [
+      { "story_id": "story_xxxxxxxx", "name": "string", "icon": "string" }
+    ],
+    "credit_card:456": [
+      { "story_id": "story_yyyyyyyy", "name": "string", "icon": "string" }
+    ]
+  }
+}
+```
+
+### POST /api/stories/compare/
+
+Compare stories to find common and unique transactions.
+
+**Request:**
+```json
+{
+  "story_ids": ["story_xxxxxxxx", "story_yyyyyyyy"]
+}
+```
+
+**Response:**
+```json
+{
+  "stories": [
+    {
+      "story_id": "string",
+      "name": "string",
+      "icon": "string",
+      "transaction_count": "integer",
+      "total_spent": "float"
+    }
+  ],
+  "common_transactions": [
+    {
+      "id": "integer",
+      "type": "bank | credit_card",
+      "date": "ISO date",
+      "description": "string",
+      "amount": "float",
+      "category": "string | null",
+      "source": "string"
+    }
+  ],
+  "unique_transactions": {
+    "story_xxxxxxxx": ["...transaction objects"],
+    "story_yyyyyyyy": ["...transaction objects"]
+  },
+  "overlap_stats": {
+    "common_count": "integer",
+    "total_unique": "integer"
+  }
+}
+```
+
+---
+
+## Entities
+
+### GET /api/entities/
+
+List all entities with transaction statistics.
+
+**Response:**
+```json
+{
+  "entities": [
+    {
+      "id": "integer",
+      "entity_id": "entity_xxxxxxxx",
+      "name": "string",
+      "description": "string",
+      "icon": "string",
+      "entity_type": "person | business",
+      "transaction_count": "integer",
+      "total_spent": "float",
+      "min_date": "ISO date | null",
+      "max_date": "ISO date | null",
+      "created_at": "ISO datetime",
+      "updated_at": "ISO datetime"
+    }
+  ]
+}
+```
+
+### POST /api/entities/
+
+Create a new entity.
+
+**Request:**
+```json
+{
+  "name": "string (required)",
+  "description": "string (optional)",
+  "icon": "string (optional, default: person emoji)",
+  "entity_type": "person | business (optional, default: person)"
+}
+```
+
+**Response:** `201 Created` — single entity object
+
+### GET /api/entities/{entity_id}/
+
+Get entity details with transactions.
+
+**Response:**
+```json
+{
+  "id": "integer",
+  "entity_id": "entity_xxxxxxxx",
+  "name": "string",
+  "description": "string",
+  "icon": "string",
+  "entity_type": "person | business",
+  "transaction_count": "integer",
+  "total_spent": "float",
+  "min_date": "ISO date | null",
+  "max_date": "ISO date | null",
+  "transactions": [
+    {
+      "id": "integer",
+      "type": "bank | credit_card",
+      "date": "ISO date",
+      "description": "string",
+      "amount": "float",
+      "category": "string | null",
+      "source": "string"
+    }
+  ],
+  "created_at": "ISO datetime",
+  "updated_at": "ISO datetime"
+}
+```
+
+### PUT /api/entities/{entity_id}/
+
+Update an entity.
+
+**Request:**
+```json
+{
+  "name": "string (optional)",
+  "description": "string (optional)",
+  "icon": "string (optional)",
+  "entity_type": "person | business (optional)"
+}
+```
+
+### DELETE /api/entities/{entity_id}/
+
+Delete an entity.
+
+**Response:**
+```json
+{ "success": true }
+```
+
+### POST /api/entities/{entity_id}/transactions/
+
+Add transactions to an entity.
+
+**Request:**
+```json
+{
+  "transactions": [
+    { "type": "bank | credit_card", "id": "integer" }
+  ]
+}
+```
+
+**Response:**
+```json
+{ "success": true, "added": "integer" }
+```
+
+### DELETE /api/entities/{entity_id}/transactions/
+
+Remove transactions from an entity.
+
+**Request:**
+```json
+{
+  "transactions": [
+    { "type": "bank | credit_card", "id": "integer" }
+  ]
+}
+```
+
+**Response:**
+```json
+{ "success": true, "removed": "integer" }
+```
+
+### POST /api/entities/transaction-entities/
+
+Get entities associated with given transactions.
+
+**Request:**
+```json
+{
+  "transactions": [
+    { "type": "bank | credit_card", "id": "integer" }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "transaction_entities": {
+    "bank:123": [
+      { "entity_id": "entity_xxxxxxxx", "name": "string", "icon": "string", "entity_type": "string" }
+    ]
+  }
+}
+```
+
+### POST /api/entities/compare/
+
+Compare entities to find common and unique transactions.
+
+**Request:**
+```json
+{
+  "entity_ids": ["entity_xxxxxxxx", "entity_yyyyyyyy"]
+}
+```
+
+**Response:**
+```json
+{
+  "entities": [
+    {
+      "entity_id": "string",
+      "name": "string",
+      "icon": "string",
+      "entity_type": "string",
+      "transaction_count": "integer",
+      "total_spent": "float"
+    }
+  ],
+  "common_transactions": ["...transaction objects"],
+  "unique_transactions": {
+    "entity_xxxxxxxx": ["...transaction objects"],
+    "entity_yyyyyyyy": ["...transaction objects"]
+  },
+  "overlap_stats": {
+    "common_count": "integer",
+    "total_unique": "integer"
+  }
+}
+```
+
+---
+
 ## Extraction Pipeline
 
 ### GET /api/extractions/extractors/
@@ -890,7 +1297,18 @@ Trigger extraction.
 ```json
 {
   "password": "string (optional)",
-  "extractor": "string (optional)"
+  "extractor": "string (optional)",
+  "force": "boolean (optional, default: false)"
+}
+```
+
+**Response:** `200 OK` — extraction details
+
+**Response:** `409 Conflict` — when a completed extraction already exists
+```json
+{
+  "error": "File already has a completed extraction (#ID) with extractor \"name\". Pass \"force\": true to re-extract.",
+  "existing_extraction_id": "integer"
 }
 ```
 
@@ -1056,6 +1474,328 @@ Preview data source content.
 
 ---
 
+## Transaction Resolution
+
+Resolve overlapping transactions from multiple source files that cover the same date range and account.
+
+### Overlapping Source Groups
+
+#### GET /api/sources/overlapping-groups/
+
+List overlapping source groups.
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `bank_account_id` | integer | Filter by bank account ID |
+| `credit_card_id` | integer | Filter by credit card ID |
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "id": "integer",
+      "group_id": "osg_xxxxxxxx",
+      "name": "string",
+      "resolution_status": "pending | in_progress | completed",
+      "bank_account_id": "integer | null",
+      "credit_card_id": "integer | null",
+      "artifact_count": "integer",
+      "artifacts": [
+        {
+          "artifact_id": "ds_art_xxxxxxxx",
+          "filename": "string",
+          "row_count": "integer"
+        }
+      ],
+      "active_session_id": "rs_xxxxxxxx | null",
+      "completed_session_id": "rs_xxxxxxxx | null",
+      "created_at": "ISO datetime",
+      "updated_at": "ISO datetime"
+    }
+  ]
+}
+```
+
+#### POST /api/sources/overlapping-groups/
+
+Create an overlapping source group.
+
+**Request:**
+```json
+{
+  "artifact_ids": ["ds_art_xxxxxxxx", "ds_art_yyyyyyyy"],
+  "name": "string (optional, default: 'Untitled Group')"
+}
+```
+
+**Response:** `201 Created` — single group object
+
+#### GET /api/sources/overlapping-groups/{group_id}/
+
+Get group details.
+
+#### DELETE /api/sources/overlapping-groups/{group_id}/
+
+Delete a group.
+
+**Response:** `204 No Content`
+
+#### POST /api/sources/overlapping-groups/{group_id}/resolve/
+
+Start a resolution session for this group.
+
+**Response:** `201 Created`
+```json
+{
+  "session_id": "rs_xxxxxxxx",
+  "status": "suggesting"
+}
+```
+
+### Resolution Sessions
+
+#### GET /api/transactions/resolve/{session_id}/
+
+Get session details.
+
+**Response:**
+```json
+{
+  "session_id": "rs_xxxxxxxx",
+  "status": "suggesting | review | executing | completed | cancelled",
+  "stats": {
+    "total_transactions": "integer",
+    "suggestions_created": "integer",
+    "unmatched": "integer",
+    "sources": {
+      "<source_id>": {
+        "filename": "string",
+        "txn_count": "integer"
+      }
+    },
+    "resolved_created": "integer (only after execution)"
+  },
+  "group_id": "osg_xxxxxxxx",
+  "created_at": "ISO datetime"
+}
+```
+
+#### POST /api/transactions/resolve/{session_id}/suggest/
+
+Generate match suggestions. Groups transactions by date + amount (+ closing_balance for bank) and creates suggestions for multi-source matches. Clears existing suggestions on re-run to prevent duplicates.
+
+**Scoring:**
+- `1.0` — balance match
+- `0.95` — balance + neighbor balance match
+- `0.7` — no balance match
+
+**Response:**
+```json
+{
+  "session_id": "rs_xxxxxxxx",
+  "status": "review",
+  "stats": { ... }
+}
+```
+
+#### GET /api/transactions/resolve/{session_id}/review/
+
+Review match suggestions.
+
+**Response:**
+```json
+{
+  "session_id": "rs_xxxxxxxx",
+  "status": "review",
+  "suggestions": [
+    {
+      "id": "integer",
+      "suggested_transaction_ids": [
+        { "type": "bank | credit_card", "id": "integer" }
+      ],
+      "transactions": [
+        {
+          "id": "integer",
+          "type": "bank | credit_card",
+          "date": "ISO date",
+          "narration": "string",
+          "amount": "float",
+          "reference": "string | null",
+          "source_file": "string"
+        }
+      ],
+      "suggestion_score": "float (0.0-1.0)",
+      "match_signals": {
+        "date": "boolean",
+        "amount": "boolean",
+        "closing_balance": "boolean",
+        "neighbor_balance": "boolean"
+      },
+      "status": "pending | confirmed | modified | rejected",
+      "confirmed_primary_id": "integer | null"
+    }
+  ]
+}
+```
+
+#### POST /api/transactions/resolve/{session_id}/confirm-group/
+
+Confirm a suggestion and set the primary transaction.
+
+**Request:**
+```json
+{
+  "suggestion_id": "integer",
+  "primary_transaction_id": "integer"
+}
+```
+
+**Response:**
+```json
+{ "status": "confirmed" }
+```
+
+#### POST /api/transactions/resolve/{session_id}/execute/
+
+Execute resolution — creates ResolvedTransaction records for confirmed suggestions and migrates linked data (categories, stories, entities, self-transfers, CC payment matches).
+
+**Response:**
+```json
+{
+  "session_id": "rs_xxxxxxxx",
+  "status": "completed",
+  "stats": {
+    "total_transactions": "integer",
+    "suggestions_created": "integer",
+    "unmatched": "integer",
+    "sources": { ... },
+    "resolved_created": "integer"
+  }
+}
+```
+
+### Resolved Transactions
+
+#### GET /api/transactions/resolved/
+
+List resolved transactions.
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `page` | integer | Page number (default: 1) |
+| `page_size` | integer | Results per page (default: 50) |
+| `bank_account_id` | integer | Filter by bank account ID |
+| `credit_card_id` | integer | Filter by credit card ID |
+
+**Response:**
+```json
+{
+  "total": "integer",
+  "page": "integer",
+  "page_size": "integer",
+  "results": [
+    {
+      "id": "integer",
+      "uuid": "string",
+      "short_id": "string (first 8 chars)",
+      "transaction_type": "bank | credit_card",
+      "primary_transaction_id": "integer",
+      "date": "ISO date",
+      "amount": "string (decimal)",
+      "bank_account_id": "integer | null",
+      "credit_card_id": "integer | null",
+      "source_count": "integer",
+      "created_at": "ISO datetime"
+    }
+  ]
+}
+```
+
+#### GET /api/transactions/resolved/search/
+
+Search resolved transactions by UUID or short ID prefix.
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `q` | string | UUID or short ID prefix to search (required) |
+
+**Response:** Array of resolved transaction objects (same structure as list results)
+
+#### GET /api/transactions/resolved/{uuid_or_short}/
+
+Get resolved transaction details including sources, stories, entities, and linked transactions.
+
+**Response:**
+```json
+{
+  "id": "integer",
+  "uuid": "string",
+  "short_id": "string",
+  "transaction_type": "bank | credit_card",
+  "primary_transaction_id": "integer",
+  "date": "ISO date",
+  "amount": "string",
+  "bank_account_id": "integer | null",
+  "credit_card_id": "integer | null",
+  "source_count": "integer",
+  "created_at": "ISO datetime",
+  "sources": [
+    {
+      "id": "integer",
+      "narration": "string (bank) | description (credit_card)",
+      "reference_number": "string | null (bank only)",
+      "value_date": "ISO date | null (bank only)",
+      "closing_balance": "string (bank only)",
+      "amount": "string (credit_card only)",
+      "is_primary": "boolean",
+      "source_file": "string"
+    }
+  ],
+  "stories": [{ "id": "integer", "name": "string", "icon": "string" }],
+  "entities": [{ "id": "integer", "name": "string", "icon": "string" }],
+  "linked_resolved_transaction": {
+    "uuid": "string",
+    "short_id": "string",
+    "date": "ISO date",
+    "amount": "string"
+  }
+}
+```
+
+#### PATCH /api/transactions/resolved/{uuid_or_short}/primary/
+
+Change the primary transaction of a resolved group.
+
+**Request:**
+```json
+{ "primary_transaction_id": "integer" }
+```
+
+**Response:** Full resolved transaction detail object
+
+#### POST /api/transactions/resolved/{uuid_or_short}/unlink/
+
+Unlink a transaction from a resolved group. Creates a new single-member ResolvedTransaction for the unlinked transaction and promotes another source as primary if needed.
+
+**Request:**
+```json
+{ "transaction_id": "integer" }
+```
+
+**Response:**
+```json
+{
+  "unlinked_transaction_id": "integer",
+  "new_resolved_uuid": "string"
+}
+```
+
+---
+
 ## Data Models
 
 ### BankAccount
@@ -1118,6 +1858,57 @@ Preview data source content.
 | match_reasons | JSON | List of match reasons |
 | is_active | boolean | Active status |
 
+### Story
+| Field | Type | Description |
+|-------|------|-------------|
+| id | integer | Primary key |
+| story_id | string (unique) | Format: `story_xxxxxxxx` |
+| name | string(200) | Display name |
+| description | text | Description (optional) |
+| icon | string(10) | Emoji icon |
+
+### Entity
+| Field | Type | Description |
+|-------|------|-------------|
+| id | integer | Primary key |
+| entity_id | string (unique) | Format: `entity_xxxxxxxx` |
+| name | string(200) | Display name |
+| description | text | Description (optional) |
+| icon | string(10) | Emoji icon |
+| entity_type | string | `person` or `business` |
+
+### ResolvedTransaction
+| Field | Type | Description |
+|-------|------|-------------|
+| id | integer | Primary key |
+| uuid | UUID (unique) | Full UUID |
+| short_id | string(8) | First 8 chars of UUID |
+| transaction_type | string | `bank` or `credit_card` |
+| primary_transaction_id | integer | ID of primary source transaction |
+| date | date | Transaction date |
+| amount | decimal(12,2) | Transaction amount |
+| bank_account_id | FK | Bank account (if bank type) |
+| credit_card_id | FK | Credit card (if CC type) |
+
+### OverlappingSourceGroup
+| Field | Type | Description |
+|-------|------|-------------|
+| id | integer | Primary key |
+| group_id | string (unique) | Format: `osg_xxxxxxxx` |
+| name | string(200) | Group name |
+| resolution_status | string | `pending`, `in_progress`, `completed` |
+| bank_account_id | FK | Bank account (optional) |
+| credit_card_id | FK | Credit card (optional) |
+
+### ResolutionSession
+| Field | Type | Description |
+|-------|------|-------------|
+| id | integer | Primary key |
+| session_id | string (unique) | Format: `rs_xxxxxxxx` |
+| overlapping_group_id | FK | Parent group |
+| status | string | `suggesting`, `review`, `executing`, `completed`, `cancelled` |
+| stats | JSON | Session metrics |
+
 ### ID Formats
 | Entity | Format | Example |
 |--------|--------|---------|
@@ -1125,6 +1916,10 @@ Preview data source content.
 | Extraction | `ext_DDMMYYYY_xxxxxxxx` | `ext_23012025_a1b2c3d4` |
 | Extraction Artifact | `ext_art_xxxxxxxx` | `ext_art_a1b2c3d4` |
 | Data Source Artifact | `ds_art_xxxxxxxx` | `ds_art_a1b2c3d4` |
+| Story | `story_xxxxxxxx` | `story_a1b2c3d4` |
+| Entity | `entity_xxxxxxxx` | `entity_a1b2c3d4` |
+| Overlapping Source Group | `osg_xxxxxxxx` | `osg_a1b2c3d4` |
+| Resolution Session | `rs_xxxxxxxx` | `rs_a1b2c3d4` |
 
 ---
 
@@ -1133,8 +1928,10 @@ Preview data source content.
 All endpoints return appropriate HTTP status codes:
 - `200 OK` - Successful GET/PUT/PATCH
 - `201 Created` - Successful POST creation
+- `204 No Content` - Successful DELETE (some endpoints)
 - `400 Bad Request` - Invalid input
 - `404 Not Found` - Resource not found
+- `409 Conflict` - Duplicate resource (e.g., re-extraction without force)
 
 Error response format:
 ```json

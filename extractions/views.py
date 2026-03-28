@@ -162,6 +162,7 @@ def _serialize_data_source_artifact(dsa):
 @extend_schema(
     summary="List source files",
     description="List source files with visibility and domain filtering.",
+    operation_id='source_file_list',
     parameters=[
         OpenApiParameter(name='visibility', description="Filter: 'visible', 'hidden', 'all'", required=False, type=str, default='visible'),
         OpenApiParameter(name='domain', description="Filter: 'bank_account', 'credit_card', 'all'", required=False, type=str, default='all'),
@@ -386,8 +387,18 @@ def source_file_bulk_update(request):
 
 
 @extend_schema(
-    summary="Get or update source file",
-    description="GET: Retrieve source file with extractions. PATCH: Update password, extractor, domain, hidden.",
+    methods=['GET'],
+    operation_id='source_file_detail',
+    summary="Get source file details",
+    description="Retrieve source file with extractions.",
+    responses={200: dict, 404: dict},
+)
+@extend_schema(
+    methods=['PATCH'],
+    operation_id='source_file_update',
+    summary="Update source file",
+    description="Update password, extractor, domain, or hidden status.",
+    request=dict,
     responses={200: dict, 404: dict},
     examples=[
         OpenApiExample(
@@ -579,7 +590,7 @@ def source_file_validate_password(request, source_file_id):
     examples=[
         OpenApiExample(
             'Extract Request',
-            value={'password': 'optional_password', 'extractor': 'hdfc_bank_pdf'},
+            value={'password': 'optional_password', 'extractor': 'hdfc_bank_pdf', 'force': False},
             request_only=True,
         ),
         OpenApiExample(
@@ -618,6 +629,14 @@ def source_file_validate_password(request, source_file_id):
         OpenApiExample(
             'Password Required Error',
             value={'success': False, 'error': 'File is encrypted', 'needs_password': True},
+            response_only=True,
+        ),
+        OpenApiExample(
+            'Duplicate Extraction Error (409)',
+            value={
+                'error': 'File already has a completed extraction (#1) with extractor "hdfc_bank_pdf". Pass "force": true to re-extract.',
+                'existing_extraction_id': 1,
+            },
             response_only=True,
         ),
     ],
@@ -734,6 +753,7 @@ def source_file_extract(request, source_file_id):
 @extend_schema(
     summary="List extractions",
     description="List extractions with visibility, domain, and status filtering.",
+    operation_id='extraction_list',
     parameters=[
         OpenApiParameter(name='visibility', description="Filter: 'visible', 'hidden', 'all'", required=False, type=str, default='visible'),
         OpenApiParameter(name='domain', description="Filter: 'bank_account', 'credit_card', 'all'", required=False, type=str, default='all'),
@@ -870,8 +890,25 @@ def extraction_bulk_update(request):
 
 
 @extend_schema(
-    summary="Get, update, or delete extraction",
-    description="GET: Retrieve extraction with artifacts. PATCH: Update hidden status. DELETE: Delete extraction.",
+    methods=['GET'],
+    operation_id='extraction_detail',
+    summary="Get extraction details",
+    description="Retrieve extraction with artifacts.",
+    responses={200: dict, 404: dict},
+)
+@extend_schema(
+    methods=['PATCH'],
+    operation_id='extraction_update',
+    summary="Update extraction",
+    description="Update hidden status.",
+    request=dict,
+    responses={200: dict, 404: dict},
+)
+@extend_schema(
+    methods=['DELETE'],
+    operation_id='extraction_delete',
+    summary="Delete extraction",
+    description="Delete an extraction and its artifacts.",
     responses={200: dict, 404: dict},
     examples=[
         OpenApiExample(
@@ -1258,6 +1295,7 @@ def artifact_bulk_transform(request):
 @extend_schema(
     summary="List data sources",
     description="List data source artifacts with visibility, domain, and status filtering.",
+    operation_id='data_source_list',
     parameters=[
         OpenApiParameter(name='visibility', description="Filter: 'visible', 'hidden', 'all'", required=False, type=str, default='visible'),
         OpenApiParameter(name='domain', description="Filter: 'bank_account_transactions', 'credit_card_transactions', 'all'", required=False, type=str, default='all'),
@@ -1454,9 +1492,26 @@ def data_source_bulk_update(request):
 
 
 @extend_schema(
-    summary="Get, update, or delete data source",
-    description="GET: Retrieve data source. PATCH: Update enabled, hidden, bank_account_id, credit_card_id. DELETE: Delete data source.",
+    methods=['GET'],
+    operation_id='data_source_detail',
+    summary="Get data source details",
+    description="Retrieve data source artifact details.",
     responses={200: dict, 400: dict, 404: dict},
+)
+@extend_schema(
+    methods=['PATCH'],
+    operation_id='data_source_update',
+    summary="Update data source",
+    description="Update enabled, hidden, bank_account_id, or credit_card_id.",
+    request=dict,
+    responses={200: dict, 400: dict, 404: dict},
+)
+@extend_schema(
+    methods=['DELETE'],
+    operation_id='data_source_delete',
+    summary="Delete data source",
+    description="Delete a data source artifact.",
+    responses={200: dict, 404: dict},
     examples=[
         OpenApiExample(
             'Data Source Detail',
@@ -1564,6 +1619,7 @@ def data_source_detail(request, artifact_id):
 @extend_schema(
     summary="Load data source",
     description="Load data source artifact into transactions table.",
+    request=dict,
     responses={200: dict, 400: dict, 404: dict},
     examples=[
         OpenApiExample(
@@ -1628,6 +1684,7 @@ def data_source_load(request, artifact_id):
 @extend_schema(
     summary="Unload data source",
     description="Unload data source artifact (delete transactions, keep artifact).",
+    request=dict,
     responses={200: dict, 400: dict, 404: dict},
     examples=[
         OpenApiExample(
@@ -1910,6 +1967,59 @@ def _serialize_resolved_transaction(resolved, include_sources=True):
     return result
 
 
+@extend_schema(
+    methods=['GET'],
+    operation_id='overlapping_groups_list',
+    summary="List overlapping source groups",
+    description="List overlapping source groups, optionally filtered by bank account or credit card.",
+    parameters=[
+        OpenApiParameter(name='bank_account_id', type=int, location=OpenApiParameter.QUERY, description='Filter by bank account ID'),
+        OpenApiParameter(name='credit_card_id', type=int, location=OpenApiParameter.QUERY, description='Filter by credit card ID'),
+    ],
+    responses={200: dict},
+    examples=[
+        OpenApiExample(
+            'Overlapping Groups List',
+            value={
+                'data': [{
+                    'id': 1,
+                    'group_id': 'osg_a1b2c3d4',
+                    'name': 'Jan-Mar 2024 Overlap',
+                    'resolution_status': 'pending',
+                    'bank_account_id': 1,
+                    'credit_card_id': None,
+                    'artifact_count': 2,
+                    'artifacts': [
+                        {'artifact_id': 'ds_art_abc123', 'filename': 'jan_mar.pdf', 'row_count': 90},
+                        {'artifact_id': 'ds_art_def456', 'filename': 'feb_apr.pdf', 'row_count': 120},
+                    ],
+                    'active_session_id': None,
+                    'completed_session_id': None,
+                    'created_at': '2024-01-15T10:30:00Z',
+                    'updated_at': '2024-01-15T10:30:00Z',
+                }],
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Resolution - Overlapping Groups'],
+)
+@extend_schema(
+    methods=['POST'],
+    operation_id='overlapping_groups_create',
+    summary="Create overlapping source group",
+    description="Create a new overlapping source group from data source artifacts.",
+    request=dict,
+    responses={201: dict, 400: dict},
+    examples=[
+        OpenApiExample(
+            'Create Group Request',
+            value={'artifact_ids': ['ds_art_abc123', 'ds_art_def456'], 'name': 'Jan-Mar 2024 Overlap'},
+            request_only=True,
+        ),
+    ],
+    tags=['Resolution - Overlapping Groups'],
+)
 @api_view(['GET', 'POST'])
 def overlapping_group_list_create(request):
     """
@@ -2068,6 +2178,22 @@ def _cleanup_group_resolved_transactions(group):
             merged_rt.delete()
 
 
+@extend_schema(
+    methods=['GET'],
+    operation_id='overlapping_group_detail',
+    summary="Get overlapping group details",
+    description="Retrieve details of an overlapping source group including artifacts and session info.",
+    responses={200: dict, 404: dict},
+    tags=['Resolution - Overlapping Groups'],
+)
+@extend_schema(
+    methods=['DELETE'],
+    operation_id='overlapping_group_delete',
+    summary="Delete overlapping group",
+    description="Delete an overlapping source group. Cleans up resolved transactions if completed.",
+    responses={204: dict, 404: dict},
+    tags=['Resolution - Overlapping Groups'],
+)
 @api_view(['GET', 'DELETE'])
 def overlapping_group_detail(request, group_id):
     """
@@ -2092,6 +2218,20 @@ def overlapping_group_detail(request, group_id):
         return JsonResponse({}, status=204)
 
 
+@extend_schema(
+    summary="Start resolution session",
+    description="Start a new resolution session for an overlapping source group. Creates a session in 'suggesting' state.",
+    request=dict,
+    responses={201: dict, 400: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Resolution Started',
+            value={'session_id': 'rs_a1b2c3d4', 'status': 'suggesting'},
+            response_only=True,
+        ),
+    ],
+    tags=['Resolution - Overlapping Groups'],
+)
 @api_view(['POST'])
 def overlapping_group_resolve(request, group_id):
     """
@@ -2117,6 +2257,33 @@ def overlapping_group_resolve(request, group_id):
     }, status=201)
 
 
+@extend_schema(
+    summary="Get resolution session details",
+    description="Retrieve resolution session status, stats, and associated group.",
+    responses={200: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Session Detail',
+            value={
+                'session_id': 'rs_a1b2c3d4',
+                'status': 'review',
+                'stats': {
+                    'total_transactions': 50,
+                    'suggestions_created': 20,
+                    'unmatched': 5,
+                    'sources': {
+                        '1': {'filename': 'jan_mar.pdf', 'txn_count': 30},
+                        '2': {'filename': 'feb_apr.pdf', 'txn_count': 20},
+                    },
+                },
+                'group_id': 'osg_a1b2c3d4',
+                'created_at': '2024-01-15T10:30:00Z',
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Resolution - Sessions'],
+)
 @api_view(['GET'])
 def resolution_session_detail(request, session_id):
     """
@@ -2137,6 +2304,36 @@ def resolution_session_detail(request, session_id):
     })
 
 
+@extend_schema(
+    summary="Generate match suggestions",
+    description=(
+        "Generate match suggestions for the session by grouping transactions by date + amount. "
+        "Clears existing suggestions on re-run to prevent duplicates. "
+        "Scoring: 1.0 (balance match), 0.95 (balance + neighbor), 0.7 (no balance match)."
+    ),
+    request=dict,
+    responses={200: dict, 400: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Suggestions Generated',
+            value={
+                'session_id': 'rs_a1b2c3d4',
+                'status': 'review',
+                'stats': {
+                    'total_transactions': 50,
+                    'suggestions_created': 20,
+                    'unmatched': 5,
+                    'sources': {
+                        '1': {'filename': 'jan_mar.pdf', 'txn_count': 30},
+                        '2': {'filename': 'feb_apr.pdf', 'txn_count': 20},
+                    },
+                },
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Resolution - Sessions'],
+)
 @api_view(['POST'])
 def resolution_session_suggest(request, session_id):
     """
@@ -2315,6 +2512,55 @@ def resolution_session_suggest(request, session_id):
     })
 
 
+@extend_schema(
+    summary="Review match suggestions",
+    description="Get all suggestions for review with full transaction details, scores, and match signals.",
+    responses={200: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Review Suggestions',
+            value={
+                'session_id': 'rs_a1b2c3d4',
+                'status': 'review',
+                'suggestions': [{
+                    'id': 1,
+                    'suggested_transaction_ids': [
+                        {'type': 'bank', 'id': 101},
+                        {'type': 'bank', 'id': 202},
+                    ],
+                    'transactions': [{
+                        'id': 101,
+                        'type': 'bank',
+                        'date': '2024-01-15',
+                        'narration': 'NEFT Transfer',
+                        'amount': -5000.0,
+                        'reference': 'REF123',
+                        'source_file': 'jan_mar.pdf',
+                    }, {
+                        'id': 202,
+                        'type': 'bank',
+                        'date': '2024-01-15',
+                        'narration': 'NEFT Transfer',
+                        'amount': -5000.0,
+                        'reference': 'REF123',
+                        'source_file': 'feb_apr.pdf',
+                    }],
+                    'suggestion_score': 1.0,
+                    'match_signals': {
+                        'date': True,
+                        'amount': True,
+                        'closing_balance': True,
+                        'neighbor_balance': False,
+                    },
+                    'status': 'pending',
+                    'confirmed_primary_id': None,
+                }],
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Resolution - Sessions'],
+)
 @api_view(['GET'])
 def resolution_session_review(request, session_id):
     """
@@ -2405,6 +2651,25 @@ def resolution_session_review(request, session_id):
     })
 
 
+@extend_schema(
+    summary="Confirm suggestion",
+    description="Confirm a match suggestion and set the primary transaction. For completed sessions, also updates the underlying resolved transaction.",
+    request=dict,
+    responses={200: dict, 400: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Confirm Request',
+            value={'suggestion_id': 1, 'primary_transaction_id': 101},
+            request_only=True,
+        ),
+        OpenApiExample(
+            'Confirm Response',
+            value={'status': 'confirmed'},
+            response_only=True,
+        ),
+    ],
+    tags=['Resolution - Sessions'],
+)
 @api_view(['POST'])
 def resolution_session_confirm(request, session_id):
     """
@@ -2464,6 +2729,33 @@ def resolution_session_confirm(request, session_id):
     return JsonResponse({'status': 'confirmed'})
 
 
+@extend_schema(
+    summary="Execute resolution",
+    description="Execute the resolution — creates ResolvedTransaction records for confirmed suggestions and migrates linked data (categories, stories, entities, self-transfers, CC payment matches).",
+    request=dict,
+    responses={200: dict, 400: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Execution Complete',
+            value={
+                'session_id': 'rs_a1b2c3d4',
+                'status': 'completed',
+                'stats': {
+                    'total_transactions': 50,
+                    'suggestions_created': 20,
+                    'unmatched': 5,
+                    'sources': {
+                        '1': {'filename': 'jan_mar.pdf', 'txn_count': 30},
+                        '2': {'filename': 'feb_apr.pdf', 'txn_count': 20},
+                    },
+                    'resolved_created': 20,
+                },
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Resolution - Sessions'],
+)
 @api_view(['POST'])
 def resolution_session_execute(request, session_id):
     """
@@ -2577,6 +2869,50 @@ def _find_resolved_by_uuid_or_short(uuid_or_short):
     raise ResolvedTransaction.DoesNotExist()
 
 
+@extend_schema(
+    summary="Get resolved transaction details",
+    description="Retrieve resolved transaction with sources, stories, entities, and linked transaction info. Accepts full UUID or short ID prefix.",
+    operation_id='resolved_transaction_detail',
+    responses={200: dict, 400: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Resolved Transaction Detail',
+            value={
+                'id': 1,
+                'uuid': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+                'short_id': 'a1b2c3d4',
+                'transaction_type': 'bank',
+                'primary_transaction_id': 101,
+                'date': '2024-01-15',
+                'amount': '-5000.00',
+                'bank_account_id': 1,
+                'credit_card_id': None,
+                'source_count': 2,
+                'created_at': '2024-01-15T10:30:00Z',
+                'sources': [{
+                    'id': 101,
+                    'narration': 'NEFT Transfer',
+                    'reference_number': 'REF123',
+                    'closing_balance': '45000.00',
+                    'is_primary': True,
+                    'source_file': 'jan_mar.pdf',
+                }, {
+                    'id': 202,
+                    'narration': 'NEFT Transfer',
+                    'reference_number': 'REF123',
+                    'closing_balance': '45000.00',
+                    'is_primary': False,
+                    'source_file': 'feb_apr.pdf',
+                }],
+                'stories': [{'id': 1, 'name': 'House Rent', 'icon': '🏠'}],
+                'entities': [{'id': 1, 'name': 'Landlord', 'icon': '👤'}],
+                'linked_resolved_transaction': None,
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Resolution - Resolved Transactions'],
+)
 @api_view(['GET'])
 def resolved_transaction_detail(request, uuid_or_short):
     """
@@ -2593,6 +2929,20 @@ def resolved_transaction_detail(request, uuid_or_short):
     return JsonResponse(_serialize_resolved_transaction(resolved))
 
 
+@extend_schema(
+    summary="Change primary transaction",
+    description="Change the primary source transaction for display in a resolved group.",
+    request=dict,
+    responses={200: dict, 400: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Change Primary Request',
+            value={'primary_transaction_id': 202},
+            request_only=True,
+        ),
+    ],
+    tags=['Resolution - Resolved Transactions'],
+)
 @api_view(['PATCH'])
 def resolved_transaction_primary(request, uuid_or_short):
     """
@@ -2638,6 +2988,28 @@ def resolved_transaction_primary(request, uuid_or_short):
     return JsonResponse(_serialize_resolved_transaction(resolved))
 
 
+@extend_schema(
+    summary="Unlink transaction from group",
+    description="Remove a source transaction from a resolved group. Creates a new single-member resolved transaction for the unlinked transaction and promotes another source as primary if needed.",
+    request=dict,
+    responses={200: dict, 400: dict, 404: dict},
+    examples=[
+        OpenApiExample(
+            'Unlink Request',
+            value={'transaction_id': 202},
+            request_only=True,
+        ),
+        OpenApiExample(
+            'Unlink Response',
+            value={
+                'unlinked_transaction_id': 202,
+                'new_resolved_uuid': 'f1e2d3c4-b5a6-7890-abcd-ef1234567890',
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Resolution - Resolved Transactions'],
+)
 @api_view(['POST'])
 def resolved_transaction_unlink(request, uuid_or_short):
     """
@@ -2719,6 +3091,15 @@ def resolved_transaction_unlink(request, uuid_or_short):
     })
 
 
+@extend_schema(
+    summary="Search resolved transactions",
+    description="Search resolved transactions by UUID or short ID prefix.",
+    parameters=[
+        OpenApiParameter(name='q', type=str, location=OpenApiParameter.QUERY, description='UUID or short ID prefix to search', required=True),
+    ],
+    responses={200: dict, 400: dict},
+    tags=['Resolution - Resolved Transactions'],
+)
 @api_view(['GET'])
 def resolved_transaction_search(request):
     """
@@ -2740,6 +3121,43 @@ def resolved_transaction_search(request):
     ], safe=False)
 
 
+@extend_schema(
+    summary="List resolved transactions",
+    description="List all resolved transactions with pagination. Optionally filter by bank account or credit card.",
+    operation_id='resolved_transaction_list',
+    parameters=[
+        OpenApiParameter(name='page', type=int, location=OpenApiParameter.QUERY, description='Page number (default: 1)'),
+        OpenApiParameter(name='page_size', type=int, location=OpenApiParameter.QUERY, description='Results per page (default: 50)'),
+        OpenApiParameter(name='bank_account_id', type=int, location=OpenApiParameter.QUERY, description='Filter by bank account ID'),
+        OpenApiParameter(name='credit_card_id', type=int, location=OpenApiParameter.QUERY, description='Filter by credit card ID'),
+    ],
+    responses={200: dict},
+    examples=[
+        OpenApiExample(
+            'Resolved Transactions List',
+            value={
+                'total': 100,
+                'page': 1,
+                'page_size': 50,
+                'results': [{
+                    'id': 1,
+                    'uuid': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+                    'short_id': 'a1b2c3d4',
+                    'transaction_type': 'bank',
+                    'primary_transaction_id': 101,
+                    'date': '2024-01-15',
+                    'amount': '-5000.00',
+                    'bank_account_id': 1,
+                    'credit_card_id': None,
+                    'source_count': 2,
+                    'created_at': '2024-01-15T10:30:00Z',
+                }],
+            },
+            response_only=True,
+        ),
+    ],
+    tags=['Resolution - Resolved Transactions'],
+)
 @api_view(['GET'])
 def resolved_transaction_list(request):
     """

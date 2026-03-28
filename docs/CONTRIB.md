@@ -61,6 +61,8 @@ uv run python manage.py runserver   # Runs on :8000
 | Migrations | `uv run python manage.py migrate` | Run database migrations |
 | Backfill Resolved | `uv run python manage.py backfill_resolved_transactions` | Backfill ResolvedTransaction for all transactions |
 | Recover Links | `uv run python manage.py recover_orphaned_links` | Recover orphaned links (supports `--dry-run`) |
+| Cleanup Orphaned RTs | `uv run python manage.py cleanup_orphaned_resolved_transactions` | Delete orphaned ResolvedTransaction rows (supports `--dry-run`, `--batch`) |
+| Restore Source Files | `uv run python manage.py restore_source_files` | Restore source files from DB to disk (supports `--domain`, `--id`, `--dry-run`, `--force`) |
 
 ## Environment Variables
 
