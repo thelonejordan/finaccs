@@ -1,7 +1,7 @@
 [project]
 name = "finaccs"
 version = "0.1.0"
-description = "Add your description here"
+description = "A personal finance tracking application to manage bank accounts, credit cards, and transactions in one place."
 readme = "README.md"
 authors = [
     { name = "Jyotirmaya Mahanta", email = "jyotirmaya.mahanta@gmail.com" }

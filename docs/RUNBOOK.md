@@ -40,9 +40,6 @@ docker-compose exec web uv run python manage.py migrate  # Run migrations
 # Build frontend
 cd frontend && npm run build
 
-# Copy to frontend_dist
-cp -r frontend/dist frontend_dist
-
 # Collect static files
 python manage.py collectstatic --noinput
 
@@ -66,7 +63,7 @@ curl http://localhost:8000/api/health/
 |-------|----------|
 | Static files 404 | Run `collectstatic`, verify `STATIC_URL=/static/` |
 | MIME type errors | Check Whitenoise middleware, run `collectstatic` |
-| Frontend blank | Verify `frontend_dist` exists, rebuild frontend |
+| Frontend blank | Verify `frontend/dist` exists, rebuild frontend |
 | Database errors | Check `DATABASE_URL` format, run `migrate` |
 | CORS errors | Add origin to `CORS_ALLOWED_ORIGINS` |
 

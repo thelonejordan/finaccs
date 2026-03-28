@@ -28,7 +28,7 @@ RUN uv sync --frozen --no-dev --extra extraction
 COPY . .
 
 # Copy built frontend
-COPY --from=frontend-builder /app/frontend/dist ./frontend_dist
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Collect static files
 RUN uv run python manage.py collectstatic --noinput

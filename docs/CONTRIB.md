@@ -21,14 +21,8 @@ cd frontend && npm install   # Frontend deps
 ### Option A: Django only (no frontend dev)
 
 ```bash
-# Build frontend and link/copy to frontend_dist
-cd frontend && npm run build
-
-# Option 1: Symlink (recommended for dev)
-ln -sf frontend/dist frontend_dist
-
-# Option 2: Copy
-cp -r frontend/dist frontend_dist
+# Build frontend
+cd frontend && npm run build && cd ..
 
 # Collect static and run
 uv run python manage.py collectstatic --noinput

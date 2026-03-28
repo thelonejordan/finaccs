@@ -5,5 +5,4 @@ db.sqlite3
 /bank_accounts/data/
 /credit_cards/data/
 /frontend/dist/
-/frontend_dist
 /staticfiles/

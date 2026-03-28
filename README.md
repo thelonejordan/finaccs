@@ -89,7 +89,9 @@ cp .env.example .env
 | `ALLOWED_HOSTS` | - | Comma-separated allowed hosts |
 | `DATABASE_URL` | - | MySQL connection string |
 | `CORS_ALLOWED_ORIGINS` | - | Comma-separated CORS origins |
+| `CORS_ALLOW_ALL_ORIGINS` | `false` | Allow all origins (useful for tunneling) |
 | `DEV_MODE` | `0` | Enable dev features (API docs, django-extensions) |
+| `VITE_ALLOWED_HOSTS` | - | Vite dev server allowed hosts (comma-separated) |
 | `REDIS_ENABLED` | `0` | Enable Redis caching |
 | `REDIS_HOST` | `127.0.0.1` | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |
@@ -154,12 +156,6 @@ Build frontend and serve from Django:
 ```bash
 # Build frontend
 cd frontend && npm run build && cd ..
-
-# Symlink to frontend_dist (recommended for dev)
-ln -sf frontend/dist frontend_dist
-
-# Or copy instead
-cp -r frontend/dist frontend_dist
 
 # Collect static files
 uv run python manage.py collectstatic --noinput
