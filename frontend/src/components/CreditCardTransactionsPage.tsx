@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback, memo } from "react"
 import { logError } from "@/lib/logger"
 import { AnimatePresence, motion } from "motion/react"
-import { useSearchParams, useNavigate } from "react-router-dom"
+import { useSearchParams, useNavigate, Link } from "react-router-dom"
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -648,10 +648,14 @@ const TransactionRow = memo(function TransactionRow({
                   <p className="font-medium mb-1">Stories</p>
                   <div className="space-y-1">
                     {stories.map(s => (
-                      <div key={s.story_id} className="flex items-center gap-1.5">
+                      <Link
+                        key={s.story_id}
+                        to={`/stories/${s.story_id}`}
+                        className="flex items-center gap-1.5 hover:text-primary"
+                      >
                         <span>{s.icon}</span>
-                        <span className="text-muted-foreground">{s.name}</span>
-                      </div>
+                        <span className="text-muted-foreground hover:text-primary">{s.name}</span>
+                      </Link>
                     ))}
                   </div>
                   <Tooltip.Arrow className="fill-card" />
@@ -675,10 +679,14 @@ const TransactionRow = memo(function TransactionRow({
                   <p className="font-medium mb-1">Entities</p>
                   <div className="space-y-1">
                     {entities.map(e => (
-                      <div key={e.entity_id} className="flex items-center gap-1.5">
+                      <Link
+                        key={e.entity_id}
+                        to={`/entities/${e.entity_id}`}
+                        className="flex items-center gap-1.5 hover:text-primary"
+                      >
                         <span>{e.icon}</span>
-                        <span className="text-muted-foreground">{e.name}</span>
-                      </div>
+                        <span className="text-muted-foreground hover:text-primary">{e.name}</span>
+                      </Link>
                     ))}
                   </div>
                   <Tooltip.Arrow className="fill-card" />
