@@ -33,7 +33,7 @@ from credit_cards.models import CreditCardPaymentMatch, CreditCardTransaction
 from credit_cards.views import get_active_cc_transactions
 
 # Categories to exclude from income/expense calculations (internal transfers)
-EXCLUDED_CATEGORIES = ['Self Transfer']
+EXCLUDED_CATEGORIES = ['Self Transfer', 'Refund']
 
 # Predefined expense categories for consistent display
 PREDEFINED_CATEGORIES = [
@@ -52,6 +52,7 @@ PREDEFINED_CATEGORIES = [
     'Investment',
     'Insurance',
     'Self Transfer',
+    'Refund',
     'Salary/Income',
     'Other',
 ]
@@ -129,18 +130,23 @@ def api_summary(request):
     from django.db.models import Q
     from bank_accounts.models import BankAccount
 
-    # For income/expense breakdown, exclude linked self transfers (both sides of the link)
-    from links.models import SelfTransferLink
+    # For income/expense breakdown, exclude linked self transfers and refunds
+    from links.models import SelfTransferLink, RefundLink
     self_transfer_rt_ids = set(
         SelfTransferLink.objects.values_list('resolved_transaction_a_id', flat=True)
     ) | set(
         SelfTransferLink.objects.values_list('resolved_transaction_b_id', flat=True)
     )
     self_transfer_rt_ids.discard(None)
+    refund_rt_ids = set(
+        RefundLink.objects.values_list('refund_resolved_transaction_id', flat=True)
+    )
+    refund_rt_ids.discard(None)
+    excluded_rt_ids = self_transfer_rt_ids | refund_rt_ids
 
     filtered_transactions = all_transactions.exclude(
         Q(category__in=EXCLUDED_CATEGORIES) &
-        Q(resolved_transaction_id__in=self_transfer_rt_ids)
+        Q(resolved_transaction_id__in=excluded_rt_ids)
     )
 
     filtered_with_resolved = filtered_transactions.select_related(
@@ -165,8 +171,8 @@ def api_summary(request):
         effective_category = category_map.get(txn.resolved_transaction_id)
 
         # Check if this is an excluded self transfer that wasn't caught by the query filter
-        is_self_transfer = txn.resolved_transaction_id in self_transfer_rt_ids
-        if effective_category in EXCLUDED_CATEGORIES and is_self_transfer:
+        is_excluded_link = txn.resolved_transaction_id in excluded_rt_ids
+        if effective_category in EXCLUDED_CATEGORIES and is_excluded_link:
             continue
 
         credit_amt = float(txn.credit_amount)
@@ -3066,6 +3072,370 @@ def api_self_transfer_link_years(request):
             resolved_transaction_b__primary_transaction_id__in=active_bank_txn_ids,
         )
         .annotate(year=ExtractYear('resolved_transaction_a__date'))
+        .values('year')
+        .annotate(count=Count('id'))
+        .order_by('-year')
+    )
+
+    years = {str(item['year']): item['count'] for item in year_counts}
+
+    return JsonResponse({'years': years})
+
+
+# ──────────────────────────────────────────────────────────
+# Refund Matching
+# ──────────────────────────────────────────────────────────
+
+
+def _serialize_any_txn(txn, txn_type):
+    """Unified serializer for bank or CC transactions."""
+    if txn_type == 'bank':
+        return {
+            'id': txn.id,
+            'type': 'bank',
+            'date': txn.date.isoformat(),
+            'description': txn.narration,
+            'amount': float(txn.debit_amount or txn.credit_amount),
+            'is_debit': txn.debit_amount > 0,
+            'account': {
+                'id': txn.bank_account.id,
+                'nickname': txn.bank_account.nickname,
+                'type': 'bank',
+            } if txn.bank_account else None,
+        }
+    else:
+        return {
+            'id': txn.id,
+            'type': 'credit_card',
+            'date': txn.date.isoformat(),
+            'description': txn.description,
+            'amount': float(abs(txn.amount)),
+            'is_debit': txn.amount > 0,
+            'account': {
+                'id': txn.credit_card.id,
+                'nickname': txn.credit_card.nickname,
+                'type': 'credit_card',
+            } if txn.credit_card else None,
+        }
+
+
+def _get_txn_by_type(txn_id, txn_type):
+    """Fetch a transaction by type, with account relation pre-loaded."""
+    if txn_type == 'bank':
+        return BankTransaction.objects.select_related('bank_account').filter(id=txn_id).first()
+    else:
+        return CreditCardTransaction.objects.select_related('credit_card').filter(id=txn_id).first()
+
+
+@extend_schema(
+    summary="Get refund suggestions",
+    description="Get unlinked transactions categorized as Refund with potential original matches.",
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Refund Matching'],
+)
+@api_view(['GET'])
+def api_refund_suggestions(request):
+    """Get unlinked Refund-tagged transactions with potential original matches."""
+    from datetime import timedelta
+    from django.db.models import Q
+    from links.models import RefundLink
+
+    already_linked_rt_ids = set(
+        RefundLink.objects.filter(refund_resolved_transaction__isnull=False)
+        .values_list('refund_resolved_transaction_id', flat=True)
+    )
+
+    # Bank transactions tagged as Refund
+    bank_refunds = list(
+        get_active_transactions()
+        .filter(category='Refund')
+        .exclude(resolved_transaction_id__in=already_linked_rt_ids)
+        .select_related('bank_account')
+        .order_by('-date')
+    )
+    # CC transactions tagged as Refund
+    cc_refunds = list(
+        get_active_cc_transactions()
+        .filter(category='Refund')
+        .exclude(resolved_transaction_id__in=already_linked_rt_ids)
+        .select_related('credit_card')
+        .order_by('-date')
+    )
+
+    all_bank = get_active_transactions().select_related('bank_account')
+    all_cc = get_active_cc_transactions().select_related('credit_card')
+
+    data = []
+
+    for txn in bank_refunds:
+        refund_amount = float(txn.credit_amount or txn.debit_amount)
+        date_start = txn.date - timedelta(days=180)
+        date_end = txn.date
+
+        suggestions = []
+        # Search bank txns for original charge
+        bank_matches = all_bank.filter(
+            date__gte=date_start, date__lte=date_end,
+            debit_amount=refund_amount if txn.credit_amount > 0 else 0,
+        ).exclude(id=txn.id).exclude(category='Refund')[:10]
+        for m in bank_matches:
+            suggestions.append({'transaction': _serialize_any_txn(m, 'bank')})
+
+        # Search CC txns for original charge
+        cc_matches = all_cc.filter(
+            date__gte=date_start, date__lte=date_end,
+            amount=refund_amount,
+        ).exclude(category='Refund')[:10]
+        for m in cc_matches:
+            suggestions.append({'transaction': _serialize_any_txn(m, 'credit_card')})
+
+        suggestions.sort(key=lambda s: s['transaction']['date'], reverse=True)
+
+        data.append({
+            'refund_transaction': _serialize_any_txn(txn, 'bank'),
+            'suggestions': suggestions,
+        })
+
+    for txn in cc_refunds:
+        refund_amount = float(abs(txn.amount))
+        date_start = txn.date - timedelta(days=180)
+        date_end = txn.date
+
+        suggestions = []
+        # Search bank txns for original charge
+        bank_matches = all_bank.filter(
+            date__gte=date_start, date__lte=date_end,
+            debit_amount=refund_amount,
+        ).exclude(category='Refund')[:10]
+        for m in bank_matches:
+            suggestions.append({'transaction': _serialize_any_txn(m, 'bank')})
+
+        # Search CC txns for original charge
+        cc_matches = all_cc.filter(
+            date__gte=date_start, date__lte=date_end,
+            amount=refund_amount,
+        ).exclude(id=txn.id).exclude(category='Refund')[:10]
+        for m in cc_matches:
+            suggestions.append({'transaction': _serialize_any_txn(m, 'credit_card')})
+
+        suggestions.sort(key=lambda s: s['transaction']['date'], reverse=True)
+
+        data.append({
+            'refund_transaction': _serialize_any_txn(txn, 'credit_card'),
+            'suggestions': suggestions,
+        })
+
+    data.sort(key=lambda d: d['refund_transaction']['date'], reverse=True)
+
+    return JsonResponse({
+        'data': data,
+        'total': len(data),
+    })
+
+
+@extend_schema(
+    methods=['GET'],
+    summary="Get confirmed refund links",
+    description="Get confirmed refund links, filterable by year.",
+    parameters=[
+        OpenApiParameter(name='year', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by year'),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Refund Matching'],
+)
+@extend_schema(
+    methods=['POST'],
+    summary="Create a refund link",
+    description="Link a refund transaction to its original transaction.",
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+    tags=['Refund Matching'],
+)
+@api_view(['GET', 'POST'])
+def api_refund_links(request):
+    """Get or create refund links."""
+    from links.models import RefundLink, CategoryLink
+    from links.utils import ensure_resolved_transaction
+
+    if request.method == 'GET':
+        active_bank_txn_ids = set(get_active_transactions().values_list('id', flat=True))
+        active_cc_txn_ids = set(get_active_cc_transactions().values_list('id', flat=True))
+
+        links = RefundLink.objects.filter(
+            original_resolved_transaction__isnull=False,
+            refund_resolved_transaction__isnull=False,
+        ).select_related(
+            'original_resolved_transaction',
+            'refund_resolved_transaction',
+        )
+
+        year = request.GET.get('year')
+        if year:
+            links = links.filter(refund_resolved_transaction__date__year=int(year))
+
+        links = list(links)
+
+        # Collect all transaction IDs grouped by type
+        bank_txn_ids = set()
+        cc_txn_ids = set()
+        for link in links:
+            for rt in [link.original_resolved_transaction, link.refund_resolved_transaction]:
+                if rt.transaction_type == 'bank':
+                    bank_txn_ids.add(rt.primary_transaction_id)
+                else:
+                    cc_txn_ids.add(rt.primary_transaction_id)
+
+        # Only include links where both sides have active transactions
+        bank_txn_ids &= active_bank_txn_ids
+        cc_txn_ids &= active_cc_txn_ids
+        active_ids = {'bank': bank_txn_ids, 'credit_card': cc_txn_ids}
+
+        bank_txns = {t.id: t for t in BankTransaction.objects.filter(id__in=bank_txn_ids).select_related('bank_account')}
+        cc_txns = {t.id: t for t in CreditCardTransaction.objects.filter(id__in=cc_txn_ids).select_related('credit_card')}
+        txn_map = {'bank': bank_txns, 'credit_card': cc_txns}
+
+        data = []
+        for link in links:
+            orig_rt = link.original_resolved_transaction
+            ref_rt = link.refund_resolved_transaction
+            if orig_rt.primary_transaction_id not in active_ids.get(orig_rt.transaction_type, set()):
+                continue
+            if ref_rt.primary_transaction_id not in active_ids.get(ref_rt.transaction_type, set()):
+                continue
+
+            orig_txn = txn_map.get(orig_rt.transaction_type, {}).get(orig_rt.primary_transaction_id)
+            ref_txn = txn_map.get(ref_rt.transaction_type, {}).get(ref_rt.primary_transaction_id)
+            if not orig_txn or not ref_txn:
+                continue
+
+            data.append({
+                'id': link.id,
+                'original_transaction': _serialize_any_txn(orig_txn, orig_rt.transaction_type),
+                'refund_transaction': _serialize_any_txn(ref_txn, ref_rt.transaction_type),
+                'created_at': link.created_at.isoformat(),
+            })
+
+        data.sort(key=lambda d: d['refund_transaction']['date'], reverse=True)
+
+        return JsonResponse({
+            'data': data,
+            'total': len(data),
+        })
+
+    # POST — create a refund link
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    refund_id = body.get('refund_transaction_id')
+    refund_type = body.get('refund_type')
+    original_id = body.get('original_transaction_id')
+    original_type = body.get('original_type')
+
+    if not all([refund_id, refund_type, original_id, original_type]):
+        return JsonResponse({'error': 'refund_transaction_id, refund_type, original_transaction_id, original_type are required'}, status=400)
+
+    if refund_type not in ('bank', 'credit_card') or original_type not in ('bank', 'credit_card'):
+        return JsonResponse({'error': 'Type must be bank or credit_card'}, status=400)
+
+    refund_txn = _get_txn_by_type(refund_id, refund_type)
+    original_txn = _get_txn_by_type(original_id, original_type)
+    if not refund_txn:
+        return JsonResponse({'error': 'Refund transaction not found'}, status=404)
+    if not original_txn:
+        return JsonResponse({'error': 'Original transaction not found'}, status=404)
+
+    refund_rt_id = ensure_resolved_transaction(refund_txn, refund_type)
+    original_rt_id = ensure_resolved_transaction(original_txn, original_type)
+
+    link = RefundLink.objects.create(
+        original_resolved_transaction_id=original_rt_id,
+        refund_resolved_transaction_id=refund_rt_id,
+        origin_original_type=original_type,
+        origin_refund_type=refund_type,
+        origin_original_transaction_id=original_id,
+        origin_refund_transaction_id=refund_id,
+    )
+
+    # Tag only the refund side with "Refund" category
+    CategoryLink.objects.get_or_create(
+        resolved_transaction_id=refund_rt_id,
+        category='Refund',
+        defaults={
+            'origin_transaction_type': refund_type,
+            'origin_transaction_id': refund_id,
+        },
+    )
+
+    # Log on bank side if applicable
+    if refund_type == 'bank':
+        TransactionLog.objects.create(
+            transaction_id=refund_id, action='LINK', new_value=f'refund_of:{original_type}:{original_id}',
+        )
+    if original_type == 'bank':
+        TransactionLog.objects.create(
+            transaction_id=original_id, action='LINK', new_value=f'refunded_by:{refund_type}:{refund_id}',
+        )
+
+    return JsonResponse({
+        'id': link.id,
+        'original_transaction': _serialize_any_txn(original_txn, original_type),
+        'refund_transaction': _serialize_any_txn(refund_txn, refund_type),
+        'created_at': link.created_at.isoformat(),
+    })
+
+
+@extend_schema(
+    summary="Delete a refund link",
+    description="Remove a confirmed refund link.",
+    responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Refund Matching'],
+)
+@api_view(['DELETE'])
+def api_refund_link_delete(request, link_id):
+    """Delete a refund link."""
+    from links.models import RefundLink
+
+    try:
+        link = RefundLink.objects.get(id=link_id)
+    except RefundLink.DoesNotExist:
+        return JsonResponse({'error': 'Link not found'}, status=404)
+
+    if link.origin_refund_type == 'bank' and link.origin_refund_transaction_id:
+        TransactionLog.objects.create(
+            transaction_id=link.origin_refund_transaction_id, action='UNLINK',
+            old_value=f'refund_of:{link.origin_original_type}:{link.origin_original_transaction_id}',
+        )
+    if link.origin_original_type == 'bank' and link.origin_original_transaction_id:
+        TransactionLog.objects.create(
+            transaction_id=link.origin_original_transaction_id, action='UNLINK',
+            old_value=f'refunded_by:{link.origin_refund_type}:{link.origin_refund_transaction_id}',
+        )
+
+    link.delete()
+    return JsonResponse({'success': True})
+
+
+@extend_schema(
+    summary="Get refund link years",
+    description="Get available years with refund link counts for filtering.",
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Refund Matching'],
+)
+@api_view(['GET'])
+def api_refund_link_years(request):
+    """Get available years with refund link counts."""
+    from django.db.models import Count
+    from django.db.models.functions import ExtractYear
+    from links.models import RefundLink
+
+    year_counts = (
+        RefundLink.objects.filter(
+            original_resolved_transaction__isnull=False,
+            refund_resolved_transaction__isnull=False,
+        )
+        .annotate(year=ExtractYear('refund_resolved_transaction__date'))
         .values('year')
         .annotate(count=Count('id'))
         .order_by('-year')

@@ -321,6 +321,7 @@ class TransactionLinkSnapshot(models.Model):
     LINK_TYPE_CHOICES = [
         ('self_transfer', 'Self Transfer'),
         ('cc_payment', 'Credit Card Payment'),
+        ('refund', 'Refund'),
         ('category', 'Category'),
         ('story', 'Story'),
         ('entity', 'Entity'),

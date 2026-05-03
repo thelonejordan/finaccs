@@ -32,4 +32,9 @@ urlpatterns = [
     path('api/self-transfer-links/', views.api_self_transfer_links, name='api_self_transfer_links'),
     path('api/self-transfer-links/years/', views.api_self_transfer_link_years, name='api_self_transfer_link_years'),
     path('api/self-transfer-links/<int:link_id>/', views.api_self_transfer_link_delete, name='api_self_transfer_link_delete'),
+    # Refund Matching
+    path('api/refund-suggestions/', views.api_refund_suggestions, name='api_refund_suggestions'),
+    path('api/refund-links/', views.api_refund_links, name='api_refund_links'),
+    path('api/refund-links/years/', views.api_refund_link_years, name='api_refund_link_years'),
+    path('api/refund-links/<int:link_id>/', views.api_refund_link_delete, name='api_refund_link_delete'),
 ]

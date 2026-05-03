@@ -8,7 +8,7 @@ newly created one).
 from django.core.management.base import BaseCommand
 from django.db import IntegrityError, transaction
 
-from links.models import CategoryLink, StoryLink, EntityLink, SelfTransferLink, CreditCardPaymentLink
+from links.models import CategoryLink, StoryLink, EntityLink, SelfTransferLink, CreditCardPaymentLink, RefundLink
 from links.utils import ensure_resolved_transaction as _get_or_create_rt
 from bank_accounts.models import BankTransaction
 from credit_cards.models import CreditCardTransaction
@@ -138,6 +138,45 @@ class Command(BaseCommand):
             if not dry_run:
                 cpl.cc_resolved_transaction_id = rt_id
                 cpl.save()
+            stats['recovered'] += 1
+
+        # RefundLink - recover each side independently using origin type
+        orphaned_rl_original = RefundLink.objects.filter(
+            original_resolved_transaction__isnull=True,
+            origin_original_transaction_id__isnull=False,
+        )
+        for rl in orphaned_rl_original:
+            if not rl.origin_original_type:
+                stats['skipped_no_origin'] += 1
+                continue
+            rt_id = _resolve_origin(rl.origin_original_type, rl.origin_original_transaction_id)
+            if rt_id is None:
+                self.stdout.write(f"  RefundLink id={rl.id} original_side: origin txn {rl.origin_original_type}:{rl.origin_original_transaction_id} not found")
+                stats['skipped_txn_missing'] += 1
+                continue
+            self.stdout.write(f"  RefundLink id={rl.id} original_side: -> RT {rt_id}")
+            if not dry_run:
+                rl.original_resolved_transaction_id = rt_id
+                rl.save()
+            stats['recovered'] += 1
+
+        orphaned_rl_refund = RefundLink.objects.filter(
+            refund_resolved_transaction__isnull=True,
+            origin_refund_transaction_id__isnull=False,
+        )
+        for rl in orphaned_rl_refund:
+            if not rl.origin_refund_type:
+                stats['skipped_no_origin'] += 1
+                continue
+            rt_id = _resolve_origin(rl.origin_refund_type, rl.origin_refund_transaction_id)
+            if rt_id is None:
+                self.stdout.write(f"  RefundLink id={rl.id} refund_side: origin txn {rl.origin_refund_type}:{rl.origin_refund_transaction_id} not found")
+                stats['skipped_txn_missing'] += 1
+                continue
+            self.stdout.write(f"  RefundLink id={rl.id} refund_side: -> RT {rt_id}")
+            if not dry_run:
+                rl.refund_resolved_transaction_id = rt_id
+                rl.save()
             stats['recovered'] += 1
 
         prefix = "[DRY RUN] " if dry_run else ""

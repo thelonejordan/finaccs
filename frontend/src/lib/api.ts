@@ -950,6 +950,74 @@ export async function fetchSelfTransferLinkYears(): Promise<{ years: Record<stri
   return res.json()
 }
 
+// ── Refund Matching ─────────────────────────────────────
+
+export interface RefundTransaction {
+  id: number
+  type: 'bank' | 'credit_card'
+  date: string
+  description: string
+  amount: number
+  is_debit: boolean
+  account: { id: number; nickname: string; type: 'bank' | 'credit_card' } | null
+}
+
+export interface RefundSuggestion {
+  transaction: RefundTransaction
+}
+
+export interface RefundSuggestionItem {
+  refund_transaction: RefundTransaction
+  suggestions: RefundSuggestion[]
+}
+
+export interface RefundLinkRecord {
+  id: number
+  original_transaction: RefundTransaction
+  refund_transaction: RefundTransaction
+  created_at: string
+}
+
+export async function fetchRefundSuggestions(): Promise<{ data: RefundSuggestionItem[]; total: number }> {
+  const res = await fetch(`${API_BASE}/api/refund-suggestions/`)
+  return res.json()
+}
+
+export async function fetchRefundLinks(params?: {
+  year?: number
+}): Promise<{ data: RefundLinkRecord[]; total: number }> {
+  const searchParams = new URLSearchParams()
+  if (params?.year) searchParams.set("year", String(params.year))
+  const res = await fetch(`${API_BASE}/api/refund-links/?${searchParams}`)
+  return res.json()
+}
+
+export async function createRefundLink(data: {
+  refund_transaction_id: number
+  refund_type: 'bank' | 'credit_card'
+  original_transaction_id: number
+  original_type: 'bank' | 'credit_card'
+}): Promise<RefundLinkRecord> {
+  const res = await fetch(`${API_BASE}/api/refund-links/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+  return res.json()
+}
+
+export async function deleteRefundLink(linkId: number): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/api/refund-links/${linkId}/`, {
+    method: "DELETE",
+  })
+  return res.json()
+}
+
+export async function fetchRefundLinkYears(): Promise<{ years: Record<string, number> }> {
+  const res = await fetch(`${API_BASE}/api/refund-links/years/`)
+  return res.json()
+}
+
 // Artifact URL helper (used by ExtractionsPage)
 export function getArtifactUrl(artifactId: string): string {
   return `${API_BASE}/api/artifacts/${artifactId}/`

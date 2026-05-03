@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router-dom"
 import { useInconsistencyCache } from "@/lib/inconsistency-cache"
 import { usePaymentsCache } from "@/lib/payments-cache"
 import { useSelfTransfersCache } from "@/lib/self-transfers-cache"
+import { useRefundsCache } from "@/lib/refunds-cache"
 import {
   LayoutDashboardIcon,
   ArrowLeftRightIcon,
@@ -17,6 +18,7 @@ import {
   LayersIcon,
   FlaskConicalIcon,
   RepeatIcon,
+  RotateCcwIcon,
 } from "lucide-react"
 
 /** Maximum badge count to display before showing "99+" */
@@ -45,6 +47,7 @@ const NAV_SECTIONS = [
     items: [
       { path: "/payments", label: "Payments", icon: CreditCardIcon, badgeKey: "payments" as const },
       { path: "/self-transfers", label: "Self Transfers", icon: RepeatIcon, badgeKey: "selfTransfers" as const },
+      { path: "/refunds", label: "Refunds", icon: RotateCcwIcon, badgeKey: "refunds" as const },
       { path: "/anomalies", label: "Anomalies", icon: AlertTriangleIcon, badgeKey: "anomalies" as const },
       { path: "/resolution", label: "Resolution", icon: LayersIcon },
       { path: "/activity", label: "Activity", icon: ActivityIcon },
@@ -67,15 +70,18 @@ export function Sidebar() {
   const { cache } = useInconsistencyCache()
   const { cache: paymentsCache } = usePaymentsCache()
   const { cache: selfTransfersCache } = useSelfTransfersCache()
+  const { cache: refundsCache } = useRefundsCache()
 
   const inconsistencyCount = cache.count ?? cache.previousCount ?? 0
   const paymentsCount = paymentsCache.count ?? paymentsCache.previousCount ?? 0
   const selfTransfersCount = selfTransfersCache.count ?? selfTransfersCache.previousCount ?? 0
+  const refundsCount = refundsCache.count ?? refundsCache.previousCount ?? 0
 
-  const getBadgeCount = (badgeKey?: "payments" | "anomalies" | "selfTransfers") => {
+  const getBadgeCount = (badgeKey?: "payments" | "anomalies" | "selfTransfers" | "refunds") => {
     if (badgeKey === "payments") return paymentsCount
     if (badgeKey === "anomalies") return inconsistencyCount
     if (badgeKey === "selfTransfers") return selfTransfersCount
+    if (badgeKey === "refunds") return refundsCount
     return 0
   }
 

@@ -137,3 +137,32 @@ class CreditCardPaymentLink(models.Model):
 
     def __str__(self):
         return f"CCPaymentLink(bank={self.bank_resolved_transaction_id} <-> cc={self.cc_resolved_transaction_id})"
+
+
+class RefundLink(models.Model):
+    original_resolved_transaction = models.ForeignKey(
+        'extractions.ResolvedTransaction',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='refund_links_as_original',
+    )
+    refund_resolved_transaction = models.ForeignKey(
+        'extractions.ResolvedTransaction',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='refund_links_as_refund',
+    )
+    origin_original_type = models.CharField(max_length=20, blank=True, null=True)
+    origin_refund_type = models.CharField(max_length=20, blank=True, null=True)
+    origin_original_transaction_id = models.IntegerField(null=True, blank=True)
+    origin_refund_transaction_id = models.IntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'links_refundlink'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"RefundLink(original={self.original_resolved_transaction_id} -> refund={self.refund_resolved_transaction_id})"
