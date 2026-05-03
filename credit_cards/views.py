@@ -408,6 +408,37 @@ def _serialize_cc_transaction(t, active_bank_txn_ids=None, bank_txns_map=None):
         except (AttributeError, ObjectDoesNotExist):
             pass
 
+    refund_link_data = None
+    try:
+        rt = t.resolved_transaction
+        if rt:
+            from dashboard.views import _serialize_any_txn, _get_txn_by_type
+            for rl in rt.refund_links_as_original.all():
+                other_rt = rl.refund_resolved_transaction
+                if other_rt:
+                    other_txn = _get_txn_by_type(other_rt.primary_transaction_id, other_rt.transaction_type)
+                    if other_txn:
+                        refund_link_data = {
+                            'id': rl.id,
+                            'role': 'original',
+                            'other_transaction': _serialize_any_txn(other_txn, other_rt.transaction_type),
+                        }
+                        break
+            if not refund_link_data:
+                for rl in rt.refund_links_as_refund.all():
+                    other_rt = rl.original_resolved_transaction
+                    if other_rt:
+                        other_txn = _get_txn_by_type(other_rt.primary_transaction_id, other_rt.transaction_type)
+                        if other_txn:
+                            refund_link_data = {
+                                'id': rl.id,
+                                'role': 'refund',
+                                'other_transaction': _serialize_any_txn(other_txn, other_rt.transaction_type),
+                            }
+                            break
+    except (AttributeError, ObjectDoesNotExist):
+        pass
+
     return {
         'id': t.id,
         'date': t.date.isoformat(),
@@ -420,6 +451,7 @@ def _serialize_cc_transaction(t, active_bank_txn_ids=None, bank_txns_map=None):
         'credit_card': {'id': t.credit_card.id, 'nickname': t.credit_card.nickname} if t.credit_card else None,
         'source_file': source_file_data,
         'bank_payment_match': bank_match_data,
+        'refund_link': refund_link_data,
     }
 
 
@@ -479,6 +511,10 @@ def credit_card_transactions(request):
         'resolved_transaction__credit_card_transactions',
         'resolved_transaction__cc_payment_links_cc',
         'resolved_transaction__cc_payment_links_cc__bank_resolved_transaction',
+        'resolved_transaction__refund_links_as_original',
+        'resolved_transaction__refund_links_as_original__refund_resolved_transaction',
+        'resolved_transaction__refund_links_as_refund',
+        'resolved_transaction__refund_links_as_refund__original_resolved_transaction',
     )
 
     active_bank_txn_ids = set(get_active_transactions().values_list('id', flat=True))
@@ -606,6 +642,7 @@ PREDEFINED_CC_CATEGORIES = [
     'Sports',
     'Medical',
     'Groceries',
+    'Refund',
 ]
 
 

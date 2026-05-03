@@ -479,6 +479,10 @@ def api_transactions(request):
         'resolved_transaction__self_transfer_links_as_b__resolved_transaction_a',
         'resolved_transaction__cc_payment_links_bank',
         'resolved_transaction__cc_payment_links_bank__cc_resolved_transaction',
+        'resolved_transaction__refund_links_as_original',
+        'resolved_transaction__refund_links_as_original__refund_resolved_transaction',
+        'resolved_transaction__refund_links_as_refund',
+        'resolved_transaction__refund_links_as_refund__original_resolved_transaction',
     )
 
     # Filter by bank account
@@ -640,6 +644,33 @@ def api_transactions(request):
                             }
                             break
 
+        refund_link_data = None
+        rt = t.resolved_transaction
+        if rt:
+            for rl in rt.refund_links_as_original.all():
+                other_rt = rl.refund_resolved_transaction
+                if other_rt:
+                    other_txn = _get_txn_by_type(other_rt.primary_transaction_id, other_rt.transaction_type)
+                    if other_txn:
+                        refund_link_data = {
+                            'id': rl.id,
+                            'role': 'original',
+                            'other_transaction': _serialize_any_txn(other_txn, other_rt.transaction_type),
+                        }
+                        break
+            if not refund_link_data:
+                for rl in rt.refund_links_as_refund.all():
+                    other_rt = rl.original_resolved_transaction
+                    if other_rt:
+                        other_txn = _get_txn_by_type(other_rt.primary_transaction_id, other_rt.transaction_type)
+                        if other_txn:
+                            refund_link_data = {
+                                'id': rl.id,
+                                'role': 'refund',
+                                'other_transaction': _serialize_any_txn(other_txn, other_rt.transaction_type),
+                            }
+                            break
+
         aggregated_category = category_map.get(t.resolved_transaction_id) if t.resolved_transaction_id else t.category
         if not aggregated_category:
             for member in member_txns:
@@ -675,6 +706,7 @@ def api_transactions(request):
             'source_file': source_file_data,
             'linked_transaction': linked_data,
             'cc_payment_match': cc_match_data,
+            'refund_link': refund_link_data,
         })
 
     return JsonResponse({
@@ -3349,34 +3381,37 @@ def api_refund_links(request):
     refund_rt_id = ensure_resolved_transaction(refund_txn, refund_type)
     original_rt_id = ensure_resolved_transaction(original_txn, original_type)
 
-    link = RefundLink.objects.create(
-        original_resolved_transaction_id=original_rt_id,
-        refund_resolved_transaction_id=refund_rt_id,
-        origin_original_type=original_type,
-        origin_refund_type=refund_type,
-        origin_original_transaction_id=original_id,
-        origin_refund_transaction_id=refund_id,
-    )
+    if RefundLink.objects.filter(refund_resolved_transaction_id=refund_rt_id).exists():
+        return JsonResponse({'error': 'Refund transaction is already linked'}, status=400)
 
-    # Tag only the refund side with "Refund" category
-    CategoryLink.objects.get_or_create(
-        resolved_transaction_id=refund_rt_id,
-        category='Refund',
-        defaults={
-            'origin_transaction_type': refund_type,
-            'origin_transaction_id': refund_id,
-        },
-    )
+    from django.db import transaction as db_transaction
+    with db_transaction.atomic():
+        link = RefundLink.objects.create(
+            original_resolved_transaction_id=original_rt_id,
+            refund_resolved_transaction_id=refund_rt_id,
+            origin_original_type=original_type,
+            origin_refund_type=refund_type,
+            origin_original_transaction_id=original_id,
+            origin_refund_transaction_id=refund_id,
+        )
 
-    # Log on bank side if applicable
-    if refund_type == 'bank':
-        TransactionLog.objects.create(
-            transaction_id=refund_id, action='LINK', new_value=f'refund_of:{original_type}:{original_id}',
+        CategoryLink.objects.get_or_create(
+            resolved_transaction_id=refund_rt_id,
+            category='Refund',
+            defaults={
+                'origin_transaction_type': refund_type,
+                'origin_transaction_id': refund_id,
+            },
         )
-    if original_type == 'bank':
-        TransactionLog.objects.create(
-            transaction_id=original_id, action='LINK', new_value=f'refunded_by:{refund_type}:{refund_id}',
-        )
+
+        if refund_type == 'bank':
+            TransactionLog.objects.create(
+                transaction_id=refund_id, action='LINK', new_value=f'refund_of:{original_type}:{original_id}',
+            )
+        if original_type == 'bank':
+            TransactionLog.objects.create(
+                transaction_id=original_id, action='LINK', new_value=f'refunded_by:{refund_type}:{refund_id}',
+            )
 
     return JsonResponse({
         'id': link.id,
@@ -3413,6 +3448,12 @@ def api_refund_link_delete(request, link_id):
             old_value=f'refunded_by:{link.origin_refund_type}:{link.origin_refund_transaction_id}',
         )
 
+    if link.refund_resolved_transaction_id:
+        CategoryLink.objects.filter(
+            resolved_transaction_id=link.refund_resolved_transaction_id,
+            category='Refund',
+        ).delete()
+
     link.delete()
     return JsonResponse({'success': True})
 
@@ -3444,3 +3485,67 @@ def api_refund_link_years(request):
     years = {str(item['year']): item['count'] for item in year_counts}
 
     return JsonResponse({'years': years})
+
+
+@extend_schema(
+    summary="Get refund suggestions for a specific transaction",
+    description="Get potential original-charge matches for a transaction tagged as Refund.",
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Refund Matching'],
+)
+@api_view(['GET'])
+def api_refund_suggestions_for_transaction(request, txn_type, txn_id):
+    """Get refund suggestions for a specific transaction."""
+    if txn_type not in ('bank', 'credit_card'):
+        return JsonResponse({'error': 'txn_type must be bank or credit_card'}, status=400)
+
+    from datetime import timedelta
+
+    txn = _get_txn_by_type(txn_id, txn_type)
+    if not txn:
+        return JsonResponse({'error': 'Transaction not found'}, status=404)
+
+    if txn_type == 'bank':
+        refund_amount = float(txn.credit_amount or txn.debit_amount)
+    else:
+        refund_amount = float(abs(txn.amount))
+
+    date_start = txn.date - timedelta(days=180)
+    date_end = txn.date
+
+    all_bank = get_active_transactions().select_related('bank_account')
+    all_cc = get_active_cc_transactions().select_related('credit_card')
+
+    suggestions = []
+
+    if txn_type == 'bank':
+        bank_matches = all_bank.filter(
+            date__gte=date_start, date__lte=date_end,
+            debit_amount=refund_amount if txn.credit_amount > 0 else 0,
+        ).exclude(id=txn_id).exclude(category='Refund')[:10]
+    else:
+        bank_matches = all_bank.filter(
+            date__gte=date_start, date__lte=date_end,
+            debit_amount=refund_amount,
+        ).exclude(category='Refund')[:10]
+
+    for m in bank_matches:
+        suggestions.append({'transaction': _serialize_any_txn(m, 'bank')})
+
+    if txn_type == 'credit_card':
+        cc_matches = all_cc.filter(
+            date__gte=date_start, date__lte=date_end,
+            amount=refund_amount,
+        ).exclude(id=txn_id).exclude(category='Refund')[:10]
+    else:
+        cc_matches = all_cc.filter(
+            date__gte=date_start, date__lte=date_end,
+            amount=refund_amount,
+        ).exclude(category='Refund')[:10]
+
+    for m in cc_matches:
+        suggestions.append({'transaction': _serialize_any_txn(m, 'credit_card')})
+
+    suggestions.sort(key=lambda s: s['transaction']['date'], reverse=True)
+
+    return JsonResponse({'suggestions': suggestions})

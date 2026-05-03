@@ -37,4 +37,5 @@ urlpatterns = [
     path('api/refund-links/', views.api_refund_links, name='api_refund_links'),
     path('api/refund-links/years/', views.api_refund_link_years, name='api_refund_link_years'),
     path('api/refund-links/<int:link_id>/', views.api_refund_link_delete, name='api_refund_link_delete'),
+    path('api/refund-suggestions/<str:txn_type>/<int:txn_id>/', views.api_refund_suggestions_for_transaction, name='api_refund_suggestions_for_transaction'),
 ]

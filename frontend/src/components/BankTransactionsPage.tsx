@@ -27,6 +27,7 @@ import {
   HashIcon,
   UsersIcon,
   TagIcon,
+  RotateCcwIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
@@ -48,6 +49,9 @@ import {
   deleteCCPaymentMatch,
   fetchSuggestionsForBankTransaction,
   createCCPaymentMatch,
+  fetchRefundSuggestionsForTransaction,
+  createRefundLink,
+  deleteRefundLink,
   getTransactionStories,
   getTransactionEntities,
   type Transaction,
@@ -60,6 +64,8 @@ import {
   type DateRangeFilters,
   type CCPaymentSuggestion,
   type CCPaymentMatchInfo,
+  type RefundLinkInfo,
+  type RefundSuggestion,
   type StoryBadge,
   type EntityBadge,
 } from "@/lib/api"
@@ -657,6 +663,256 @@ function CCPaymentLinkDialog({
   )
 }
 
+function RefundLinkDialog({
+  transaction,
+  onUnlink,
+  onLinkConfirmed,
+}: {
+  transaction: Transaction
+  onUnlink: () => void
+  onLinkConfirmed: (refundLink: RefundLinkInfo) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [unlinking, setUnlinking] = useState(false)
+  const [suggestions, setSuggestions] = useState<RefundSuggestion[]>([])
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+  const [confirming, setConfirming] = useState<string | null>(null)
+
+  const isLinked = !!transaction.refund_link
+
+  const loadSuggestions = async () => {
+    setLoadingSuggestions(true)
+    try {
+      const data = await fetchRefundSuggestionsForTransaction('bank', transaction.id)
+      setSuggestions(data.suggestions)
+    } catch (error) {
+      logError("Failed to load refund suggestions", error)
+    } finally {
+      setLoadingSuggestions(false)
+    }
+  }
+
+  useEffect(() => {
+    if (open && !isLinked) {
+      loadSuggestions()
+    }
+  }, [open, isLinked, transaction.id])
+
+  const handleUnlink = async () => {
+    setUnlinking(true)
+    try {
+      await onUnlink()
+      setOpen(false)
+    } finally {
+      setUnlinking(false)
+    }
+  }
+
+  const handleConfirmLink = async (suggestion: RefundSuggestion) => {
+    const key = `${suggestion.transaction.type}:${suggestion.transaction.id}`
+    setConfirming(key)
+    try {
+      const isRefundSide = transaction.category === 'Refund'
+      const result = await createRefundLink({
+        refund_transaction_id: isRefundSide ? transaction.id : suggestion.transaction.id,
+        refund_type: isRefundSide ? 'bank' : suggestion.transaction.type,
+        original_transaction_id: isRefundSide ? suggestion.transaction.id : transaction.id,
+        original_type: isRefundSide ? suggestion.transaction.type : 'bank',
+      })
+      onLinkConfirmed({
+        id: result.id,
+        role: isRefundSide ? 'refund' : 'original',
+        other_transaction: suggestion.transaction,
+      })
+      setOpen(false)
+    } catch (error) {
+      logError("Failed to confirm refund link", error)
+    } finally {
+      setConfirming(null)
+    }
+  }
+
+  const other = transaction.refund_link?.other_transaction
+  const otherIcon = other?.account?.type === 'credit_card'
+    ? <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
+    : <BuildingIcon className="h-4 w-4 text-muted-foreground" />
+
+  return (
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Tooltip.Provider>
+        <Tooltip.Root>
+          <Tooltip.Trigger asChild>
+            <Dialog.Trigger asChild>
+              <button
+                className={`p-1 rounded transition-colors ${
+                  isLinked
+                    ? "text-green-600 dark:text-green-400 hover:bg-green-500/10"
+                    : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                <RotateCcwIcon className="h-4 w-4" />
+              </button>
+            </Dialog.Trigger>
+          </Tooltip.Trigger>
+          <Tooltip.Portal>
+            <Tooltip.Content
+              className="bg-card text-card-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm"
+              sideOffset={4}
+            >
+              {isLinked
+                ? `Refund linked to ${other?.account?.nickname || "transaction"} on ${formatDate(other?.date || "")}`
+                : "No refund link"}
+              <Tooltip.Arrow className="fill-card" />
+            </Tooltip.Content>
+          </Tooltip.Portal>
+        </Tooltip.Root>
+      </Tooltip.Provider>
+
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 animate-in fade-in-0" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card rounded-xl border border-border shadow-xl w-full max-w-xl max-h-[85vh] overflow-hidden animate-in fade-in-0 zoom-in-95 z-50">
+          <div className="p-6 border-b border-border">
+            <Dialog.Title className="text-lg font-semibold">
+              {isLinked ? "Linked Refund" : "Refund Link"}
+            </Dialog.Title>
+            <Dialog.Description className="text-sm text-muted-foreground mt-1">
+              {isLinked
+                ? `This transaction is the ${transaction.refund_link?.role === 'refund' ? 'refund' : 'original charge'} in a refund link.`
+                : "Find and link the original transaction for this refund."}
+            </Dialog.Description>
+          </div>
+
+          <div className="p-6 max-h-[60vh] overflow-y-auto">
+            <div className="mb-4 p-3 rounded-lg bg-muted/50 border border-border">
+              <p className="text-sm text-muted-foreground mb-1">
+                {transaction.refund_link?.role === 'original' ? 'Original Charge' : 'Refund Transaction'}
+              </p>
+              <div className="flex items-center gap-2 mb-1">
+                <BuildingIcon className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">{transaction.bank_account?.nickname || "Unknown Account"}</span>
+              </div>
+              <p className="font-medium">{formatDate(transaction.date)}</p>
+              <p className="text-sm text-muted-foreground line-clamp-1">{transaction.narration}</p>
+              <p className="text-sm flex items-center gap-1 flex-wrap">
+                {transaction.credit > 0 ? (
+                  <span className="text-green-600 dark:text-green-400 inline-flex items-center gap-0.5">
+                    <FormattedCurrency amount={transaction.credit} />
+                    <ArrowUpIcon className="h-3 w-3" />
+                  </span>
+                ) : (
+                  <span className="text-red-600 dark:text-red-400 inline-flex items-center gap-0.5">
+                    <FormattedCurrency amount={transaction.debit} />
+                    <ArrowDownIcon className="h-3 w-3" />
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {isLinked && other ? (
+              <div className="space-y-4">
+                <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                  <p className="text-sm text-muted-foreground mb-1">
+                    {transaction.refund_link?.role === 'refund' ? 'Original Charge' : 'Refund'}
+                  </p>
+                  <div className="flex items-center gap-2 mb-1">
+                    {otherIcon}
+                    <span className="font-medium">
+                      {other.account?.nickname || "Unknown"}
+                    </span>
+                  </div>
+                  <p className="font-medium">{formatDate(other.date)}</p>
+                  <p className="text-sm text-muted-foreground line-clamp-3 mb-1">
+                    {other.description}
+                  </p>
+                  <p className="text-sm flex items-center gap-1">
+                    {other.is_debit ? (
+                      <span className="text-red-600 dark:text-red-400 inline-flex items-center gap-0.5">
+                        <FormattedCurrency amount={other.amount} />
+                        <ArrowDownIcon className="h-3 w-3" />
+                      </span>
+                    ) : (
+                      <span className="text-green-600 dark:text-green-400 inline-flex items-center gap-0.5">
+                        <FormattedCurrency amount={other.amount} />
+                        <ArrowUpIcon className="h-3 w-3" />
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <button
+                  onClick={handleUnlink}
+                  disabled={unlinking}
+                  className="w-full py-2 px-4 rounded-lg border border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors disabled:opacity-50"
+                >
+                  {unlinking ? "Unlinking..." : "Unlink Refund"}
+                </button>
+              </div>
+            ) : loadingSuggestions ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+              </div>
+            ) : suggestions.length > 0 ? (
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Suggested Original Transactions</p>
+                {suggestions.map((s) => {
+                  const key = `${s.transaction.type}:${s.transaction.id}`
+                  const icon = s.transaction.account?.type === 'credit_card'
+                    ? <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
+                    : <BuildingIcon className="h-4 w-4 text-muted-foreground" />
+                  return (
+                    <div key={key} className="p-3 rounded-lg border border-border hover:border-primary/50 transition-colors">
+                      <div className="flex items-center gap-2 mb-1">
+                        {icon}
+                        <span className="font-medium">{s.transaction.account?.nickname || "Unknown"}</span>
+                      </div>
+                      <p className="text-sm">{formatDate(s.transaction.date)}</p>
+                      <p className="text-sm text-muted-foreground line-clamp-2">{s.transaction.description}</p>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className={`text-sm inline-flex items-center gap-0.5 ${
+                          s.transaction.is_debit
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-green-600 dark:text-green-400"
+                        }`}>
+                          <FormattedCurrency amount={s.transaction.amount} />
+                          {s.transaction.is_debit
+                            ? <ArrowDownIcon className="h-3 w-3" />
+                            : <ArrowUpIcon className="h-3 w-3" />
+                          }
+                        </span>
+                        <button
+                          onClick={() => handleConfirmLink(s)}
+                          disabled={confirming !== null}
+                          className="px-3 py-1 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                        >
+                          {confirming === key ? "Confirming..." : "Confirm"}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <RotateCcwIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No suggestions found</p>
+                <p className="text-sm mt-1">No matching transactions within 180 days</p>
+              </div>
+            )}
+          </div>
+
+          <Dialog.Close asChild>
+            <button
+              className="absolute top-4 right-4 p-2 rounded-lg hover:bg-muted transition-colors"
+              aria-label="Close"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+          </Dialog.Close>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
+
 function Pagination({
   page,
   totalPages,
@@ -1039,9 +1295,25 @@ export function BankTransactionsPage() {
   }
 
   const handleCCPaymentMatchConfirmed = (transactionId: number, ccPaymentMatch: CCPaymentMatchInfo) => {
-    // Update local state with the new match
     setTransactions(prev => prev.map(t =>
       t.id === transactionId ? { ...t, cc_payment_match: ccPaymentMatch } : t
+    ))
+  }
+
+  const handleUnlinkRefund = async (linkId: number, transactionId: number) => {
+    try {
+      await deleteRefundLink(linkId)
+      setTransactions(prev => prev.map(t =>
+        t.id === transactionId ? { ...t, refund_link: null } : t
+      ))
+    } catch (error) {
+      logError("Failed to unlink refund", error)
+    }
+  }
+
+  const handleRefundLinkConfirmed = (transactionId: number, refundLink: RefundLinkInfo) => {
+    setTransactions(prev => prev.map(t =>
+      t.id === transactionId ? { ...t, refund_link: refundLink } : t
     ))
   }
 
@@ -1991,6 +2263,12 @@ export function BankTransactionsPage() {
                                   transaction={t}
                                   onUnlink={() => t.cc_payment_match && handleUnlinkCCPayment(t.cc_payment_match.id, t.id)}
                                   onMatchConfirmed={(match) => handleCCPaymentMatchConfirmed(t.id, match)}
+                                />
+                              ) : (t.category === "Refund" || t.refund_link) ? (
+                                <RefundLinkDialog
+                                  transaction={t}
+                                  onUnlink={() => t.refund_link && handleUnlinkRefund(t.refund_link.id, t.id)}
+                                  onLinkConfirmed={(link) => handleRefundLinkConfirmed(t.id, link)}
                                 />
                               ) : null}
                               {/* Stories icon */}

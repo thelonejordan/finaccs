@@ -64,6 +64,12 @@ export interface CCPaymentMatchInfo {
   match_reasons: string[]
 }
 
+export interface RefundLinkInfo {
+  id: number
+  role: 'original' | 'refund'
+  other_transaction: RefundTransaction
+}
+
 export interface Transaction {
   id: number
   date: string
@@ -83,6 +89,7 @@ export interface Transaction {
   } | null
   linked_transaction: LinkedTransaction | null
   cc_payment_match: CCPaymentMatchInfo | null
+  refund_link: RefundLinkInfo | null
 }
 
 export interface TopExpense {
@@ -534,6 +541,7 @@ export interface CreditCardTransaction {
     filename: string
   } | null
   bank_payment_match: BankPaymentMatchInfo | null
+  refund_link: RefundLinkInfo | null
 }
 
 export interface CreditCardTransactionStats {
@@ -1003,6 +1011,10 @@ export async function createRefundLink(data: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `Failed to create refund link (${res.status})`)
+  }
   return res.json()
 }
 
@@ -1010,11 +1022,23 @@ export async function deleteRefundLink(linkId: number): Promise<{ success: boole
   const res = await fetch(`${API_BASE}/api/refund-links/${linkId}/`, {
     method: "DELETE",
   })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `Failed to delete refund link (${res.status})`)
+  }
   return res.json()
 }
 
 export async function fetchRefundLinkYears(): Promise<{ years: Record<string, number> }> {
   const res = await fetch(`${API_BASE}/api/refund-links/years/`)
+  return res.json()
+}
+
+export async function fetchRefundSuggestionsForTransaction(
+  txnType: 'bank' | 'credit_card',
+  txnId: number
+): Promise<{ suggestions: RefundSuggestion[] }> {
+  const res = await fetch(`${API_BASE}/api/refund-suggestions/${txnType}/${txnId}/`)
   return res.json()
 }
 
