@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom"
 import { useInconsistencyCache } from "@/lib/inconsistency-cache"
 import { usePaymentsCache } from "@/lib/payments-cache"
+import { useSelfTransfersCache } from "@/lib/self-transfers-cache"
 import {
   LayoutDashboardIcon,
   ArrowLeftRightIcon,
@@ -15,6 +16,7 @@ import {
   WalletIcon,
   LayersIcon,
   FlaskConicalIcon,
+  RepeatIcon,
 } from "lucide-react"
 
 /** Maximum badge count to display before showing "99+" */
@@ -42,6 +44,7 @@ const NAV_SECTIONS = [
     label: "Operations",
     items: [
       { path: "/payments", label: "Payments", icon: CreditCardIcon, badgeKey: "payments" as const },
+      { path: "/self-transfers", label: "Self Transfers", icon: RepeatIcon, badgeKey: "selfTransfers" as const },
       { path: "/anomalies", label: "Anomalies", icon: AlertTriangleIcon, badgeKey: "anomalies" as const },
       { path: "/resolution", label: "Resolution", icon: LayersIcon },
       { path: "/activity", label: "Activity", icon: ActivityIcon },
@@ -63,13 +66,16 @@ export function Sidebar() {
   const location = useLocation()
   const { cache } = useInconsistencyCache()
   const { cache: paymentsCache } = usePaymentsCache()
+  const { cache: selfTransfersCache } = useSelfTransfersCache()
 
   const inconsistencyCount = cache.count ?? cache.previousCount ?? 0
   const paymentsCount = paymentsCache.count ?? paymentsCache.previousCount ?? 0
+  const selfTransfersCount = selfTransfersCache.count ?? selfTransfersCache.previousCount ?? 0
 
-  const getBadgeCount = (badgeKey?: "payments" | "anomalies") => {
+  const getBadgeCount = (badgeKey?: "payments" | "anomalies" | "selfTransfers") => {
     if (badgeKey === "payments") return paymentsCount
     if (badgeKey === "anomalies") return inconsistencyCount
+    if (badgeKey === "selfTransfers") return selfTransfersCount
     return 0
   }
 

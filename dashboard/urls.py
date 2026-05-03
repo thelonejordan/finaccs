@@ -27,4 +27,9 @@ urlpatterns = [
     path('api/cc-payment-matches/', views.api_cc_payment_matches, name='api_cc_payment_matches'),
     path('api/cc-payment-matches/<int:match_id>/', views.api_cc_payment_match_delete, name='api_cc_payment_match_delete'),
     path('api/cc-payment-matches/years/', views.api_cc_payment_match_years, name='api_cc_payment_match_years'),
+    # Self Transfer Matching
+    path('api/self-transfer-suggestions/', views.api_self_transfer_suggestions, name='api_self_transfer_suggestions'),
+    path('api/self-transfer-links/', views.api_self_transfer_links, name='api_self_transfer_links'),
+    path('api/self-transfer-links/years/', views.api_self_transfer_link_years, name='api_self_transfer_link_years'),
+    path('api/self-transfer-links/<int:link_id>/', views.api_self_transfer_link_delete, name='api_self_transfer_link_delete'),
 ]

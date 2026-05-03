@@ -874,6 +874,82 @@ export async function fetchSuggestionsForCCTransaction(ccTxnId: number): Promise
   return res.json()
 }
 
+// ── Self Transfer Matching ───────────────────────────────
+
+export interface SelfTransferBankTransaction {
+  id: number
+  date: string
+  narration: string
+  amount: number
+  is_debit: boolean
+  bank_account: { id: number; nickname: string } | null
+}
+
+export interface SelfTransferSuggestion {
+  id: number
+  date: string
+  narration: string
+  debit: number
+  credit: number
+  bank_account: { id: number; nickname: string } | null
+}
+
+export interface SelfTransferSuggestionItem {
+  bank_transaction: SelfTransferBankTransaction
+  suggestions: SelfTransferSuggestion[]
+}
+
+export interface SelfTransferLinkRecord {
+  id: number
+  transaction_a: SelfTransferBankTransaction
+  transaction_b: SelfTransferBankTransaction
+  created_at: string
+}
+
+export async function fetchSelfTransferSuggestions(params?: {
+  bank_account?: number
+  year?: number
+}): Promise<{ data: SelfTransferSuggestionItem[]; total: number }> {
+  const searchParams = new URLSearchParams()
+  if (params?.bank_account) searchParams.set("bank_account", String(params.bank_account))
+  if (params?.year) searchParams.set("year", String(params.year))
+  const res = await fetch(`${API_BASE}/api/self-transfer-suggestions/?${searchParams}`)
+  return res.json()
+}
+
+export async function fetchSelfTransferLinks(params?: {
+  year?: number
+}): Promise<{ data: SelfTransferLinkRecord[]; total: number }> {
+  const searchParams = new URLSearchParams()
+  if (params?.year) searchParams.set("year", String(params.year))
+  const res = await fetch(`${API_BASE}/api/self-transfer-links/?${searchParams}`)
+  return res.json()
+}
+
+export async function createSelfTransferLink(data: {
+  transaction_id: number
+  link_to: number
+}): Promise<SelfTransferLinkRecord> {
+  const res = await fetch(`${API_BASE}/api/self-transfer-links/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+  return res.json()
+}
+
+export async function deleteSelfTransferLink(linkId: number): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/api/self-transfer-links/${linkId}/`, {
+    method: "DELETE",
+  })
+  return res.json()
+}
+
+export async function fetchSelfTransferLinkYears(): Promise<{ years: Record<string, number> }> {
+  const res = await fetch(`${API_BASE}/api/self-transfer-links/years/`)
+  return res.json()
+}
+
 // Artifact URL helper (used by ExtractionsPage)
 export function getArtifactUrl(artifactId: string): string {
   return `${API_BASE}/api/artifacts/${artifactId}/`

@@ -950,6 +950,102 @@ def api_potential_links(request, transaction_id):
     responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
     tags=['Transactions'],
 )
+def _create_self_transfer(transaction, link_to):
+    """Create a self-transfer link between two bank transactions.
+    Both must be loaded with select_related('bank_account').
+    Returns the created SelfTransferLink."""
+    from django.db.models import Q
+    from links.models import SelfTransferLink, CategoryLink
+
+    transaction.linked_transaction = link_to
+    old_category_1 = transaction.category or ''
+    old_category_2 = link_to.category or ''
+    transaction.category = 'Self Transfer'
+    link_to.category = 'Self Transfer'
+    transaction.save()
+    link_to.save()
+
+    _ensure_resolved_transaction(transaction, 'bank')
+    _ensure_resolved_transaction(link_to, 'bank')
+    ra, rb = transaction.resolved_transaction_id, link_to.resolved_transaction_id
+    link = None
+    if ra != rb and not SelfTransferLink.objects.filter(
+        Q(resolved_transaction_a_id=ra, resolved_transaction_b_id=rb) |
+        Q(resolved_transaction_a_id=rb, resolved_transaction_b_id=ra)
+    ).exists():
+        link = SelfTransferLink.objects.create(
+            resolved_transaction_a_id=ra,
+            resolved_transaction_b_id=rb,
+            origin_transaction_id_a=transaction.id,
+            origin_transaction_id_b=link_to.id,
+        )
+    if not link:
+        link = SelfTransferLink.objects.filter(
+            Q(resolved_transaction_a_id=ra, resolved_transaction_b_id=rb) |
+            Q(resolved_transaction_a_id=rb, resolved_transaction_b_id=ra)
+        ).first()
+    for rid in (ra, rb):
+        CategoryLink.objects.filter(resolved_transaction_id=rid).delete()
+        CategoryLink.objects.create(
+            resolved_transaction_id=rid,
+            category='Self Transfer',
+            origin_transaction_type='bank',
+            origin_transaction_id=transaction.id if rid == ra else link_to.id,
+        )
+
+    TransactionLog.objects.create(
+        transaction=transaction, action='LINK', new_value=str(link_to.id),
+    )
+    TransactionLog.objects.create(
+        transaction=link_to, action='LINK', new_value=str(transaction.id),
+    )
+    if old_category_1 != 'Self Transfer':
+        TransactionLog.objects.create(
+            transaction=transaction, action='CATEGORY_CHANGE',
+            old_value=old_category_1, new_value='Self Transfer',
+        )
+    if old_category_2 != 'Self Transfer':
+        TransactionLog.objects.create(
+            transaction=link_to, action='CATEGORY_CHANGE',
+            old_value=old_category_2, new_value='Self Transfer',
+        )
+    return link
+
+
+def _remove_self_transfer(transaction):
+    """Remove a self-transfer link from a bank transaction.
+    Transaction must be loaded with select_related('bank_account', 'linked_transaction').
+    Returns the other transaction or None."""
+    from django.db.models import Q
+    from links.models import SelfTransferLink
+
+    other = None
+    if transaction.linked_transaction:
+        other = transaction.linked_transaction
+        transaction.linked_transaction = None
+        transaction.save()
+    elif hasattr(transaction, 'linked_from') and transaction.linked_from:
+        other = transaction.linked_from
+        other.linked_transaction = None
+        other.save()
+
+    if transaction.resolved_transaction_id and other and other.resolved_transaction_id:
+        ra, rb = transaction.resolved_transaction_id, other.resolved_transaction_id
+        SelfTransferLink.objects.filter(
+            Q(resolved_transaction_a_id=ra, resolved_transaction_b_id=rb) |
+            Q(resolved_transaction_a_id=rb, resolved_transaction_b_id=ra)
+        ).delete()
+
+    if other:
+        TransactionLog.objects.create(
+            transaction=transaction, action='UNLINK', old_value=str(other.id),
+        )
+        TransactionLog.objects.create(
+            transaction=other, action='UNLINK', old_value=str(transaction.id),
+        )
+    return other
+
+
 @api_view(['POST', 'DELETE'])
 def api_link_transaction(request, transaction_id):
     """Link or unlink self-transfer transactions."""
@@ -959,39 +1055,7 @@ def api_link_transaction(request, transaction_id):
         return JsonResponse({'error': 'Transaction not found'}, status=404)
 
     if request.method == 'DELETE':
-        other = None
-        if transaction.linked_transaction:
-            other = transaction.linked_transaction
-            transaction.linked_transaction = None
-            transaction.save()
-            if hasattr(other, 'linked_from') and other.linked_from == transaction:
-                pass
-        elif hasattr(transaction, 'linked_from') and transaction.linked_from:
-            other = transaction.linked_from
-            other.linked_transaction = None
-            other.save()
-
-        if transaction.resolved_transaction_id and other and other.resolved_transaction_id:
-            from django.db.models import Q
-            from links.models import SelfTransferLink
-            ra, rb = transaction.resolved_transaction_id, other.resolved_transaction_id
-            SelfTransferLink.objects.filter(
-                Q(resolved_transaction_a_id=ra, resolved_transaction_b_id=rb) |
-                Q(resolved_transaction_a_id=rb, resolved_transaction_b_id=ra)
-            ).delete()
-
-        if other:
-            TransactionLog.objects.create(
-                transaction=transaction,
-                action='UNLINK',
-                old_value=str(other.id),
-            )
-            TransactionLog.objects.create(
-                transaction=other,
-                action='UNLINK',
-                old_value=str(transaction.id),
-            )
-
+        _remove_self_transfer(transaction)
         return JsonResponse({
             'id': transaction.id,
             'linked_transaction': None,
@@ -1012,74 +1076,15 @@ def api_link_transaction(request, transaction_id):
     except BankTransaction.DoesNotExist:
         return JsonResponse({'error': 'Target transaction not found'}, status=404)
 
-    # Validate different bank accounts
     if transaction.bank_account == link_to.bank_account:
         return JsonResponse({'error': 'Transactions must be from different bank accounts'}, status=400)
 
-    # Validate neither is already linked
     if transaction.linked_transaction or (hasattr(transaction, 'linked_from') and transaction.linked_from):
         return JsonResponse({'error': 'Transaction is already linked'}, status=400)
     if link_to.linked_transaction or (hasattr(link_to, 'linked_from') and link_to.linked_from):
         return JsonResponse({'error': 'Target transaction is already linked'}, status=400)
 
-    transaction.linked_transaction = link_to
-    old_category_1 = transaction.category or ''
-    old_category_2 = link_to.category or ''
-    transaction.category = 'Self Transfer'
-    link_to.category = 'Self Transfer'
-    transaction.save()
-    link_to.save()
-
-    _ensure_resolved_transaction(transaction, 'bank')
-    _ensure_resolved_transaction(link_to, 'bank')
-    from django.db.models import Q
-    from links.models import SelfTransferLink, CategoryLink
-    ra, rb = transaction.resolved_transaction_id, link_to.resolved_transaction_id
-    if ra != rb and not SelfTransferLink.objects.filter(
-        Q(resolved_transaction_a_id=ra, resolved_transaction_b_id=rb) |
-        Q(resolved_transaction_a_id=rb, resolved_transaction_b_id=ra)
-    ).exists():
-        SelfTransferLink.objects.create(
-            resolved_transaction_a_id=ra,
-            resolved_transaction_b_id=rb,
-            origin_transaction_id_a=transaction.id,
-            origin_transaction_id_b=link_to.id,
-        )
-    for rid in (ra, rb):
-        CategoryLink.objects.filter(resolved_transaction_id=rid).delete()
-        CategoryLink.objects.create(
-            resolved_transaction_id=rid,
-            category='Self Transfer',
-            origin_transaction_type='bank',
-            origin_transaction_id=transaction.id if rid == ra else link_to.id,
-        )
-
-    # Log link action in WAL for both transactions
-    TransactionLog.objects.create(
-        transaction=transaction,
-        action='LINK',
-        new_value=str(link_to.id),
-    )
-    TransactionLog.objects.create(
-        transaction=link_to,
-        action='LINK',
-        new_value=str(transaction.id),
-    )
-    # Also log category changes if they changed
-    if old_category_1 != 'Self Transfer':
-        TransactionLog.objects.create(
-            transaction=transaction,
-            action='CATEGORY_CHANGE',
-            old_value=old_category_1,
-            new_value='Self Transfer',
-        )
-    if old_category_2 != 'Self Transfer':
-        TransactionLog.objects.create(
-            transaction=link_to,
-            action='CATEGORY_CHANGE',
-            old_value=old_category_2,
-            new_value='Self Transfer',
-        )
+    _create_self_transfer(transaction, link_to)
 
     return JsonResponse({
         'id': transaction.id,
@@ -2754,6 +2759,313 @@ def api_cc_payment_match_years(request):
             cc_resolved_transaction__primary_transaction_id__in=active_cc_txn_ids,
         )
         .annotate(year=ExtractYear('bank_resolved_transaction__date'))
+        .values('year')
+        .annotate(count=Count('id'))
+        .order_by('-year')
+    )
+
+    years = {str(item['year']): item['count'] for item in year_counts}
+
+    return JsonResponse({'years': years})
+
+
+# ──────────────────────────────────────────────────────────
+# Self Transfer Matching
+# ──────────────────────────────────────────────────────────
+
+
+def _serialize_bank_txn(txn):
+    return {
+        'id': txn.id,
+        'date': txn.date.isoformat(),
+        'narration': txn.narration,
+        'amount': float(txn.debit_amount or txn.credit_amount),
+        'is_debit': txn.debit_amount > 0,
+        'bank_account': {
+            'id': txn.bank_account.id,
+            'nickname': txn.bank_account.nickname,
+        } if txn.bank_account else None,
+    }
+
+
+@extend_schema(
+    summary="Get self-transfer suggestions",
+    description="Get unlinked bank transactions categorized as Self Transfer with potential matches.",
+    parameters=[
+        OpenApiParameter(name='bank_account', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by bank account ID'),
+        OpenApiParameter(name='year', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by year'),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Self Transfer Matching'],
+)
+@api_view(['GET'])
+def api_self_transfer_suggestions(request):
+    """Get unlinked Self Transfer transactions with potential matches."""
+    from datetime import timedelta
+    from django.db.models import Q
+
+    bank_txns = get_active_transactions().filter(
+        category='Self Transfer',
+    ).exclude(
+        linked_transaction__isnull=False,
+    ).exclude(
+        linked_from__isnull=False,
+    ).exclude(
+        Q(resolved_transaction__self_transfer_links_as_a__id__isnull=False) |
+        Q(resolved_transaction__self_transfer_links_as_b__id__isnull=False)
+    ).select_related('bank_account').distinct()
+
+    bank_account_id = request.GET.get('bank_account')
+    if bank_account_id:
+        bank_txns = bank_txns.filter(bank_account_id=bank_account_id)
+
+    year = request.GET.get('year')
+    if year:
+        bank_txns = bank_txns.filter(date__year=int(year))
+
+    bank_txns = bank_txns.order_by('-date')
+
+    all_active = get_active_transactions().select_related('bank_account')
+
+    data = []
+    for txn in bank_txns:
+        date_start = txn.date - timedelta(days=7)
+        date_end = txn.date + timedelta(days=7)
+
+        potential = all_active.filter(
+            date__gte=date_start,
+            date__lte=date_end,
+        ).exclude(
+            bank_account=txn.bank_account,
+        ).exclude(
+            bank_account__isnull=True,
+        ).exclude(
+            id=txn.id,
+        ).exclude(
+            linked_transaction__isnull=False,
+        ).exclude(
+            linked_from__isnull=False,
+        ).exclude(
+            Q(resolved_transaction__self_transfer_links_as_a__id__isnull=False) |
+            Q(resolved_transaction__self_transfer_links_as_b__id__isnull=False)
+        ).distinct()
+
+        if txn.debit_amount > 0:
+            potential = potential.filter(credit_amount=txn.debit_amount)
+        elif txn.credit_amount > 0:
+            potential = potential.filter(debit_amount=txn.credit_amount)
+        else:
+            data.append({
+                'bank_transaction': _serialize_bank_txn(txn),
+                'suggestions': [],
+            })
+            continue
+
+        matches = list(potential[:20])
+        matches.sort(key=lambda t: abs((t.date - txn.date).days))
+
+        suggestions = []
+        for m in matches:
+            suggestions.append({
+                'id': m.id,
+                'date': m.date.isoformat(),
+                'narration': m.narration,
+                'debit': float(m.debit_amount),
+                'credit': float(m.credit_amount),
+                'bank_account': {
+                    'id': m.bank_account.id,
+                    'nickname': m.bank_account.nickname,
+                } if m.bank_account else None,
+            })
+
+        data.append({
+            'bank_transaction': _serialize_bank_txn(txn),
+            'suggestions': suggestions,
+        })
+
+    return JsonResponse({
+        'data': data,
+        'total': len(data),
+    })
+
+
+@extend_schema(
+    methods=['GET'],
+    summary="Get confirmed self-transfer links",
+    description="Get confirmed self-transfer links, filterable by year.",
+    parameters=[
+        OpenApiParameter(name='year', type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description='Filter by year'),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Self Transfer Matching'],
+)
+@extend_schema(
+    methods=['POST'],
+    summary="Create a self-transfer link",
+    description="Link two bank transactions as a self-transfer.",
+    request=OpenApiTypes.OBJECT,
+    responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+    tags=['Self Transfer Matching'],
+)
+@api_view(['GET', 'POST'])
+def api_self_transfer_links(request):
+    """Get or create self-transfer links."""
+    from links.models import SelfTransferLink
+
+    if request.method == 'GET':
+        active_bank_txn_ids = set(get_active_transactions().values_list('id', flat=True))
+
+        links = SelfTransferLink.objects.filter(
+            resolved_transaction_a__isnull=False,
+            resolved_transaction_b__isnull=False,
+            resolved_transaction_a__primary_transaction_id__in=active_bank_txn_ids,
+            resolved_transaction_b__primary_transaction_id__in=active_bank_txn_ids,
+        ).select_related(
+            'resolved_transaction_a',
+            'resolved_transaction_b',
+        )
+
+        year = request.GET.get('year')
+        if year:
+            links = links.filter(resolved_transaction_a__date__year=int(year))
+
+        links = list(links)
+
+        txn_ids_a = {l.resolved_transaction_a.primary_transaction_id for l in links}
+        txn_ids_b = {l.resolved_transaction_b.primary_transaction_id for l in links}
+        all_txn_ids = txn_ids_a | txn_ids_b
+
+        txns = {t.id: t for t in BankTransaction.objects.filter(id__in=all_txn_ids).select_related('bank_account')}
+
+        data = []
+        for link in links:
+            txn_a = txns.get(link.resolved_transaction_a.primary_transaction_id)
+            txn_b = txns.get(link.resolved_transaction_b.primary_transaction_id)
+            if not txn_a or not txn_b:
+                continue
+            data.append({
+                'id': link.id,
+                'transaction_a': _serialize_bank_txn(txn_a),
+                'transaction_b': _serialize_bank_txn(txn_b),
+                'created_at': link.created_at.isoformat(),
+            })
+
+        data.sort(key=lambda d: d['transaction_a']['date'], reverse=True)
+
+        return JsonResponse({
+            'data': data,
+            'total': len(data),
+        })
+
+    # POST - Create a self-transfer link
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    txn_id = body.get('transaction_id')
+    link_to_id = body.get('link_to')
+
+    if not txn_id or not link_to_id:
+        return JsonResponse({'error': 'transaction_id and link_to are required'}, status=400)
+
+    try:
+        transaction = get_active_transactions().select_related('bank_account', 'linked_transaction').get(id=txn_id)
+    except BankTransaction.DoesNotExist:
+        return JsonResponse({'error': 'Transaction not found or not active'}, status=404)
+
+    try:
+        link_to = get_active_transactions().select_related('bank_account', 'linked_transaction').get(id=link_to_id)
+    except BankTransaction.DoesNotExist:
+        return JsonResponse({'error': 'Target transaction not found or not active'}, status=404)
+
+    if transaction.bank_account == link_to.bank_account:
+        return JsonResponse({'error': 'Transactions must be from different bank accounts'}, status=400)
+
+    if transaction.linked_transaction or (hasattr(transaction, 'linked_from') and transaction.linked_from):
+        return JsonResponse({'error': 'Transaction is already linked'}, status=400)
+    if link_to.linked_transaction or (hasattr(link_to, 'linked_from') and link_to.linked_from):
+        return JsonResponse({'error': 'Target transaction is already linked'}, status=400)
+
+    link = _create_self_transfer(transaction, link_to)
+
+    return JsonResponse({
+        'id': link.id if link else 0,
+        'transaction_a': _serialize_bank_txn(transaction),
+        'transaction_b': _serialize_bank_txn(link_to),
+        'created_at': link.created_at.isoformat() if link else '',
+    })
+
+
+@extend_schema(
+    summary="Delete a self-transfer link",
+    description="Remove a confirmed self-transfer link.",
+    responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    tags=['Self Transfer Matching'],
+)
+@api_view(['DELETE'])
+def api_self_transfer_link_delete(request, link_id):
+    """Delete a self-transfer link."""
+    from links.models import SelfTransferLink
+
+    try:
+        link = SelfTransferLink.objects.get(id=link_id)
+    except SelfTransferLink.DoesNotExist:
+        return JsonResponse({'error': 'Link not found'}, status=404)
+
+    txn_a = None
+    txn_b = None
+    if link.origin_transaction_id_a:
+        txn_a = BankTransaction.objects.select_related('bank_account', 'linked_transaction').filter(
+            id=link.origin_transaction_id_a
+        ).first()
+    if link.origin_transaction_id_b:
+        txn_b = BankTransaction.objects.select_related('bank_account', 'linked_transaction').filter(
+            id=link.origin_transaction_id_b
+        ).first()
+
+    if txn_a and txn_b:
+        if txn_a.linked_transaction_id == txn_b.id:
+            txn_a.linked_transaction = None
+            txn_a.save()
+        elif txn_b.linked_transaction_id == txn_a.id:
+            txn_b.linked_transaction = None
+            txn_b.save()
+
+        TransactionLog.objects.create(
+            transaction=txn_a, action='UNLINK', old_value=str(txn_b.id),
+        )
+        TransactionLog.objects.create(
+            transaction=txn_b, action='UNLINK', old_value=str(txn_a.id),
+        )
+
+    link.delete()
+    return JsonResponse({'success': True})
+
+
+@extend_schema(
+    summary="Get self-transfer link years",
+    description="Get available years with link counts for filtering.",
+    responses={200: OpenApiTypes.OBJECT},
+    tags=['Self Transfer Matching'],
+)
+@api_view(['GET'])
+def api_self_transfer_link_years(request):
+    """Get available years with self-transfer link counts."""
+    from django.db.models import Count
+    from django.db.models.functions import ExtractYear
+    from links.models import SelfTransferLink
+
+    active_bank_txn_ids = set(get_active_transactions().values_list('id', flat=True))
+
+    year_counts = (
+        SelfTransferLink.objects.filter(
+            resolved_transaction_a__isnull=False,
+            resolved_transaction_b__isnull=False,
+            resolved_transaction_a__primary_transaction_id__in=active_bank_txn_ids,
+            resolved_transaction_b__primary_transaction_id__in=active_bank_txn_ids,
+        )
+        .annotate(year=ExtractYear('resolved_transaction_a__date'))
         .values('year')
         .annotate(count=Count('id'))
         .order_by('-year')
