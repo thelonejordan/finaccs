@@ -972,6 +972,9 @@ export interface RefundTransaction {
 
 export interface RefundSuggestion {
   transaction: RefundTransaction
+  offset: number
+  confidence_score: number
+  match_reasons: string[]
 }
 
 export interface RefundSuggestionItem {
@@ -983,6 +986,7 @@ export interface RefundLinkRecord {
   id: number
   original_transaction: RefundTransaction
   refund_transaction: RefundTransaction
+  offset: number
   created_at: string
 }
 

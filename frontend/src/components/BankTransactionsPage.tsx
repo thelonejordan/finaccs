@@ -27,7 +27,6 @@ import {
   HashIcon,
   UsersIcon,
   TagIcon,
-  RotateCcwIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
@@ -670,7 +669,7 @@ function RefundLinkDialog({
 }: {
   transaction: Transaction
   onUnlink: () => void
-  onLinkConfirmed: (refundLink: RefundLinkInfo) => void
+  onLinkConfirmed: (refundLink: RefundLinkInfo, otherTxnId: number, otherTxnType: string, otherRefundLink: RefundLinkInfo) => void
 }) {
   const [open, setOpen] = useState(false)
   const [unlinking, setUnlinking] = useState(false)
@@ -719,11 +718,14 @@ function RefundLinkDialog({
         original_transaction_id: isRefundSide ? suggestion.transaction.id : transaction.id,
         original_type: isRefundSide ? suggestion.transaction.type : 'bank',
       })
-      onLinkConfirmed({
-        id: result.id,
-        role: isRefundSide ? 'refund' : 'original',
-        other_transaction: suggestion.transaction,
-      })
+      const myRole: 'refund' | 'original' = isRefundSide ? 'refund' : 'original'
+      const otherRole: 'refund' | 'original' = isRefundSide ? 'original' : 'refund'
+      onLinkConfirmed(
+        { id: result.id, role: myRole, other_transaction: suggestion.transaction },
+        suggestion.transaction.id,
+        suggestion.transaction.type,
+        { id: result.id, role: otherRole, other_transaction: result[isRefundSide ? 'refund_transaction' : 'original_transaction'] },
+      )
       setOpen(false)
     } catch (error) {
       logError("Failed to confirm refund link", error)
@@ -750,7 +752,11 @@ function RefundLinkDialog({
                     : "text-muted-foreground hover:bg-muted"
                 }`}
               >
-                <RotateCcwIcon className="h-4 w-4" />
+                {isLinked ? (
+                  <Link2Icon className="h-4 w-4" />
+                ) : (
+                  <Link2OffIcon className="h-4 w-4" />
+                )}
               </button>
             </Dialog.Trigger>
           </Tooltip.Trigger>
@@ -863,6 +869,9 @@ function RefundLinkDialog({
                       <div className="flex items-center gap-2 mb-1">
                         {icon}
                         <span className="font-medium">{s.transaction.account?.nickname || "Unknown"}</span>
+                        <span className="ml-auto text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                          {Math.round(s.confidence_score * 100)}% match
+                        </span>
                       </div>
                       <p className="text-sm">{formatDate(s.transaction.date)}</p>
                       <p className="text-sm text-muted-foreground line-clamp-2">{s.transaction.description}</p>
@@ -886,13 +895,18 @@ function RefundLinkDialog({
                           {confirming === key ? "Confirming..." : "Confirm"}
                         </button>
                       </div>
+                      {s.offset !== 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Offset: {s.offset > 0 ? "+" : ""}{formatCurrency(s.offset)}
+                        </p>
+                      )}
                     </div>
                   )
                 })}
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">
-                <RotateCcwIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <Link2OffIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
                 <p>No suggestions found</p>
                 <p className="text-sm mt-1">No matching transactions within 180 days</p>
               </div>
@@ -1300,21 +1314,23 @@ export function BankTransactionsPage() {
     ))
   }
 
-  const handleUnlinkRefund = async (linkId: number, transactionId: number) => {
+  const handleUnlinkRefund = async (linkId: number, _transactionId: number) => {
     try {
       await deleteRefundLink(linkId)
       setTransactions(prev => prev.map(t =>
-        t.id === transactionId ? { ...t, refund_link: null } : t
+        t.refund_link?.id === linkId ? { ...t, refund_link: null } : t
       ))
     } catch (error) {
       logError("Failed to unlink refund", error)
     }
   }
 
-  const handleRefundLinkConfirmed = (transactionId: number, refundLink: RefundLinkInfo) => {
-    setTransactions(prev => prev.map(t =>
-      t.id === transactionId ? { ...t, refund_link: refundLink } : t
-    ))
+  const handleRefundLinkConfirmed = (transactionId: number, refundLink: RefundLinkInfo, otherTxnId: number, otherTxnType: string, otherRefundLink: RefundLinkInfo) => {
+    setTransactions(prev => prev.map(t => {
+      if (t.id === transactionId) return { ...t, refund_link: refundLink }
+      if (otherTxnType === 'bank' && t.id === otherTxnId) return { ...t, refund_link: otherRefundLink }
+      return t
+    }))
   }
 
   useEffect(() => {
@@ -2268,7 +2284,7 @@ export function BankTransactionsPage() {
                                 <RefundLinkDialog
                                   transaction={t}
                                   onUnlink={() => t.refund_link && handleUnlinkRefund(t.refund_link.id, t.id)}
-                                  onLinkConfirmed={(link) => handleRefundLinkConfirmed(t.id, link)}
+                                  onLinkConfirmed={(link, otherTxnId, otherTxnType, otherLink) => handleRefundLinkConfirmed(t.id, link, otherTxnId, otherTxnType, otherLink)}
                                 />
                               ) : null}
                               {/* Stories icon */}

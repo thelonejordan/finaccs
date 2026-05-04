@@ -72,6 +72,21 @@ function getMonthYear(dateStr: string): string {
   })
 }
 
+function OffsetBadge({ offset }: { offset: number }) {
+  const absOffset = Math.abs(offset)
+  let colorClass = "bg-green-500/20 text-green-600 dark:text-green-400"
+  if (absOffset > 100) {
+    colorClass = "bg-red-500/20 text-red-600 dark:text-red-400"
+  } else if (absOffset > 0) {
+    colorClass = "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400"
+  }
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colorClass}`}>
+      {offset === 0 ? "Exact" : offset > 0 ? `+${formatCurrency(offset)}` : formatCurrency(offset)}
+    </span>
+  )
+}
+
 function TransactionCell({ txn }: { txn: RefundTransaction }) {
   const AccountIcon = txn.type === "bank" ? BuildingIcon : CreditCardIcon
   return (
@@ -97,6 +112,42 @@ function TransactionCell({ txn }: { txn: RefundTransaction }) {
 }
 
 type RefundsTab = "unmatched" | "confirmed"
+
+// ── Badges ──────────────────────────────────────────────
+
+function ConfidenceBadge({ score }: { score: number }) {
+  let colorClass = "bg-red-500/20 text-red-600 dark:text-red-400"
+  let label = "Low"
+  if (score > 0.8) {
+    colorClass = "bg-green-500/20 text-green-600 dark:text-green-400"
+    label = "High"
+  } else if (score >= 0.5) {
+    colorClass = "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400"
+    label = "Medium"
+  }
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colorClass}`}>
+      {label} ({(score * 100).toFixed(0)}%)
+    </span>
+  )
+}
+
+function MatchReasonsBadge({ reasons }: { reasons: string[] }) {
+  const formatReason = (reason: string) =>
+    reason.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  return (
+    <div className="flex flex-wrap gap-1">
+      {reasons.map((reason) => (
+        <span
+          key={reason}
+          className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-secondary text-secondary-foreground"
+        >
+          {formatReason(reason)}
+        </span>
+      ))}
+    </div>
+  )
+}
 
 // ── Suggestion Card ─────────────────────────────────────
 
@@ -128,11 +179,18 @@ function RefundSuggestionCard({
           </span>
         </div>
         <p className="text-xs text-muted-foreground truncate">{txn.description}</p>
+        <div className="flex items-center gap-2 mt-2">
+          <FormattedCurrency
+            amount={txn.amount}
+            className={`text-sm font-semibold ${txn.is_debit ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}
+          />
+          <OffsetBadge offset={suggestion.offset} />
+          <ConfidenceBadge score={suggestion.confidence_score} />
+        </div>
+        <div className="mt-2">
+          <MatchReasonsBadge reasons={suggestion.match_reasons} />
+        </div>
       </div>
-      <FormattedCurrency
-        amount={txn.amount}
-        className={`text-sm font-semibold ${txn.is_debit ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}
-      />
       <button
         onClick={onConfirm}
         disabled={isConfirming}
@@ -481,14 +539,20 @@ function ConfirmedTab() {
     const totalAmount = links.reduce(
       (sum, l) => sum + l.refund_transaction.amount, 0
     )
-    return { count: links.length, totalAmount }
+    const totalOffset = links.reduce(
+      (sum, l) => sum + l.offset, 0
+    )
+    return { count: links.length, totalAmount, totalOffset }
   }, [links])
 
   const allTimeStats = useMemo(() => {
     const totalAmount = allLinks.reduce(
       (sum, l) => sum + l.refund_transaction.amount, 0
     )
-    return { count: allLinks.length, totalAmount }
+    const totalOffset = allLinks.reduce(
+      (sum, l) => sum + l.offset, 0
+    )
+    return { count: allLinks.length, totalAmount, totalOffset }
   }, [allLinks])
 
   const yearKeys = Object.keys(years).sort((a, b) => parseInt(b) - parseInt(a))
@@ -525,7 +589,7 @@ function ConfirmedTab() {
       </section>
 
       {/* Summary Stats */}
-      <div ref={statsRef} className="grid grid-cols-2 gap-4 mb-6">
+      <div ref={statsRef} className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         <div
           onClick={() => setShowTotals(!showTotals)}
           className="rounded-xl border border-border bg-card shadow-sm p-4 cursor-pointer hover:bg-muted/50 transition-colors"
@@ -581,6 +645,35 @@ function ConfirmedTab() {
             </div>
           </div>
         </div>
+
+        <div
+          onClick={() => setShowTotals(!showTotals)}
+          className="rounded-xl border border-border bg-card shadow-sm p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${stats.totalOffset === 0 ? 'bg-green-500/10' : 'bg-yellow-500/10'}`}>
+              <TagIcon className={`h-5 w-5 ${stats.totalOffset === 0 ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`} />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Offset</p>
+              <p className={`text-xl font-bold ${stats.totalOffset === 0 ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
+                <FormattedCurrency amount={stats.totalOffset} />
+              </p>
+              <AnimatePresence>
+                {showTotals && (
+                  <motion.p
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="text-xs text-muted-foreground"
+                  >
+                    out of <FormattedCurrency amount={allTimeStats.totalOffset} />
+                  </motion.p>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Links Table */}
@@ -612,6 +705,7 @@ function ConfirmedTab() {
                       <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground">Original</th>
                       <th className="h-10 px-4 text-center align-middle font-medium text-muted-foreground"></th>
                       <th className="h-10 px-4 text-left align-middle font-medium text-muted-foreground">Refund</th>
+                      <th className="h-10 px-4 text-right align-middle font-medium text-muted-foreground">Offset</th>
                       <th className="h-10 px-4 text-center align-middle font-medium text-muted-foreground">Action</th>
                     </tr>
                   </thead>
@@ -626,6 +720,9 @@ function ConfirmedTab() {
                         </td>
                         <td className="p-4 align-middle">
                           <TransactionCell txn={link.refund_transaction} />
+                        </td>
+                        <td className="p-4 align-middle text-right">
+                          <OffsetBadge offset={link.offset} />
                         </td>
                         <td className="p-4 align-middle text-center">
                           <Tooltip.Provider>

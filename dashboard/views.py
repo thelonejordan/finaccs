@@ -3119,6 +3119,75 @@ def api_self_transfer_link_years(request):
 # ──────────────────────────────────────────────────────────
 
 
+def _get_refund_amount(txn, txn_type):
+    if txn_type == 'bank':
+        return txn.credit_amount or txn.debit_amount
+    return abs(txn.amount)
+
+
+def _get_original_amount(txn, txn_type):
+    if txn_type == 'bank':
+        return txn.debit_amount or txn.credit_amount
+    return abs(txn.amount)
+
+
+def _is_before(candidate_txn, refund_date, refund_row_number):
+    """Check that a candidate original charge happened before the refund."""
+    if candidate_txn.date < refund_date:
+        return True
+    if candidate_txn.date == refund_date and candidate_txn.row_number < refund_row_number:
+        return True
+    return False
+
+
+def calculate_refund_match_score(refund_amount, candidate_txn, candidate_type, refund_date):
+    """
+    Score a candidate original-charge transaction against a refund.
+
+    Returns (score, reasons, offset) tuple.
+
+    Criteria:
+    1. Amount proximity — refund amount vs candidate amount
+       - Exact match: +0.5
+       - Within 5%: +0.3
+       - Within 20%: +0.1
+    2. Date proximity — original charge before the refund
+       - Within 7 days: +0.5
+       - Within 30 days: +0.3
+       - Within 90 days: +0.1
+    """
+    from decimal import Decimal
+
+    score = 0.0
+    reasons = []
+
+    candidate_amount = _get_original_amount(candidate_txn, candidate_type)
+    offset = refund_amount - candidate_amount
+
+    if offset == 0:
+        score += 0.5
+        reasons.append('exact_amount')
+    elif candidate_amount > 0 and abs(offset) / candidate_amount <= Decimal('0.05'):
+        score += 0.3
+        reasons.append('amount_within_5%')
+    elif candidate_amount > 0 and abs(offset) / candidate_amount <= Decimal('0.20'):
+        score += 0.1
+        reasons.append('amount_within_20%')
+
+    days_diff = (refund_date - candidate_txn.date).days
+    if 0 <= days_diff <= 7:
+        score += 0.5
+        reasons.append('within_7_days')
+    elif 0 <= days_diff <= 30:
+        score += 0.3
+        reasons.append('within_30_days')
+    elif 0 <= days_diff <= 90:
+        score += 0.1
+        reasons.append('within_90_days')
+
+    return score, reasons, float(offset)
+
+
 def _serialize_any_txn(txn, txn_type):
     """Unified serializer for bank or CC transactions."""
     if txn_type == 'bank':
@@ -3199,62 +3268,58 @@ def api_refund_suggestions(request):
 
     data = []
 
-    for txn in bank_refunds:
-        refund_amount = float(txn.credit_amount or txn.debit_amount)
+    def _find_suggestions(txn, txn_type):
+        refund_amount = _get_refund_amount(txn, txn_type)
         date_start = txn.date - timedelta(days=180)
-        date_end = txn.date
 
         suggestions = []
-        # Search bank txns for original charge
-        bank_matches = all_bank.filter(
-            date__gte=date_start, date__lte=date_end,
-            debit_amount=refund_amount if txn.credit_amount > 0 else 0,
-        ).exclude(id=txn.id).exclude(category='Refund')[:10]
-        for m in bank_matches:
-            suggestions.append({'transaction': _serialize_any_txn(m, 'bank')})
+        bank_candidates = all_bank.filter(
+            date__gte=date_start, date__lte=txn.date,
+        ).exclude(category='Refund')
+        if txn_type == 'bank':
+            bank_candidates = bank_candidates.exclude(id=txn.id)
+        for m in bank_candidates:
+            if not _is_before(m, txn.date, txn.row_number):
+                continue
+            score, reasons, offset = calculate_refund_match_score(refund_amount, m, 'bank', txn.date)
+            if score > 0:
+                suggestions.append({
+                    'transaction': _serialize_any_txn(m, 'bank'),
+                    'offset': offset,
+                    'confidence_score': score,
+                    'match_reasons': reasons,
+                })
 
-        # Search CC txns for original charge
-        cc_matches = all_cc.filter(
-            date__gte=date_start, date__lte=date_end,
-            amount=refund_amount,
-        ).exclude(category='Refund')[:10]
-        for m in cc_matches:
-            suggestions.append({'transaction': _serialize_any_txn(m, 'credit_card')})
+        cc_candidates = all_cc.filter(
+            date__gte=date_start, date__lte=txn.date,
+        ).exclude(category='Refund')
+        if txn_type == 'credit_card':
+            cc_candidates = cc_candidates.exclude(id=txn.id)
+        for m in cc_candidates:
+            if not _is_before(m, txn.date, txn.row_number):
+                continue
+            score, reasons, offset = calculate_refund_match_score(refund_amount, m, 'credit_card', txn.date)
+            if score > 0:
+                suggestions.append({
+                    'transaction': _serialize_any_txn(m, 'credit_card'),
+                    'offset': offset,
+                    'confidence_score': score,
+                    'match_reasons': reasons,
+                })
 
-        suggestions.sort(key=lambda s: s['transaction']['date'], reverse=True)
+        suggestions.sort(key=lambda s: (-s['confidence_score'], abs(s['offset'])))
+        return suggestions[:20]
 
+    for txn in bank_refunds:
         data.append({
             'refund_transaction': _serialize_any_txn(txn, 'bank'),
-            'suggestions': suggestions,
+            'suggestions': _find_suggestions(txn, 'bank'),
         })
 
     for txn in cc_refunds:
-        refund_amount = float(abs(txn.amount))
-        date_start = txn.date - timedelta(days=180)
-        date_end = txn.date
-
-        suggestions = []
-        # Search bank txns for original charge
-        bank_matches = all_bank.filter(
-            date__gte=date_start, date__lte=date_end,
-            debit_amount=refund_amount,
-        ).exclude(category='Refund')[:10]
-        for m in bank_matches:
-            suggestions.append({'transaction': _serialize_any_txn(m, 'bank')})
-
-        # Search CC txns for original charge
-        cc_matches = all_cc.filter(
-            date__gte=date_start, date__lte=date_end,
-            amount=refund_amount,
-        ).exclude(id=txn.id).exclude(category='Refund')[:10]
-        for m in cc_matches:
-            suggestions.append({'transaction': _serialize_any_txn(m, 'credit_card')})
-
-        suggestions.sort(key=lambda s: s['transaction']['date'], reverse=True)
-
         data.append({
             'refund_transaction': _serialize_any_txn(txn, 'credit_card'),
-            'suggestions': suggestions,
+            'suggestions': _find_suggestions(txn, 'credit_card'),
         })
 
     data.sort(key=lambda d: d['refund_transaction']['date'], reverse=True)
@@ -3344,6 +3409,7 @@ def api_refund_links(request):
                 'id': link.id,
                 'original_transaction': _serialize_any_txn(orig_txn, orig_rt.transaction_type),
                 'refund_transaction': _serialize_any_txn(ref_txn, ref_rt.transaction_type),
+                'offset': float(link.offset),
                 'created_at': link.created_at.isoformat(),
             })
 
@@ -3384,6 +3450,16 @@ def api_refund_links(request):
     if RefundLink.objects.filter(refund_resolved_transaction_id=refund_rt_id).exists():
         return JsonResponse({'error': 'Refund transaction is already linked'}, status=400)
 
+    if refund_type == 'bank':
+        refund_amount = refund_txn.credit_amount or refund_txn.debit_amount
+    else:
+        refund_amount = abs(refund_txn.amount)
+    if original_type == 'bank':
+        original_amount = original_txn.debit_amount or original_txn.credit_amount
+    else:
+        original_amount = abs(original_txn.amount)
+    offset_value = refund_amount - original_amount
+
     from django.db import transaction as db_transaction
     with db_transaction.atomic():
         link = RefundLink.objects.create(
@@ -3393,6 +3469,7 @@ def api_refund_links(request):
             origin_refund_type=refund_type,
             origin_original_transaction_id=original_id,
             origin_refund_transaction_id=refund_id,
+            offset=offset_value,
         )
 
         CategoryLink.objects.get_or_create(
@@ -3417,6 +3494,7 @@ def api_refund_links(request):
         'id': link.id,
         'original_transaction': _serialize_any_txn(original_txn, original_type),
         'refund_transaction': _serialize_any_txn(refund_txn, refund_type),
+        'offset': float(link.offset),
         'created_at': link.created_at.isoformat(),
     })
 
@@ -3430,7 +3508,7 @@ def api_refund_links(request):
 @api_view(['DELETE'])
 def api_refund_link_delete(request, link_id):
     """Delete a refund link."""
-    from links.models import RefundLink
+    from links.models import RefundLink, CategoryLink
 
     try:
         link = RefundLink.objects.get(id=link_id)
@@ -3505,47 +3583,48 @@ def api_refund_suggestions_for_transaction(request, txn_type, txn_id):
     if not txn:
         return JsonResponse({'error': 'Transaction not found'}, status=404)
 
-    if txn_type == 'bank':
-        refund_amount = float(txn.credit_amount or txn.debit_amount)
-    else:
-        refund_amount = float(abs(txn.amount))
-
+    refund_amount = _get_refund_amount(txn, txn_type)
     date_start = txn.date - timedelta(days=180)
-    date_end = txn.date
 
     all_bank = get_active_transactions().select_related('bank_account')
     all_cc = get_active_cc_transactions().select_related('credit_card')
 
     suggestions = []
 
+    bank_candidates = all_bank.filter(
+        date__gte=date_start, date__lte=txn.date,
+    ).exclude(category='Refund')
     if txn_type == 'bank':
-        bank_matches = all_bank.filter(
-            date__gte=date_start, date__lte=date_end,
-            debit_amount=refund_amount if txn.credit_amount > 0 else 0,
-        ).exclude(id=txn_id).exclude(category='Refund')[:10]
-    else:
-        bank_matches = all_bank.filter(
-            date__gte=date_start, date__lte=date_end,
-            debit_amount=refund_amount,
-        ).exclude(category='Refund')[:10]
+        bank_candidates = bank_candidates.exclude(id=txn_id)
+    for m in bank_candidates:
+        if not _is_before(m, txn.date, txn.row_number):
+            continue
+        score, reasons, offset = calculate_refund_match_score(refund_amount, m, 'bank', txn.date)
+        if score > 0:
+            suggestions.append({
+                'transaction': _serialize_any_txn(m, 'bank'),
+                'offset': offset,
+                'confidence_score': score,
+                'match_reasons': reasons,
+            })
 
-    for m in bank_matches:
-        suggestions.append({'transaction': _serialize_any_txn(m, 'bank')})
-
+    cc_candidates = all_cc.filter(
+        date__gte=date_start, date__lte=txn.date,
+    ).exclude(category='Refund')
     if txn_type == 'credit_card':
-        cc_matches = all_cc.filter(
-            date__gte=date_start, date__lte=date_end,
-            amount=refund_amount,
-        ).exclude(id=txn_id).exclude(category='Refund')[:10]
-    else:
-        cc_matches = all_cc.filter(
-            date__gte=date_start, date__lte=date_end,
-            amount=refund_amount,
-        ).exclude(category='Refund')[:10]
+        cc_candidates = cc_candidates.exclude(id=txn_id)
+    for m in cc_candidates:
+        if not _is_before(m, txn.date, txn.row_number):
+            continue
+        score, reasons, offset = calculate_refund_match_score(refund_amount, m, 'credit_card', txn.date)
+        if score > 0:
+            suggestions.append({
+                'transaction': _serialize_any_txn(m, 'credit_card'),
+                'offset': offset,
+                'confidence_score': score,
+                'match_reasons': reasons,
+            })
 
-    for m in cc_matches:
-        suggestions.append({'transaction': _serialize_any_txn(m, 'credit_card')})
+    suggestions.sort(key=lambda s: (-s['confidence_score'], abs(s['offset'])))
 
-    suggestions.sort(key=lambda s: s['transaction']['date'], reverse=True)
-
-    return JsonResponse({'suggestions': suggestions})
+    return JsonResponse({'suggestions': suggestions[:20]})

@@ -158,6 +158,7 @@ class RefundLink(models.Model):
     origin_refund_type = models.CharField(max_length=20, blank=True, null=True)
     origin_original_transaction_id = models.IntegerField(null=True, blank=True)
     origin_refund_transaction_id = models.IntegerField(null=True, blank=True)
+    offset = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
