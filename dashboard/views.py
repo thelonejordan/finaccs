@@ -3241,16 +3241,20 @@ def api_refund_suggestions(request):
     from django.db.models import Q
     from links.models import RefundLink
 
-    already_linked_rt_ids = set(
+    already_linked_refund_rt_ids = set(
         RefundLink.objects.filter(refund_resolved_transaction__isnull=False)
         .values_list('refund_resolved_transaction_id', flat=True)
+    )
+    already_linked_original_rt_ids = set(
+        RefundLink.objects.filter(original_resolved_transaction__isnull=False)
+        .values_list('original_resolved_transaction_id', flat=True)
     )
 
     # Bank transactions tagged as Refund
     bank_refunds = list(
         get_active_transactions()
         .filter(category='Refund')
-        .exclude(resolved_transaction_id__in=already_linked_rt_ids)
+        .exclude(resolved_transaction_id__in=already_linked_refund_rt_ids)
         .select_related('bank_account')
         .order_by('-date')
     )
@@ -3258,13 +3262,17 @@ def api_refund_suggestions(request):
     cc_refunds = list(
         get_active_cc_transactions()
         .filter(category='Refund')
-        .exclude(resolved_transaction_id__in=already_linked_rt_ids)
+        .exclude(resolved_transaction_id__in=already_linked_refund_rt_ids)
         .select_related('credit_card')
         .order_by('-date')
     )
 
-    all_bank = get_active_transactions().select_related('bank_account')
-    all_cc = get_active_cc_transactions().select_related('credit_card')
+    all_bank = get_active_transactions().exclude(
+        resolved_transaction_id__in=already_linked_original_rt_ids
+    ).select_related('bank_account')
+    all_cc = get_active_cc_transactions().exclude(
+        resolved_transaction_id__in=already_linked_original_rt_ids
+    ).select_related('credit_card')
 
     data = []
 
@@ -3583,11 +3591,21 @@ def api_refund_suggestions_for_transaction(request, txn_type, txn_id):
     if not txn:
         return JsonResponse({'error': 'Transaction not found'}, status=404)
 
+    from links.models import RefundLink
+    already_linked_original_rt_ids = set(
+        RefundLink.objects.filter(original_resolved_transaction__isnull=False)
+        .values_list('original_resolved_transaction_id', flat=True)
+    )
+
     refund_amount = _get_refund_amount(txn, txn_type)
     date_start = txn.date - timedelta(days=180)
 
-    all_bank = get_active_transactions().select_related('bank_account')
-    all_cc = get_active_cc_transactions().select_related('credit_card')
+    all_bank = get_active_transactions().exclude(
+        resolved_transaction_id__in=already_linked_original_rt_ids
+    ).select_related('bank_account')
+    all_cc = get_active_cc_transactions().exclude(
+        resolved_transaction_id__in=already_linked_original_rt_ids
+    ).select_related('credit_card')
 
     suggestions = []
 
