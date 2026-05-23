@@ -153,6 +153,8 @@ def detect_extractor(filename: str, domain: str) -> Optional[str]:
         if ext == '.pdf':
             if 'slice' in filename_lower:
                 return 'slice_cc_pdf' if 'slice_cc_pdf' in candidates else None
+            if 'laststatement' in filename_lower or 'last_statement' in filename_lower:
+                return 'icici_cc_laststatement_pdf' if 'icici_cc_laststatement_pdf' in candidates else None
             return 'icici_cc_pdf' if 'icici_cc_pdf' in candidates else None
         if ext == '.csv':
             return 'sbi_cc_csv' if 'sbi_cc_csv' in candidates else None
@@ -236,6 +238,7 @@ def create_extraction(source_file, extractor_name: str, password: Optional[str] 
 
 # Import all extractors to register them
 from . import icici_cc_pdf
+from . import icici_cc_laststatement_pdf
 from . import sbi_pdf
 from . import icici_xlsx
 from . import hdfc_txt
