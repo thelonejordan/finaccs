@@ -369,21 +369,17 @@ def emi_suggestions(request):
         row_count__gt=0,
     ).select_related('extraction__source_file')
 
-    # Get artifact IDs already linked to an EMI
-    linked_artifact_ids = set(
-        CreditCardEMI.objects.filter(source_artifact__isnull=False)
-        .values_list('source_artifact_id', flat=True)
-    )
+    # Build map of existing EMIs by key fields for matching
+    existing_emi_map = {}
+    for emi in CreditCardEMI.objects.all():
+        if emi.original_amount and emi.creation_date:
+            key = (emi.original_amount.normalize(), str(emi.creation_date), emi.num_installments)
+            existing_emi_map[key] = {'emi_id': emi.emi_id, 'name': emi.name}
+    existing_emi_keys = set(existing_emi_map.keys())
 
-    # Build set of existing EMIs by key fields for cross-artifact matching
-    existing_emi_keys = set()
-    for emi in CreditCardEMI.objects.values_list('original_amount', 'creation_date', 'num_installments'):
-        if emi[0] and emi[1]:
-            existing_emi_keys.add((emi[0].normalize(), str(emi[1]), emi[2]))
-
-    # First pass: find which dedup keys have at least one linked artifact
-    linked_dedup_keys = set()
-    all_rows = []  # (dedup_key, artifact, filename, row)
+    # First pass: collect all rows and determine linkage per row via existing_emi_map
+    linked_dedup_keys = {}  # dedup_key -> {'emi_id', 'name'}
+    all_rows = []  # (dedup_key, artifact, filename, card_mask, row)
 
     for artifact in emi_artifacts:
         try:
@@ -400,13 +396,11 @@ def emi_suggestions(request):
                 dedup_key = (card_mask, emi_amount, creation_date)
                 all_rows.append((dedup_key, artifact, filename, card_mask, row))
 
-                if artifact.id in linked_artifact_ids:
-                    linked_dedup_keys.add(dedup_key)
-                elif creation_date and emi_amount:
+                if dedup_key not in linked_dedup_keys and creation_date and emi_amount:
                     num_installments = int(row['num_installments']) if row.get('num_installments') else None
                     emi_key = (Decimal(emi_amount).normalize(), creation_date, num_installments)
                     if emi_key in existing_emi_keys:
-                        linked_dedup_keys.add(dedup_key)
+                        linked_dedup_keys[dedup_key] = existing_emi_map[emi_key]
         except Exception:
             continue
 
@@ -419,6 +413,7 @@ def emi_suggestions(request):
             continue
         seen.add(dedup_key)
 
+        linked_emi = linked_dedup_keys.get(dedup_key)
         suggestions.append({
             'artifact_id': artifact.id,
             'source_file': filename,
@@ -431,7 +426,10 @@ def emi_suggestions(request):
             'pending_installments': int(row['pending_installments']) if row.get('pending_installments') else None,
             'outstanding_amount': float(row['outstanding_amount']) if row.get('outstanding_amount') else None,
             'monthly_installment': float(row['monthly_installment']) if row.get('monthly_installment') else None,
-            'already_linked': dedup_key in linked_dedup_keys,
+            'already_linked': linked_emi is not None,
+            'linked_emi_id': linked_emi['emi_id'] if linked_emi else None,
+            'linked_emi_name': linked_emi['name'] if linked_emi else None,
         })
 
+    suggestions.sort(key=lambda s: s['creation_date'] or '', reverse=True)
     return JsonResponse({'suggestions': suggestions})

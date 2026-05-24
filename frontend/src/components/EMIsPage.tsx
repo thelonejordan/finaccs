@@ -321,7 +321,7 @@ export function EMIsPage() {
         fetchCreditCards(),
       ])
       setEmis(emisData.emis)
-      setSuggestions(suggestionsData.suggestions.filter(s => !s.already_linked))
+      setSuggestions(suggestionsData.suggestions)
       setCreditCards(cardsData.cards)
     } catch (error) {
       logError("Failed to load EMI data", error)
@@ -382,12 +382,15 @@ export function EMIsPage() {
             >
               {suggestionsOpen ? <ChevronDownIcon className="h-4 w-4" /> : <ChevronRightIcon className="h-4 w-4" />}
               <SparklesIcon className="h-4 w-4 text-amber-500" />
-              <span>{suggestions.length} EMI suggestions from statements</span>
+              <span>{suggestions.length} EMIs from statements</span>
+              <span className="ml-auto text-xs font-normal text-muted-foreground">
+                {suggestions.filter(s => s.already_linked).length} linked · {suggestions.filter(s => !s.already_linked).length} unlinked
+              </span>
             </button>
             {suggestionsOpen && (
-              <div className="divide-y divide-border max-h-80 overflow-y-auto">
+              <div className="divide-y divide-border max-h-[500px] overflow-y-auto">
                 {suggestions.map((s, i) => (
-                  <div key={i} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                  <div key={i} className={`flex items-center gap-3 px-4 py-2.5 text-sm ${s.already_linked ? 'opacity-60' : ''}`}>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium truncate">{s.loan_type}</span>
@@ -399,12 +402,24 @@ export function EMIsPage() {
                         {formatCurrency(s.emi_amount || 0)} · {s.num_installments} installments · {formatDate(s.creation_date)}
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleCreateFromSuggestion(s)}
-                      className="flex-shrink-0 px-2 py-1 rounded border border-border text-xs hover:bg-muted"
-                    >
-                      Create
-                    </button>
+                    <div className="flex-shrink-0 w-48 text-right">
+                      {s.already_linked && s.linked_emi_id ? (
+                        <Link
+                          to={`/emis/${s.linked_emi_id}`}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:underline"
+                        >
+                          <CheckCircleIcon className="h-3 w-3" />
+                          <span className="truncate max-w-[120px]">{s.linked_emi_name}</span>
+                        </Link>
+                      ) : (
+                        <button
+                          onClick={() => handleCreateFromSuggestion(s)}
+                          className="px-2 py-1 rounded border border-border text-xs hover:bg-muted"
+                        >
+                          Create
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

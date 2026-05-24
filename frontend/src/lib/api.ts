@@ -2121,6 +2121,8 @@ export interface EMISuggestion {
   outstanding_amount: number | null
   monthly_installment: number | null
   already_linked: boolean
+  linked_emi_id: string | null
+  linked_emi_name: string | null
 }
 
 export async function fetchEMIs(): Promise<{ emis: EMI[] }> {
