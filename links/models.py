@@ -139,6 +139,53 @@ class CreditCardPaymentLink(models.Model):
         return f"CCPaymentLink(bank={self.bank_resolved_transaction_id} <-> cc={self.cc_resolved_transaction_id})"
 
 
+class EMILink(models.Model):
+    COMPONENT_TYPE_CHOICES = [
+        ('purchase', 'Original Purchase'),
+        ('loan', 'Loan (EMI Conversion Credit)'),
+        ('principal', 'Principal Installment'),
+        ('interest', 'Interest Installment'),
+        ('processing_fee', 'Processing Fee'),
+        ('tax', 'Tax'),
+        ('foreclosure', 'Foreclosure Charge'),
+        ('other', 'Other'),
+    ]
+
+    resolved_transaction = models.ForeignKey(
+        'extractions.ResolvedTransaction',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='emi_links',
+    )
+    emi = models.ForeignKey(
+        'credit_cards.CreditCardEMI',
+        on_delete=models.CASCADE,
+        related_name='emi_links',
+    )
+    component_type = models.CharField(max_length=20, choices=COMPONENT_TYPE_CHOICES, default='other')
+    installment_number = models.IntegerField(null=True, blank=True)
+    tax_parent_link = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tax_children',
+    )
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    origin_transaction_type = models.CharField(max_length=20, blank=True, null=True)
+    origin_transaction_id = models.IntegerField(null=True, blank=True)
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'links_emilink'
+        ordering = ['-added_at']
+        unique_together = [['resolved_transaction', 'emi']]
+
+    def __str__(self):
+        return f"EMILink({self.emi_id} -> {self.resolved_transaction_id}, {self.component_type})"
+
+
 class RefundLink(models.Model):
     original_resolved_transaction = models.ForeignKey(
         'extractions.ResolvedTransaction',

@@ -80,6 +80,104 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function JSONHighlight({ json }: { json: string }) {
+  const highlightJSON = (text: string): React.ReactNode[] => {
+    const result: React.ReactNode[] = []
+    let i = 0
+    let key = 0
+
+    while (i < text.length) {
+      if (/\s/.test(text[i])) {
+        let ws = ''
+        while (i < text.length && /\s/.test(text[i])) {
+          ws += text[i]
+          i++
+        }
+        result.push(ws)
+        continue
+      }
+
+      if (text[i] === '"') {
+        let str = '"'
+        i++
+        while (i < text.length && text[i] !== '"') {
+          if (text[i] === '\\' && i + 1 < text.length) {
+            str += text[i] + text[i + 1]
+            i += 2
+          } else {
+            str += text[i]
+            i++
+          }
+        }
+        str += '"'
+        i++
+
+        let j = i
+        while (j < text.length && /\s/.test(text[j])) j++
+        const isKey = text[j] === ':'
+
+        result.push(
+          <span key={key++} className={isKey ? "text-blue-600 dark:text-blue-400" : "text-green-600 dark:text-green-400"}>
+            {str}
+          </span>
+        )
+        continue
+      }
+
+      if (/[-\d]/.test(text[i])) {
+        let num = ''
+        while (i < text.length && /[\d.eE+-]/.test(text[i])) {
+          num += text[i]
+          i++
+        }
+        result.push(
+          <span key={key++} className="text-amber-600 dark:text-amber-400">
+            {num}
+          </span>
+        )
+        continue
+      }
+
+      if (text.slice(i, i + 4) === 'true') {
+        result.push(<span key={key++} className="text-purple-600 dark:text-purple-400">true</span>)
+        i += 4
+        continue
+      }
+      if (text.slice(i, i + 5) === 'false') {
+        result.push(<span key={key++} className="text-purple-600 dark:text-purple-400">false</span>)
+        i += 5
+        continue
+      }
+      if (text.slice(i, i + 4) === 'null') {
+        result.push(<span key={key++} className="text-gray-500 dark:text-gray-400">null</span>)
+        i += 4
+        continue
+      }
+
+      if ('{}[],:'.includes(text[i])) {
+        result.push(
+          <span key={key++} className="text-foreground/70">
+            {text[i]}
+          </span>
+        )
+        i++
+        continue
+      }
+
+      result.push(text[i])
+      i++
+    }
+
+    return result
+  }
+
+  return (
+    <pre className="p-4 rounded-lg bg-muted/50 border border-border overflow-auto max-h-[400px] text-xs font-mono whitespace-pre">
+      {highlightJSON(json)}
+    </pre>
+  )
+}
+
 // Source Files Section
 function SourceFilesSection({
   files,
@@ -445,6 +543,7 @@ function ExtractionsSection({
     columns: string[]
     total: number
   } | null>(null)
+  const [previewJson, setPreviewJson] = useState<string | null>(null)
   const [isLoadingPreview, setIsLoadingPreview] = useState(false)
   const lastSelectedIndexRef = useRef<number | null>(null)
 
@@ -492,10 +591,12 @@ function ExtractionsSection({
       setExpandedExtractionId(null)
       setPreviewArtifactId(null)
       setPreviewData(null)
+      setPreviewJson(null)
     } else {
       setExpandedExtractionId(extraction.id)
       setPreviewArtifactId(null)
       setPreviewData(null)
+      setPreviewJson(null)
     }
   }
 
@@ -540,11 +641,14 @@ function ExtractionsSection({
     if (previewArtifactId === artifactId) {
       setPreviewArtifactId(null)
       setPreviewData(null)
+      setPreviewJson(null)
       return
     }
 
     setPreviewArtifactId(artifactId)
     setIsLoadingPreview(true)
+    setPreviewData(null)
+    setPreviewJson(null)
     try {
       const result = await previewArtifact(artifactId, 10)
       if (result.format === 'csv' && Array.isArray(result.data)) {
@@ -553,12 +657,15 @@ function ExtractionsSection({
           columns: result.columns || [],
           total: result.total || 0,
         })
+      } else if (result.format === 'json') {
+        setPreviewJson(JSON.stringify(result.data, null, 2))
+      } else if (typeof result.data === 'string') {
+        setPreviewJson(result.data)
       } else {
-        setPreviewData(null)
+        setPreviewJson(JSON.stringify(result.data, null, 2))
       }
     } catch (error) {
       logError("Failed to load preview", error)
-      setPreviewData(null)
     } finally {
       setIsLoadingPreview(false)
     }
@@ -828,6 +935,10 @@ function ExtractionsSection({
                                                     Showing {previewData.data.length} of {previewData.total} rows
                                                   </div>
                                                 )}
+                                              </div>
+                                            ) : previewJson ? (
+                                              <div className="overflow-auto border border-border rounded max-h-[400px]">
+                                                <JSONHighlight json={previewJson} />
                                               </div>
                                             ) : (
                                               <div className="text-center py-4 text-muted-foreground">

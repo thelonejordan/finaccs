@@ -24,6 +24,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/anomalies": "Anomalies",
   "/activity": "Activity",
   "/entities": "Entities",
+  "/emis": "EMIs",
 }
 
 const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
@@ -44,6 +45,8 @@ export function Header() {
   // Get page title, handle story detail pages
   const pageTitle = location.pathname.startsWith("/stories/")
     ? "Story Details"
+    : location.pathname.startsWith("/emis/")
+    ? "EMI Details"
     : PAGE_TITLES[location.pathname] || "FinAccs"
 
   // Auto-scroll is only applicable on pages with tables

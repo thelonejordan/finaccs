@@ -71,12 +71,14 @@ flowchart LR
         CL[CategoryLink]
         SL[StoryLink]
         EL[EntityLink]
+        EMIL[EMILink]
         STL[SelfTransferLink]
         CCL[CCPaymentLink]
     end
     CL --> RT
     SL --> RT
     EL --> RT
+    EMIL --> RT
     STL --> RT
     CCL --> RT
     RT -->|primary_transaction_id| display_primary[Display primary]

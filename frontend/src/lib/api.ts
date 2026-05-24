@@ -2040,3 +2040,195 @@ export async function searchResolvedTransactions(query: string): Promise<{ resul
   }
   return res.json()
 }
+
+// --- EMIs ---
+
+export type EMIComponentType = 'purchase' | 'loan' | 'principal' | 'interest' | 'processing_fee' | 'tax' | 'foreclosure' | 'other'
+
+export interface EMIStats {
+  transaction_count: number
+  installments_paid: number
+  total_principal_paid: number
+  total_interest_paid: number
+  total_fees_paid: number
+  total_tax_paid: number
+  total_paid: number
+}
+
+export interface EMIBadge {
+  emi_id: string
+  name: string
+}
+
+export async function getTransactionEMIs(
+  transactions: TransactionRef[]
+): Promise<{ transaction_emis: Record<string, EMIBadge[]> }> {
+  const res = await fetch(`${API_BASE}/api/emis/transaction-emis/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transactions }),
+  })
+  if (!res.ok) throw new Error('Failed to get transaction EMIs')
+  return res.json()
+}
+
+export interface EMI {
+  id: number
+  emi_id: string
+  name: string
+  description: string
+  credit_card: { id: number; nickname: string; card_number_mask: string } | null
+  original_amount: number | null
+  num_installments: number | null
+  monthly_installment: number | null
+  creation_date: string | null
+  finish_date: string | null
+  status: 'active' | 'completed' | 'foreclosed'
+  source_artifact_id: number | null
+  created_at: string
+  updated_at: string
+  stats: EMIStats
+}
+
+export interface EMITransaction {
+  id: number
+  link_id: number
+  type: 'credit_card'
+  date: string
+  description: string
+  amount: number
+  source: string
+  component_type: EMIComponentType
+  installment_number: number | null
+  tax_parent_link_id: number | null
+  tax_rate: number | null
+}
+
+export interface EMIDetail extends EMI {
+  transactions: EMITransaction[]
+}
+
+export interface EMISuggestion {
+  artifact_id: number
+  source_file: string
+  card_number_mask: string
+  loan_type: string
+  creation_date: string | null
+  finish_date: string | null
+  num_installments: number | null
+  emi_amount: number | null
+  pending_installments: number | null
+  outstanding_amount: number | null
+  monthly_installment: number | null
+  already_linked: boolean
+}
+
+export async function fetchEMIs(): Promise<{ emis: EMI[] }> {
+  const res = await fetch(`${API_BASE}/api/emis/`)
+  if (!res.ok) throw new Error('Failed to fetch EMIs')
+  return res.json()
+}
+
+export async function fetchEMI(emiId: string): Promise<EMIDetail> {
+  const res = await fetch(`${API_BASE}/api/emis/${emiId}/`)
+  if (!res.ok) throw new Error('Failed to fetch EMI')
+  return res.json()
+}
+
+export async function createEMI(data: {
+  name: string
+  description?: string
+  credit_card_id?: number | null
+  original_amount?: number | null
+  num_installments?: number | null
+  monthly_installment?: number | null
+  creation_date?: string | null
+  finish_date?: string | null
+  status?: string
+  source_artifact_id?: number | null
+}): Promise<EMI> {
+  const res = await fetch(`${API_BASE}/api/emis/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error('Failed to create EMI')
+  return res.json()
+}
+
+export async function updateEMI(
+  emiId: string,
+  data: Partial<{
+    name: string
+    description: string
+    status: string
+    original_amount: number | null
+    num_installments: number | null
+    monthly_installment: number | null
+    creation_date: string | null
+    finish_date: string | null
+    credit_card_id: number | null
+  }>
+): Promise<EMI> {
+  const res = await fetch(`${API_BASE}/api/emis/${emiId}/`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error('Failed to update EMI')
+  return res.json()
+}
+
+export async function deleteEMI(emiId: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/api/emis/${emiId}/`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error('Failed to delete EMI')
+  return res.json()
+}
+
+export async function addTransactionsToEMI(
+  emiId: string,
+  transactions: { type: 'credit_card'; id: number; component_type: EMIComponentType; installment_number?: number | null }[]
+): Promise<{ success: boolean; added: number }> {
+  const res = await fetch(`${API_BASE}/api/emis/${emiId}/transactions/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transactions }),
+  })
+  if (!res.ok) throw new Error('Failed to add transactions to EMI')
+  return res.json()
+}
+
+export async function removeTransactionsFromEMI(
+  emiId: string,
+  transactions: { type: 'credit_card'; id: number }[]
+): Promise<{ success: boolean; removed: number }> {
+  const res = await fetch(`${API_BASE}/api/emis/${emiId}/transactions/`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transactions }),
+  })
+  if (!res.ok) throw new Error('Failed to remove transactions from EMI')
+  return res.json()
+}
+
+export async function updateEMILink(
+  emiId: string,
+  linkId: number,
+  data: { component_type?: EMIComponentType; installment_number?: number | null; tax_parent_link_id?: number | null; tax_rate?: number | null }
+): Promise<{ link_id: number; component_type: EMIComponentType; installment_number: number | null; tax_parent_link_id: number | null; tax_rate: number | null }> {
+  const res = await fetch(`${API_BASE}/api/emis/${emiId}/links/${linkId}/`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error('Failed to update EMI link')
+  return res.json()
+}
+
+export async function fetchEMISuggestions(): Promise<{ suggestions: EMISuggestion[] }> {
+  const res = await fetch(`${API_BASE}/api/emis/suggestions/`)
+  if (!res.ok) throw new Error('Failed to fetch EMI suggestions')
+  return res.json()
+}

@@ -1,4 +1,9 @@
+import secrets
 from django.db import models
+
+
+def generate_emi_id():
+    return f"emi_{secrets.token_hex(4)}"
 
 
 class CreditCard(models.Model):
@@ -134,3 +139,48 @@ class DismissedCreditCardInconsistency(models.Model):
             inconsistency_type=inconsistency_type,
             transaction_ids=key
         ).exists()
+
+
+class CreditCardEMI(models.Model):
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('completed', 'Completed'),
+        ('foreclosed', 'Foreclosed'),
+    ]
+
+    emi_id = models.CharField(max_length=20, unique=True, default=generate_emi_id)
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    credit_card = models.ForeignKey(
+        CreditCard,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='emis',
+    )
+
+    original_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    num_installments = models.IntegerField(null=True, blank=True)
+    monthly_installment = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    creation_date = models.DateField(null=True, blank=True)
+    finish_date = models.DateField(null=True, blank=True)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+
+    source_artifact = models.ForeignKey(
+        'extractions.ExtractionArtifact',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='emis',
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        db_table = 'credit_cards_creditcardemi'
+
+    def __str__(self):
+        return f"{self.name} ({self.emi_id})"

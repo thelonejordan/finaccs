@@ -14,6 +14,8 @@ import { ExtractionsPage } from "@/components/ExtractionsPage"
 import { ExtractionsV2Page } from "@/components/ExtractionsV2Page"
 import { StoriesPage } from "@/components/StoriesPage"
 import { StoryDetailPage } from "@/components/StoryDetailPage"
+import { EMIsPage } from "@/components/EMIsPage"
+import { EMIDetailPage } from "@/components/EMIDetailPage"
 import { EntitiesPage } from "@/components/EntitiesPage"
 import { EntityDetailPage } from "@/components/EntityDetailPage"
 import { Layout } from "@/components/Layout"
@@ -48,6 +50,8 @@ function App() {
             <Route path="/activity" element={<ActivityLogsPage />} />
             <Route path="/stories" element={<StoriesPage />} />
             <Route path="/stories/:storyId" element={<StoryDetailPage />} />
+            <Route path="/emis" element={<EMIsPage />} />
+            <Route path="/emis/:emiId" element={<EMIDetailPage />} />
             <Route path="/entities" element={<EntitiesPage />} />
             <Route path="/entities/:entityId" element={<EntityDetailPage />} />
             <Route path="/resolution" element={<ResolutionPage />} />

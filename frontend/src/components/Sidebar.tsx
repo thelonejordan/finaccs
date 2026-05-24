@@ -32,6 +32,7 @@ const NAV_SECTIONS = [
       { path: "/transactions", label: "Transactions", icon: ArrowLeftRightIcon },
       { path: "/stories", label: "Stories", icon: BookOpenIcon },
       { path: "/entities", label: "Entities", icon: UsersIcon },
+      { path: "/emis", label: "EMIs", icon: WalletIcon },
     ],
   },
   {
@@ -111,7 +112,8 @@ export function Sidebar() {
               {section.items.map(({ path, label, icon: Icon, badgeKey }) => {
                 const isActive = location.pathname === path ||
                   (path === "/stories" && location.pathname.startsWith("/stories/")) ||
-                  (path === "/entities" && location.pathname.startsWith("/entities/"))
+                  (path === "/entities" && location.pathname.startsWith("/entities/")) ||
+                  (path === "/emis" && location.pathname.startsWith("/emis/"))
                 const badgeCount = getBadgeCount(badgeKey)
 
                 return (

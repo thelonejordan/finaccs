@@ -38,4 +38,5 @@ FinAccs - Personal finance dashboard: Django REST backend + React SPA frontend.
 - [docs/REPLACE_SOURCE.md](docs/REPLACE_SOURCE.md) - transaction resolution and safe source merging
 - [docs/RESOLUTION-NEIGHBOR-TIEBREAKER.md](docs/RESOLUTION-NEIGHBOR-TIEBREAKER.md) - neighbor balance tiebreaker for resolution
 - [docs/STORIES.md](docs/STORIES.md) - stories feature design
+- [docs/CC-EMIS.md](docs/CC-EMIS.md) - credit card EMIs feature design
 - [frontend/docs/UI.md](frontend/docs/UI.md) - UI design system

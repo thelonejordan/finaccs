@@ -26,6 +26,7 @@ import {
   HashIcon,
   UsersIcon,
   TagIcon,
+  WalletIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
@@ -34,6 +35,7 @@ import * as Dialog from "@radix-ui/react-dialog"
 import { Footer } from "@/components/Footer"
 import { AddToStoryModal } from "@/components/stories/AddToStoryModal"
 import { AddToEntityModal } from "@/components/entities/AddToEntityModal"
+import { AddToEMIModal } from "@/components/emis/AddToEMIModal"
 import {
   fetchCreditCards,
   fetchCreditCardTransactions,
@@ -48,6 +50,7 @@ import {
   deleteRefundLink,
   getTransactionStories,
   getTransactionEntities,
+  getTransactionEMIs,
   type CreditCard,
   type CreditCardTransaction,
   type CreditCardTransactionStats,
@@ -60,6 +63,7 @@ import {
   type RefundSuggestion,
   type StoryBadge,
   type EntityBadge,
+  type EMIBadge,
 } from "@/lib/api"
 
 const MONTH_NAMES = [
@@ -801,6 +805,7 @@ const TransactionRow = memo(function TransactionRow({
   categories,
   stories,
   entities,
+  emis,
   onSelect,
   onCategoryChange,
   onUnlink,
@@ -814,6 +819,7 @@ const TransactionRow = memo(function TransactionRow({
   categories: CreditCardCategoryData[]
   stories: StoryBadge[]
   entities: EntityBadge[]
+  emis: EMIBadge[]
   onSelect: (id: number, event: React.MouseEvent) => void
   onCategoryChange: (transactionId: number, newCategory: string) => void
   onUnlink: (matchId: number, transactionId: number) => void
@@ -975,9 +981,40 @@ const TransactionRow = memo(function TransactionRow({
               </Tooltip.Portal>
             </Tooltip.Root>
           )}
-          {/* Show dash if no links, stories, or entities */}
+          {/* EMIs icon */}
+          {emis.length > 0 && (
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
+                <button className="p-1 rounded hover:bg-muted transition-colors">
+                  <WalletIcon className="h-4 w-4 text-amber-500" />
+                </button>
+              </Tooltip.Trigger>
+              <Tooltip.Portal>
+                <Tooltip.Content
+                  className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-sm max-w-xs z-50"
+                  sideOffset={4}
+                >
+                  <p className="font-medium mb-1">EMIs</p>
+                  <div className="space-y-1">
+                    {emis.map(e => (
+                      <Link
+                        key={e.emi_id}
+                        to={`/emis/${e.emi_id}`}
+                        className="flex items-center gap-1.5 hover:text-primary"
+                      >
+                        <WalletIcon className="h-3 w-3" />
+                        <span className="text-muted-foreground hover:text-primary">{e.name}</span>
+                      </Link>
+                    ))}
+                  </div>
+                  <Tooltip.Arrow className="fill-card" />
+                </Tooltip.Content>
+              </Tooltip.Portal>
+            </Tooltip.Root>
+          )}
+          {/* Show dash if no links, stories, entities, or EMIs */}
           {!t.bank_payment_match && t.category !== 'Credit Card Payment' && t.category !== 'Refund' &&
-           stories.length === 0 && entities.length === 0 && (
+           stories.length === 0 && entities.length === 0 && emis.length === 0 && (
             <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
           )}
         </div>
@@ -1037,13 +1074,15 @@ export function CreditCardTransactionsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [addToStoryModalOpen, setAddToStoryModalOpen] = useState(false)
   const [addToEntityModalOpen, setAddToEntityModalOpen] = useState(false)
+  const [addToEMIModalOpen, setAddToEMIModalOpen] = useState(false)
   const [bulkCategoryOpen, setBulkCategoryOpen] = useState(false)
   const [bulkCategoryUpdating, setBulkCategoryUpdating] = useState(false)
   const lastSelectedIndexRef = useRef<number | null>(null)
 
-  // Transaction stories and entities
+  // Transaction stories, entities, and EMIs
   const [transactionStories, setTransactionStories] = useState<Record<string, StoryBadge[]>>({})
   const [transactionEntities, setTransactionEntities] = useState<Record<string, EntityBadge[]>>({})
+  const [transactionEMIs, setTransactionEMIs] = useState<Record<string, EMIBadge[]>>({})
 
   // Date range state - initialize from URL
   const [dateRange, setDateRange] = useState<DateRange | null>(null)
@@ -1376,22 +1415,25 @@ export function CreditCardTransactionsPage() {
         setStats(data.stats)
         setAvailableDataSources(data.available_data_sources || [])
 
-        // Fetch stories and entities for these transactions
+        // Fetch stories, entities, and EMIs for these transactions
         if (data.data.length > 0) {
           const transactionRefs = data.data.map(t => ({ type: 'credit_card' as const, id: t.id }))
           try {
-            const [storiesData, entitiesData] = await Promise.all([
+            const [storiesData, entitiesData, emisData] = await Promise.all([
               getTransactionStories(transactionRefs),
               getTransactionEntities(transactionRefs),
+              getTransactionEMIs(transactionRefs),
             ])
             setTransactionStories(storiesData.transaction_stories)
             setTransactionEntities(entitiesData.transaction_entities)
+            setTransactionEMIs(emisData.transaction_emis)
           } catch (error) {
-            logError("Failed to load transaction stories/entities", error)
+            logError("Failed to load transaction stories/entities/emis", error)
           }
         } else {
           setTransactionStories({})
           setTransactionEntities({})
+          setTransactionEMIs({})
         }
       } catch (error) {
         logError("Failed to load transactions", error)
@@ -1498,6 +1540,19 @@ export function CreditCardTransactionsPage() {
         setTransactionEntities(entitiesData.transaction_entities)
       } catch (error) {
         logError("Failed to refresh transaction entities", error)
+      }
+    }
+  }
+
+  const handleAddedToEMI = async () => {
+    setSelectedIds(new Set())
+    if (transactions.length > 0) {
+      const transactionRefs = transactions.map(t => ({ type: 'credit_card' as const, id: t.id }))
+      try {
+        const emisData = await getTransactionEMIs(transactionRefs)
+        setTransactionEMIs(emisData.transaction_emis)
+      } catch (error) {
+        logError("Failed to refresh transaction EMIs", error)
       }
     }
   }
@@ -2071,6 +2126,13 @@ export function CreditCardTransactionsPage() {
                         <UsersIcon className="h-4 w-4" />
                         Add to Entity
                       </button>
+                      <button
+                        onClick={() => setAddToEMIModalOpen(true)}
+                        className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 flex items-center gap-1.5"
+                      >
+                        <WalletIcon className="h-4 w-4" />
+                        Add to EMI
+                      </button>
                       <Popover.Root open={bulkCategoryOpen} onOpenChange={setBulkCategoryOpen}>
                         <Popover.Trigger asChild>
                           <button
@@ -2175,6 +2237,7 @@ export function CreditCardTransactionsPage() {
                           categories={categories}
                           stories={transactionStories[`credit_card:${t.id}`] || []}
                           entities={transactionEntities[`credit_card:${t.id}`] || []}
+                          emis={transactionEMIs[`credit_card:${t.id}`] || []}
                           onSelect={handleSelect}
                           onCategoryChange={handleCategoryChange}
                           onUnlink={handleUnlinkBankPayment}
@@ -2228,6 +2291,13 @@ export function CreditCardTransactionsPage() {
         onOpenChange={setAddToEntityModalOpen}
         selectedTransactions={Array.from(selectedIds).map(id => ({ type: 'credit_card' as const, id }))}
         onAdded={handleAddedToEntity}
+      />
+
+      <AddToEMIModal
+        open={addToEMIModalOpen}
+        onOpenChange={setAddToEMIModalOpen}
+        selectedTransactions={Array.from(selectedIds).map(id => ({ type: 'credit_card' as const, id }))}
+        onAdded={handleAddedToEMI}
       />
 
       <Footer />

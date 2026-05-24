@@ -2101,7 +2101,7 @@ def _cleanup_group_resolved_transactions(group):
     if not resolved_ids:
         return
 
-    from links.models import CategoryLink, StoryLink, EntityLink, SelfTransferLink, CreditCardPaymentLink
+    from links.models import CategoryLink, StoryLink, EntityLink, EMILink, SelfTransferLink, CreditCardPaymentLink
 
     for merged_rt in ResolvedTransaction.objects.filter(id__in=resolved_ids):
         with transaction.atomic():
@@ -2150,6 +2150,16 @@ def _cleanup_group_resolved_transactions(group):
 
             # Route EntityLink by origin_transaction_id (unique_together on resolved_transaction + entity)
             for link in EntityLink.objects.filter(resolved_transaction=merged_rt):
+                target_rt = txn_to_new_rt.get(link.origin_transaction_id, primary_new_rt)
+                link.resolved_transaction_id = target_rt
+                try:
+                    with transaction.atomic():
+                        link.save()
+                except IntegrityError:
+                    link.delete()
+
+            # Route EMILink by origin_transaction_id (unique_together on resolved_transaction + emi)
+            for link in EMILink.objects.filter(resolved_transaction=merged_rt):
                 target_rt = txn_to_new_rt.get(link.origin_transaction_id, primary_new_rt)
                 link.resolved_transaction_id = target_rt
                 try:
@@ -2809,7 +2819,7 @@ def resolution_session_execute(request, session_id):
             txn.save()
 
         try:
-            from links.models import CategoryLink, StoryLink, EntityLink, SelfTransferLink, CreditCardPaymentLink
+            from links.models import CategoryLink, StoryLink, EntityLink, EMILink, SelfTransferLink, CreditCardPaymentLink
             for old_rid in old_resolved_ids:
                 if old_rid == resolved.id:
                     continue
@@ -2826,6 +2836,12 @@ def resolution_session_execute(request, session_id):
                         el.save()
                     else:
                         el.delete()
+                for emi_link in EMILink.objects.filter(resolved_transaction_id=old_rid):
+                    if not EMILink.objects.filter(resolved_transaction_id=resolved.id, emi_id=emi_link.emi_id).exists():
+                        emi_link.resolved_transaction_id = resolved.id
+                        emi_link.save()
+                    else:
+                        emi_link.delete()
                 SelfTransferLink.objects.filter(resolved_transaction_a_id=old_rid).update(resolved_transaction_a_id=resolved.id)
                 SelfTransferLink.objects.filter(resolved_transaction_b_id=old_rid).update(resolved_transaction_b_id=resolved.id)
                 CreditCardPaymentLink.objects.filter(bank_resolved_transaction_id=old_rid).update(bank_resolved_transaction_id=resolved.id)

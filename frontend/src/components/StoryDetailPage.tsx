@@ -19,6 +19,7 @@ import {
   GitCompareIcon,
   BookOpenIcon,
   UsersIcon,
+  WalletIcon,
 } from "lucide-react"
 import * as Dialog from "@radix-ui/react-dialog"
 import * as Tooltip from "@radix-ui/react-tooltip"
@@ -26,6 +27,7 @@ import { Footer } from "@/components/Footer"
 import { MoveOrCopyToStoryModal } from "@/components/stories/MoveOrCopyToStoryModal"
 import { CreateStoryModal } from "@/components/stories/CreateStoryModal"
 import { UnifiedCompareModal } from "@/components/shared/UnifiedCompareModal"
+import { AddToEMIModal } from "@/components/emis/AddToEMIModal"
 import {
   fetchStory,
   updateStory,
@@ -120,6 +122,7 @@ export function StoryDetailPage() {
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false)
   const [isBulkDeleting, setIsBulkDeleting] = useState(false)
   const [compareModalOpen, setCompareModalOpen] = useState(false)
+  const [addToEMIModalOpen, setAddToEMIModalOpen] = useState(false)
 
   // Transaction stories and entities badges
   const [transactionStories, setTransactionStories] = useState<Record<string, StoryBadge[]>>({})
@@ -587,6 +590,13 @@ export function StoryDetailPage() {
               </span>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setAddToEMIModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  <WalletIcon className="h-4 w-4" />
+                  Add to EMI
+                </button>
+                <button
                   onClick={openMoveModal}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
                 >
@@ -888,6 +898,14 @@ export function StoryDetailPage() {
         open={compareModalOpen}
         onOpenChange={setCompareModalOpen}
         initialStoryId={storyId}
+      />
+
+      {/* Add to EMI Modal */}
+      <AddToEMIModal
+        open={addToEMIModalOpen}
+        onOpenChange={setAddToEMIModalOpen}
+        selectedTransactions={getSelectedTransactions()}
+        onAdded={() => setSelectedKeys(new Set())}
       />
 
       <Footer />
