@@ -11,6 +11,7 @@ import {
   ArrowDownIcon,
 } from "lucide-react"
 import { Footer } from "@/components/Footer"
+import { SortDropdown, sortItems } from "@/components/SortDropdown"
 import { CreateStoryModal } from "@/components/stories/CreateStoryModal"
 import { UnifiedCompareModal } from "@/components/shared/UnifiedCompareModal"
 import { fetchStories, type Story } from "@/lib/api"
@@ -82,6 +83,8 @@ export function StoriesPage() {
   const [loading, setLoading] = useState(true)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [compareModalOpen, setCompareModalOpen] = useState(false)
+  const [sortBy, setSortBy] = useState("created_at")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
 
   useEffect(() => {
     document.title = "Stories | FinAccs"
@@ -123,6 +126,16 @@ export function StoriesPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <SortDropdown
+              options={[
+                { value: "created_at", label: "Created at" },
+                { value: "updated_at", label: "Last updated" },
+                { value: "name", label: "Name" },
+              ]}
+              sortBy={sortBy}
+              sortDirection={sortDirection}
+              onSortChange={(by, dir) => { setSortBy(by); setSortDirection(dir) }}
+            />
             <button
               onClick={() => setCompareModalOpen(true)}
               className="px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-accent transition-colors flex items-center gap-2"
@@ -162,7 +175,7 @@ export function StoriesPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {stories.map((story) => (
+            {sortItems(stories, sortBy, sortDirection).map((story) => (
               <StoryCard key={story.id} story={story} />
             ))}
           </div>

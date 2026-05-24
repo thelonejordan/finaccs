@@ -16,6 +16,7 @@ import {
 import * as Dialog from "@radix-ui/react-dialog"
 import { logError } from "@/lib/logger"
 import { Footer } from "@/components/Footer"
+import { SortDropdown, sortItems } from "@/components/SortDropdown"
 import {
   fetchEMIs,
   fetchEMISuggestions,
@@ -322,6 +323,8 @@ export function EMIsPage() {
   const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [prefillData, setPrefillData] = useState<Partial<EMISuggestion> | null>(null)
+  const [sortBy, setSortBy] = useState("created_at")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
 
   useEffect(() => {
     document.title = "EMIs | FinAccs"
@@ -366,8 +369,18 @@ export function EMIsPage() {
     )
   }
 
-  const activeEmis = emis.filter(e => e.status === 'active')
-  const completedEmis = emis.filter(e => e.status !== 'active')
+  const emiSortOptions = [
+    { value: "created_at", label: "Created at" },
+    { value: "updated_at", label: "Last updated" },
+    { value: "name", label: "Name" },
+    { value: "original_amount", label: "EMI amount" },
+    { value: "creation_date", label: "Start date" },
+    { value: "finish_date", label: "End date" },
+  ]
+
+  const sortedEmis = sortItems(emis, sortBy, sortDirection)
+  const activeEmis = sortedEmis.filter(e => e.status === 'active')
+  const completedEmis = sortedEmis.filter(e => e.status !== 'active')
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -378,13 +391,21 @@ export function EMIsPage() {
             <WalletIcon className="h-6 w-6" />
             Credit Card EMIs
           </h1>
-          <button
-            onClick={handleCreateManual}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-primary-foreground text-sm hover:bg-primary/90"
-          >
-            <PlusIcon className="h-4 w-4" />
-            Create EMI
-          </button>
+          <div className="flex items-center gap-2">
+            <SortDropdown
+              options={emiSortOptions}
+              sortBy={sortBy}
+              sortDirection={sortDirection}
+              onSortChange={(by, dir) => { setSortBy(by); setSortDirection(dir) }}
+            />
+            <button
+              onClick={handleCreateManual}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-primary-foreground text-sm hover:bg-primary/90"
+            >
+              <PlusIcon className="h-4 w-4" />
+              Create EMI
+            </button>
+          </div>
         </div>
 
         {/* Suggestions */}
