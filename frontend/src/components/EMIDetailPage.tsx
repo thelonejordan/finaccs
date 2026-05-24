@@ -317,6 +317,11 @@ export function EMIDetailPage() {
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState("")
   const [editDescription, setEditDescription] = useState("")
+  const [editMonthlyInstallment, setEditMonthlyInstallment] = useState("")
+  const [editOriginalAmount, setEditOriginalAmount] = useState("")
+  const [editNumInstallments, setEditNumInstallments] = useState("")
+  const [editCreationDate, setEditCreationDate] = useState("")
+  const [editFinishDate, setEditFinishDate] = useState("")
 
   const [selectedTxns, setSelectedTxns] = useState<Set<number>>(new Set())
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -338,6 +343,11 @@ export function EMIDetailPage() {
       setEmi(data)
       setEditName(data.name)
       setEditDescription(data.description)
+      setEditMonthlyInstallment(data.monthly_installment?.toString() || "")
+      setEditOriginalAmount(data.original_amount?.toString() || "")
+      setEditNumInstallments(data.num_installments?.toString() || "")
+      setEditCreationDate(data.creation_date || "")
+      setEditFinishDate(data.finish_date || "")
     } catch (err) {
       setError("Failed to load EMI")
     } finally {
@@ -355,7 +365,15 @@ export function EMIDetailPage() {
 
   const handleSaveEdit = async () => {
     if (!emi || !emiId) return
-    await updateEMI(emiId, { name: editName, description: editDescription })
+    await updateEMI(emiId, {
+      name: editName,
+      description: editDescription,
+      monthly_installment: editMonthlyInstallment ? parseFloat(editMonthlyInstallment) : null,
+      original_amount: editOriginalAmount ? parseFloat(editOriginalAmount) : null,
+      num_installments: editNumInstallments ? parseInt(editNumInstallments) : null,
+      creation_date: editCreationDate || null,
+      finish_date: editFinishDate || null,
+    })
     setEditing(false)
     loadEMI()
   }
@@ -491,39 +509,107 @@ export function EMIDetailPage() {
         {/* Header */}
         <div className="flex items-start justify-between mb-6">
           <div className="flex-1">
-            {editing ? (
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={e => setEditName(e.target.value)}
-                  className="text-xl font-bold bg-background border border-border rounded px-2 py-1 w-full"
-                  autoFocus
-                />
-                <textarea
-                  value={editDescription}
-                  onChange={e => setEditDescription(e.target.value)}
-                  className="text-sm bg-background border border-border rounded px-2 py-1 w-full"
-                  rows={2}
-                  placeholder="Description (optional)"
-                />
-                <div className="flex gap-2">
-                  <button onClick={handleSaveEdit} className="p-1 rounded hover:bg-muted">
-                    <CheckIcon className="h-4 w-4 text-green-600" />
-                  </button>
-                  <button onClick={() => setEditing(false)} className="p-1 rounded hover:bg-muted">
-                    <XIcon className="h-4 w-4 text-red-600" />
-                  </button>
-                </div>
+            {editing && (
+              <Dialog.Root open={editing} onOpenChange={setEditing}>
+                <Dialog.Portal>
+                  <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+                  <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-card border border-border rounded-lg shadow-lg p-6 w-[480px] max-h-[85vh] overflow-y-auto z-50">
+                    <Dialog.Title className="text-lg font-semibold mb-4">Edit EMI</Dialog.Title>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Name *</label>
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={e => setEditName(e.target.value)}
+                          className="w-full mt-1 px-3 py-1.5 rounded border border-border bg-background text-sm"
+                          autoFocus
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Description</label>
+                        <textarea
+                          value={editDescription}
+                          onChange={e => setEditDescription(e.target.value)}
+                          className="w-full mt-1 px-3 py-1.5 rounded border border-border bg-background text-sm"
+                          rows={2}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Original Amount</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editOriginalAmount}
+                            onChange={e => setEditOriginalAmount(e.target.value)}
+                            className="w-full mt-1 px-3 py-1.5 rounded border border-border bg-background text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Monthly Installment</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editMonthlyInstallment}
+                            onChange={e => setEditMonthlyInstallment(e.target.value)}
+                            className="w-full mt-1 px-3 py-1.5 rounded border border-border bg-background text-sm"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Number of Installments</label>
+                        <input
+                          type="number"
+                          value={editNumInstallments}
+                          onChange={e => setEditNumInstallments(e.target.value)}
+                          className="w-full mt-1 px-3 py-1.5 rounded border border-border bg-background text-sm"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Start Date</label>
+                          <input
+                            type="date"
+                            value={editCreationDate}
+                            onChange={e => setEditCreationDate(e.target.value)}
+                            className="w-full mt-1 px-3 py-1.5 rounded border border-border bg-background text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">End Date</label>
+                          <input
+                            type="date"
+                            value={editFinishDate}
+                            onChange={e => setEditFinishDate(e.target.value)}
+                            className="w-full mt-1 px-3 py-1.5 rounded border border-border bg-background text-sm"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 mt-6">
+                      <button onClick={() => setEditing(false)} className="px-3 py-1.5 rounded border border-border text-sm hover:bg-muted">
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveEdit}
+                        disabled={!editName.trim()}
+                        className="px-3 py-1.5 rounded bg-primary text-primary-foreground text-sm hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </Dialog.Content>
+                </Dialog.Portal>
+              </Dialog.Root>
+            )}
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold">{emi.name}</h1>
+                <button onClick={() => setEditing(true)} className="p-1 rounded hover:bg-muted">
+                  <PencilIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
               </div>
-            ) : (
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-bold">{emi.name}</h1>
-                  <button onClick={() => setEditing(true)} className="p-1 rounded hover:bg-muted">
-                    <PencilIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                  </button>
-                </div>
                 {emi.description && (
                   <p className="text-sm text-muted-foreground mt-1">{emi.description}</p>
                 )}
@@ -534,7 +620,6 @@ export function EMIDetailPage() {
                   </p>
                 )}
               </div>
-            )}
           </div>
           <div className="flex items-center gap-2">
             <select

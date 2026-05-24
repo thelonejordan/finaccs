@@ -246,6 +246,12 @@ def emi_transactions(request, emi_id):
             if not txn.resolved_transaction_id:
                 ensure_resolved_transaction(txn, 'credit_card')
 
+            existing_link = EMILink.objects.filter(
+                resolved_transaction_id=txn.resolved_transaction_id,
+            ).exclude(emi=emi).first()
+            if existing_link:
+                continue
+
             _, created = EMILink.objects.get_or_create(
                 resolved_transaction_id=txn.resolved_transaction_id,
                 emi=emi,

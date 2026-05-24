@@ -133,6 +133,7 @@ function CreateEMIModal({
   prefill?: Partial<EMISuggestion> | null
 }) {
   const [name, setName] = useState("")
+  const [description, setDescription] = useState("")
   const [creditCardId, setCreditCardId] = useState<number | null>(null)
   const [originalAmount, setOriginalAmount] = useState("")
   const [numInstallments, setNumInstallments] = useState("")
@@ -159,6 +160,7 @@ function CreateEMIModal({
       }
     } else if (!open) {
       setName("")
+      setDescription("")
       setCreditCardId(null)
       setOriginalAmount("")
       setNumInstallments("")
@@ -175,6 +177,7 @@ function CreateEMIModal({
     try {
       await createEMI({
         name: name.trim(),
+        description: description.trim(),
         credit_card_id: creditCardId,
         original_amount: originalAmount ? parseFloat(originalAmount) : null,
         num_installments: numInstallments ? parseInt(numInstallments) : null,
@@ -208,6 +211,17 @@ function CreateEMIModal({
                 onChange={e => setName(e.target.value)}
                 className="w-full mt-1 px-3 py-1.5 rounded border border-border bg-background text-sm"
                 placeholder="e.g., CROMA MacBook Pro"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Description</label>
+              <textarea
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                className="w-full mt-1 px-3 py-1.5 rounded border border-border bg-background text-sm"
+                rows={2}
+                placeholder="Optional notes"
               />
             </div>
 
