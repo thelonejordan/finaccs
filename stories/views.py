@@ -101,6 +101,8 @@ def _build_category_map(resolved_transaction_ids):
 
 def get_story_transactions(story):
     """Get all transactions for a story with full details."""
+    from links.utils import get_refund_links_for_rt_ids
+
     rt_ids = list(StoryLink.objects.filter(story=story).values_list('resolved_transaction_id', flat=True))
     resolved_txns = ResolvedTransaction.objects.filter(id__in=rt_ids)
     transactions = []
@@ -108,6 +110,7 @@ def get_story_transactions(story):
     bank_rt_ids = list(resolved_txns.filter(transaction_type='bank').values_list('id', flat=True))
     cc_rt_ids = list(resolved_txns.filter(transaction_type='credit_card').values_list('id', flat=True))
     category_map = _build_category_map(rt_ids)
+    refund_map = get_refund_links_for_rt_ids(rt_ids)
 
     # Get bank transactions
     if bank_rt_ids:
@@ -124,6 +127,7 @@ def get_story_transactions(story):
                 'amount': float(txn.debit_amount) - float(txn.credit_amount),
                 'category': category,
                 'source': txn.bank_account.nickname if txn.bank_account else 'Unknown',
+                'refund_link': refund_map.get(txn.resolved_transaction_id),
             })
 
     # Get CC transactions
@@ -141,6 +145,7 @@ def get_story_transactions(story):
                 'amount': float(txn.amount),
                 'category': category,
                 'source': txn.credit_card.nickname if txn.credit_card else 'Unknown',
+                'refund_link': refund_map.get(txn.resolved_transaction_id),
             })
 
     # Sort by date descending
