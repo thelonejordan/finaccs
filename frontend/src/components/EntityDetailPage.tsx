@@ -19,13 +19,11 @@ import {
   UserIcon,
   BuildingIcon,
   GitCompareIcon,
-  BookOpenIcon,
-  UsersIcon,
-  WalletIcon,
 } from "lucide-react"
 import * as Dialog from "@radix-ui/react-dialog"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import { Footer } from "@/components/Footer"
+import { RefundLinkBadge, StoriesBadges, EntitiesBadges, EMIsBadges } from "@/components/shared/TransactionLinkBadges"
 import { MoveOrCopyToEntityModal } from "@/components/entities/MoveOrCopyToEntityModal"
 import { CreateEntityModal } from "@/components/entities/CreateEntityModal"
 import { UnifiedCompareModal } from "@/components/shared/UnifiedCompareModal"
@@ -746,103 +744,12 @@ export function EntityDetailPage() {
                         </td>
                         <td className="px-3 py-3 text-center">
                           <div className="flex items-center justify-center gap-1">
-                            {/* Stories */}
-                            {transactionStories[`${txn.type}:${txn.id}`]?.length > 0 && (
-                              <Tooltip.Root>
-                                <Tooltip.Trigger asChild>
-                                  <button className="p-1 rounded hover:bg-muted transition-colors">
-                                    <BookOpenIcon className="h-4 w-4 text-blue-500" />
-                                  </button>
-                                </Tooltip.Trigger>
-                                <Tooltip.Portal>
-                                  <Tooltip.Content
-                                    className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-sm max-w-xs z-50"
-                                    sideOffset={4}
-                                  >
-                                    <p className="font-medium mb-1">Stories</p>
-                                    <div className="space-y-1">
-                                      {transactionStories[`${txn.type}:${txn.id}`].map(s => (
-                                        <Link
-                                          key={s.story_id}
-                                          to={`/stories/${s.story_id}`}
-                                          className="flex items-center gap-1.5 hover:text-primary"
-                                        >
-                                          <span>{s.icon}</span>
-                                          <span className="text-muted-foreground hover:text-primary">{s.name}</span>
-                                        </Link>
-                                      ))}
-                                    </div>
-                                    <Tooltip.Arrow className="fill-card" />
-                                  </Tooltip.Content>
-                                </Tooltip.Portal>
-                              </Tooltip.Root>
-                            )}
-                            {/* Other Entities (excluding current entity) */}
-                            {transactionEntities[`${txn.type}:${txn.id}`]?.filter(e => e.entity_id !== entityId).length > 0 && (
-                              <Tooltip.Root>
-                                <Tooltip.Trigger asChild>
-                                  <button className="p-1 rounded hover:bg-muted transition-colors">
-                                    <UsersIcon className="h-4 w-4 text-purple-500" />
-                                  </button>
-                                </Tooltip.Trigger>
-                                <Tooltip.Portal>
-                                  <Tooltip.Content
-                                    className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-sm max-w-xs z-50"
-                                    sideOffset={4}
-                                  >
-                                    <p className="font-medium mb-1">Also in Entities</p>
-                                    <div className="space-y-1">
-                                      {transactionEntities[`${txn.type}:${txn.id}`]
-                                        .filter(e => e.entity_id !== entityId)
-                                        .map(e => (
-                                          <Link
-                                            key={e.entity_id}
-                                            to={`/entities/${e.entity_id}`}
-                                            className="flex items-center gap-1.5 hover:text-primary"
-                                          >
-                                            <span>{e.icon}</span>
-                                            <span className="text-muted-foreground hover:text-primary">{e.name}</span>
-                                          </Link>
-                                        ))}
-                                    </div>
-                                    <Tooltip.Arrow className="fill-card" />
-                                  </Tooltip.Content>
-                                </Tooltip.Portal>
-                              </Tooltip.Root>
-                            )}
-                            {/* EMIs */}
-                            {transactionEMIs[`${txn.type}:${txn.id}`]?.length > 0 && (
-                              <Tooltip.Root>
-                                <Tooltip.Trigger asChild>
-                                  <button className="p-1 rounded hover:bg-muted transition-colors">
-                                    <WalletIcon className="h-4 w-4 text-amber-500" />
-                                  </button>
-                                </Tooltip.Trigger>
-                                <Tooltip.Portal>
-                                  <Tooltip.Content
-                                    className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-sm max-w-xs z-50"
-                                    sideOffset={4}
-                                  >
-                                    <p className="font-medium mb-1">EMIs</p>
-                                    <div className="space-y-1">
-                                      {transactionEMIs[`${txn.type}:${txn.id}`].map(e => (
-                                        <Link
-                                          key={e.emi_id}
-                                          to={`/emis/${e.emi_id}`}
-                                          className="flex items-center gap-1.5 hover:text-primary"
-                                        >
-                                          <WalletIcon className="h-3 w-3" />
-                                          <span className="text-muted-foreground hover:text-primary">{e.name}</span>
-                                        </Link>
-                                      ))}
-                                    </div>
-                                    <Tooltip.Arrow className="fill-card" />
-                                  </Tooltip.Content>
-                                </Tooltip.Portal>
-                              </Tooltip.Root>
-                            )}
-                            {/* Show dash if no stories, other entities, or EMIs */}
-                            {!transactionStories[`${txn.type}:${txn.id}`]?.length &&
+                            {txn.refund_link && <RefundLinkBadge refundLink={txn.refund_link} transaction={txn} onUnlinked={loadEntity} />}
+                            <StoriesBadges stories={transactionStories[`${txn.type}:${txn.id}`] || []} />
+                            <EntitiesBadges entities={transactionEntities[`${txn.type}:${txn.id}`] || []} excludeEntityId={entityId} />
+                            <EMIsBadges emis={transactionEMIs[`${txn.type}:${txn.id}`] || []} />
+                            {!txn.refund_link &&
+                             !transactionStories[`${txn.type}:${txn.id}`]?.length &&
                              !transactionEntities[`${txn.type}:${txn.id}`]?.filter(e => e.entity_id !== entityId).length &&
                              !transactionEMIs[`${txn.type}:${txn.id}`]?.length && (
                               <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
