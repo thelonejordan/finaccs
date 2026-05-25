@@ -16,16 +16,22 @@ import {
   ChevronRightIcon,
 } from "lucide-react"
 import * as Dialog from "@radix-ui/react-dialog"
+import * as Tooltip from "@radix-ui/react-tooltip"
 import { Footer } from "@/components/Footer"
+import { RefundLinkBadge, StoriesBadges, EntitiesBadges } from "@/components/shared/TransactionLinkBadges"
 import {
   fetchEMI,
   updateEMI,
   deleteEMI,
   removeTransactionsFromEMI,
   updateEMILink,
+  getTransactionStories,
+  getTransactionEntities,
   type EMIDetail,
   type EMITransaction,
   type EMIComponentType,
+  type StoryBadge,
+  type EntityBadge,
 } from "@/lib/api"
 
 const COMPONENT_COLORS: Record<EMIComponentType, string> = {
@@ -336,6 +342,10 @@ export function EMIDetailPage() {
   // Validations panel
   const [validationsOpen, setValidationsOpen] = useState(false)
 
+  // Transaction link badges
+  const [transactionStories, setTransactionStories] = useState<Record<string, StoryBadge[]>>({})
+  const [transactionEntities, setTransactionEntities] = useState<Record<string, EntityBadge[]>>({})
+
   const loadEMI = async () => {
     if (!emiId) return
     try {
@@ -348,6 +358,23 @@ export function EMIDetailPage() {
       setEditNumInstallments(data.num_installments?.toString() || "")
       setEditCreationDate(data.creation_date || "")
       setEditFinishDate(data.finish_date || "")
+
+      if (data.transactions.length > 0) {
+        const refs = data.transactions.map(t => ({ type: t.type as 'credit_card', id: t.id }))
+        try {
+          const [storiesData, entitiesData] = await Promise.all([
+            getTransactionStories(refs),
+            getTransactionEntities(refs),
+          ])
+          setTransactionStories(storiesData.transaction_stories)
+          setTransactionEntities(entitiesData.transaction_entities)
+        } catch (error) {
+          console.error("Failed to load transaction stories/entities", error)
+        }
+      } else {
+        setTransactionStories({})
+        setTransactionEntities({})
+      }
     } catch (err) {
       setError("Failed to load EMI")
     } finally {
@@ -495,6 +522,7 @@ export function EMIDetailPage() {
   }
 
   return (
+    <Tooltip.Provider>
     <div className="flex flex-col min-h-screen">
       <div className="flex-1 p-6 max-w-5xl mx-auto w-full">
         {/* Back button */}
@@ -795,6 +823,11 @@ export function EMIDetailPage() {
                           onClick={() => startEditLink(txn)}
                         />
                         <span className="flex-1 truncate">{txn.description}</span>
+                        <span className="flex items-center gap-0.5 flex-shrink-0">
+                          {txn.refund_link && <RefundLinkBadge refundLink={txn.refund_link} transaction={{ ...txn, type: 'credit_card' as const }} onUnlinked={loadEMI} />}
+                          <StoriesBadges stories={transactionStories[`credit_card:${txn.id}`] || []} />
+                          <EntitiesBadges entities={transactionEntities[`credit_card:${txn.id}`] || []} />
+                        </span>
                         <span className="text-[10px] text-muted-foreground flex-shrink-0 w-20 text-right flex items-center justify-end gap-0.5">
                           <CreditCardIcon className="h-3 w-3" />
                           {txn.source}
@@ -893,5 +926,6 @@ export function EMIDetailPage() {
         </Dialog.Portal>
       </Dialog.Root>
     </div>
+    </Tooltip.Provider>
   )
 }

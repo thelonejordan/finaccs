@@ -1464,6 +1464,7 @@ export interface StoryTransaction {
   amount: number
   category: string
   source: string
+  refund_link: RefundLinkInfo | null
 }
 
 export interface StoryDetail extends Story {
@@ -1644,6 +1645,7 @@ export interface EntityTransaction {
   amount: number
   category: string
   source: string
+  refund_link: RefundLinkInfo | null
 }
 
 export interface EntityDetail extends Entity {
@@ -2102,6 +2104,7 @@ export interface EMITransaction {
   installment_number: number | null
   tax_parent_link_id: number | null
   tax_rate: number | null
+  refund_link: RefundLinkInfo | null
 }
 
 export interface EMIDetail extends EMI {

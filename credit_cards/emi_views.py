@@ -96,6 +96,8 @@ def serialize_emi(emi, include_stats=True):
 
 def get_emi_transactions(emi):
     """Get all transactions linked to an EMI with component info."""
+    from links.utils import get_refund_links_for_rt_ids
+
     links = EMILink.objects.filter(emi=emi).select_related('resolved_transaction')
     rt_ids = list(links.values_list('resolved_transaction_id', flat=True))
 
@@ -114,6 +116,8 @@ def get_emi_transactions(emi):
         resolved_transaction_id__in=rt_ids, is_primary=True
     ).select_related('credit_card')
 
+    refund_map = get_refund_links_for_rt_ids(rt_ids)
+
     transactions = []
     for txn in cc_txns:
         link_info = link_map.get(txn.resolved_transaction_id, {})
@@ -129,6 +133,7 @@ def get_emi_transactions(emi):
             'installment_number': link_info.get('installment_number'),
             'tax_parent_link_id': link_info.get('tax_parent_link_id'),
             'tax_rate': link_info.get('tax_rate'),
+            'refund_link': refund_map.get(txn.resolved_transaction_id),
         })
 
     transactions.sort(key=lambda x: x['date'])
