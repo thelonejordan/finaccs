@@ -43,7 +43,14 @@ date,narration,debit_amount,credit_amount,closing_balance
 - Amounts use plain decimals (no commas): `25000.00` not `25,000.00`
 - Exactly one of `debit_amount` or `credit_amount` should be non-zero per row
 - Rows where both debit and credit are zero are skipped
-- Dates also accept `DD/MM/YYYY`, `DD-MM-YYYY`, `DD-MMM-YYYY` but `YYYY-MM-DD` is preferred
+- Supported date formats (in order of precedence):
+  - `YYYY-MM-DD` — preferred (e.g., `2024-01-15`)
+  - `DD/MM/YYYY` (e.g., `15/01/2024`)
+  - `DD/MM/YY` (e.g., `15/01/24`)
+  - `DD-MM-YYYY` (e.g., `15-01-2024`)
+  - `DD-MM-YY` (e.g., `15-01-24`)
+  - `DD-MMM-YYYY` (e.g., `15-Jan-2024`)
+  - `DD-MMM-YY` (e.g., `15-Jan-24`)
 
 ---
 
