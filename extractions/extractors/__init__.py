@@ -137,6 +137,8 @@ def detect_extractor(filename: str, domain: str) -> Optional[str]:
     if domain == 'bank_account':
         if 'sbi' in filename_lower and ext == '.pdf':
             return 'sbi_pdf' if 'sbi_pdf' in candidates else None
+        if ('niyo' in filename_lower or 'dcb' in filename_lower) and ext == '.pdf':
+            return 'niyo_dcb_pdf' if 'niyo_dcb_pdf' in candidates else None
         if 'icici' in filename_lower and ext == '.xlsx':
             return 'icici_xlsx' if 'icici_xlsx' in candidates else None
         if 'hdfc' in filename_lower and ext in ['.txt', '.csv']:
@@ -244,3 +246,4 @@ from . import icici_xlsx
 from . import hdfc_txt
 from . import sbi_cc_csv
 from . import slice_cc_pdf
+from . import niyo_dcb_pdf
