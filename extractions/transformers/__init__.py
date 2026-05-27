@@ -151,3 +151,4 @@ from . import icici_cc_transactions
 from . import bank_transactions
 from . import legacy_cc_transactions
 from . import slice_cc_transactions
+from . import cc_transactions
