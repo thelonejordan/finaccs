@@ -102,6 +102,7 @@ def _build_category_map(resolved_transaction_ids):
 def get_story_transactions(story):
     """Get all transactions for a story with full details."""
     from links.utils import get_refund_links_for_rt_ids
+    from links.models import CreditCardPaymentLink
 
     rt_ids = list(StoryLink.objects.filter(story=story).values_list('resolved_transaction_id', flat=True))
     resolved_txns = ResolvedTransaction.objects.filter(id__in=rt_ids)
@@ -111,6 +112,69 @@ def get_story_transactions(story):
     cc_rt_ids = list(resolved_txns.filter(transaction_type='credit_card').values_list('id', flat=True))
     category_map = _build_category_map(rt_ids)
     refund_map = get_refund_links_for_rt_ids(rt_ids)
+
+    # Build CC payment link maps
+    cc_payment_links = CreditCardPaymentLink.objects.filter(
+        is_active=True
+    ).select_related(
+        'bank_resolved_transaction', 'cc_resolved_transaction'
+    )
+
+    # bank_rt_id -> link info (for bank transactions showing their CC payment link)
+    bank_rt_cc_link_map = {}
+    for link in cc_payment_links.filter(bank_resolved_transaction_id__in=bank_rt_ids):
+        if link.bank_resolved_transaction_id not in bank_rt_cc_link_map:
+            cc_rt = link.cc_resolved_transaction
+            if cc_rt and cc_rt.primary_transaction_id:
+                from credit_cards.models import CreditCardTransaction
+                cc_txn = CreditCardTransaction.objects.filter(
+                    id=cc_rt.primary_transaction_id
+                ).select_related('credit_card').first()
+                if cc_txn:
+                    bank_rt_cc_link_map[link.bank_resolved_transaction_id] = {
+                        'id': link.id,
+                        'credit_card_transaction': {
+                            'id': cc_txn.id,
+                            'date': cc_txn.date.isoformat(),
+                            'description': cc_txn.description,
+                            'amount': float(cc_txn.amount),
+                            'credit_card': {
+                                'id': cc_txn.credit_card.id,
+                                'nickname': cc_txn.credit_card.nickname,
+                            } if cc_txn.credit_card else None,
+                        },
+                        'offset': float(link.offset),
+                        'confidence_score': link.confidence_score,
+                        'match_reasons': link.match_reasons,
+                    }
+
+    # cc_rt_id -> link info (for CC transactions showing their bank payment link)
+    cc_rt_bank_link_map = {}
+    for link in cc_payment_links.filter(cc_resolved_transaction_id__in=cc_rt_ids):
+        if link.cc_resolved_transaction_id not in cc_rt_bank_link_map:
+            bank_rt = link.bank_resolved_transaction
+            if bank_rt and bank_rt.primary_transaction_id:
+                from bank_accounts.models import BankTransaction
+                bank_txn = BankTransaction.objects.filter(
+                    id=bank_rt.primary_transaction_id
+                ).select_related('bank_account').first()
+                if bank_txn:
+                    cc_rt_bank_link_map[link.cc_resolved_transaction_id] = {
+                        'id': link.id,
+                        'bank_transaction': {
+                            'id': bank_txn.id,
+                            'date': bank_txn.date.isoformat(),
+                            'narration': bank_txn.narration,
+                            'amount': float(bank_txn.debit_amount),
+                            'bank_account': {
+                                'id': bank_txn.bank_account.id,
+                                'nickname': bank_txn.bank_account.nickname,
+                            } if bank_txn.bank_account else None,
+                        },
+                        'offset': float(link.offset),
+                        'confidence_score': link.confidence_score,
+                        'match_reasons': link.match_reasons,
+                    }
 
     # Get bank transactions
     if bank_rt_ids:
@@ -128,6 +192,8 @@ def get_story_transactions(story):
                 'category': category,
                 'source': txn.bank_account.nickname if txn.bank_account else 'Unknown',
                 'refund_link': refund_map.get(txn.resolved_transaction_id),
+                'cc_payment_match': bank_rt_cc_link_map.get(txn.resolved_transaction_id),
+                'bank_payment_match': None,
             })
 
     # Get CC transactions
@@ -146,6 +212,8 @@ def get_story_transactions(story):
                 'category': category,
                 'source': txn.credit_card.nickname if txn.credit_card else 'Unknown',
                 'refund_link': refund_map.get(txn.resolved_transaction_id),
+                'cc_payment_match': None,
+                'bank_payment_match': cc_rt_bank_link_map.get(txn.resolved_transaction_id),
             })
 
     # Sort by date descending

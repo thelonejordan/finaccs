@@ -9,10 +9,11 @@ import {
   LandmarkIcon,
   ArrowUpIcon,
   ArrowDownIcon,
+  XIcon,
 } from "lucide-react"
 import * as Dialog from "@radix-ui/react-dialog"
 import * as Tooltip from "@radix-ui/react-tooltip"
-import { deleteRefundLink, type RefundLinkInfo, type StoryBadge, type EntityBadge, type EMIBadge } from "@/lib/api"
+import { deleteRefundLink, deleteCCPaymentMatch, type RefundLinkInfo, type StoryBadge, type EntityBadge, type EMIBadge, type CCPaymentMatchInfo, type BankPaymentMatchInfo } from "@/lib/api"
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-IN", {
@@ -263,5 +264,180 @@ export function EMIsBadges({ emis, excludeEmiId }: { emis: EMIBadge[]; excludeEm
         </Tooltip.Content>
       </Tooltip.Portal>
     </Tooltip.Root>
+  )
+}
+
+export function PaymentLinkBadge({ ccMatch, bankMatch, transaction, onUnlinked }: {
+  ccMatch?: CCPaymentMatchInfo | null
+  bankMatch?: BankPaymentMatchInfo | null
+  transaction: CurrentTransactionInfo
+  onUnlinked?: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [unlinking, setUnlinking] = useState(false)
+
+  if (!ccMatch && !bankMatch) return null
+
+  const matchId = ccMatch?.id || bankMatch?.id
+
+  const handleUnlink = async () => {
+    if (!matchId) return
+    setUnlinking(true)
+    try {
+      await deleteCCPaymentMatch(matchId)
+      setOpen(false)
+      onUnlinked?.()
+    } finally {
+      setUnlinking(false)
+    }
+  }
+
+  const tooltipLabel = ccMatch
+    ? `Linked to ${ccMatch.credit_card_transaction.credit_card?.nickname || "CC"} on ${formatDate(ccMatch.credit_card_transaction.date)}`
+    : `Linked to ${bankMatch!.bank_transaction.bank_account?.nickname || "Bank"} on ${formatDate(bankMatch!.bank_transaction.date)}`
+
+  const currentIcon = transaction.type === 'credit_card'
+    ? <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
+    : <LandmarkIcon className="h-4 w-4 text-muted-foreground" />
+
+  return (
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Tooltip.Provider>
+        <Tooltip.Root>
+          <Tooltip.Trigger asChild>
+            <Dialog.Trigger asChild>
+              <button className="p-1 rounded transition-colors text-green-600 dark:text-green-400 hover:bg-green-500/10">
+                <Link2Icon className="h-4 w-4" />
+              </button>
+            </Dialog.Trigger>
+          </Tooltip.Trigger>
+          <Tooltip.Portal>
+            <Tooltip.Content
+              className="bg-card text-card-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm"
+              sideOffset={4}
+            >
+              {tooltipLabel}
+              <Tooltip.Arrow className="fill-card" />
+            </Tooltip.Content>
+          </Tooltip.Portal>
+        </Tooltip.Root>
+      </Tooltip.Provider>
+
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card rounded-xl border border-border shadow-xl w-full max-w-xl max-h-[85vh] overflow-hidden z-50">
+          <div className="p-6 border-b border-border">
+            <Dialog.Title className="text-lg font-semibold">
+              {ccMatch ? "Linked Credit Card Payment" : "Linked Bank Payment"}
+            </Dialog.Title>
+            <Dialog.Description className="text-sm text-muted-foreground mt-1">
+              {ccMatch
+                ? "This bank payment is linked to a credit card payment."
+                : "This credit card payment is linked to a bank transaction."}
+            </Dialog.Description>
+          </div>
+
+          <div className="p-6 space-y-4">
+            {/* Current transaction */}
+            <div className="p-3 rounded-lg bg-muted/50 border border-border">
+              <p className="text-sm text-muted-foreground mb-1">
+                {transaction.type === 'bank' ? 'Bank Transaction' : 'Credit Card Payment'}
+              </p>
+              <div className="flex items-center gap-2 mb-1">
+                {currentIcon}
+                <span className="font-medium">{transaction.source}</span>
+              </div>
+              <p className="font-medium">{formatDate(transaction.date)}</p>
+              <p className="text-sm text-muted-foreground line-clamp-1">{transaction.description}</p>
+              <p className="text-sm mt-1">
+                {transaction.amount < 0 ? (
+                  <span className="text-green-600 dark:text-green-400 inline-flex items-center gap-0.5">
+                    <FormattedCurrency amount={Math.abs(transaction.amount)} />
+                    <ArrowUpIcon className="h-3 w-3" />
+                  </span>
+                ) : (
+                  <span className="text-red-600 dark:text-red-400 inline-flex items-center gap-0.5">
+                    <FormattedCurrency amount={transaction.amount} />
+                    <ArrowDownIcon className="h-3 w-3" />
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {/* Linked transaction */}
+            {ccMatch && (
+              <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                <p className="text-sm text-muted-foreground mb-1">Linked Credit Card Payment</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">
+                    {ccMatch.credit_card_transaction.credit_card?.nickname || "Unknown Card"}
+                  </span>
+                </div>
+                <p className="font-medium">{formatDate(ccMatch.credit_card_transaction.date)}</p>
+                <p className="text-sm text-muted-foreground line-clamp-3 mb-1">
+                  {ccMatch.credit_card_transaction.description}
+                </p>
+                <p className="text-sm flex items-center gap-1">
+                  <span className="text-green-600 dark:text-green-400 inline-flex items-center gap-0.5">
+                    <FormattedCurrency amount={Math.abs(ccMatch.credit_card_transaction.amount)} />
+                    <ArrowUpIcon className="h-3 w-3" />
+                  </span>
+                </p>
+                {ccMatch.offset !== 0 && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Offset: {ccMatch.offset > 0 ? "+" : ""}{formatCurrency(ccMatch.offset)}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {bankMatch && (
+              <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                <p className="text-sm text-muted-foreground mb-1">Linked Bank Transaction</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <LandmarkIcon className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">
+                    {bankMatch.bank_transaction.bank_account?.nickname || "Unknown Account"}
+                  </span>
+                </div>
+                <p className="font-medium">{formatDate(bankMatch.bank_transaction.date)}</p>
+                <p className="text-sm text-muted-foreground line-clamp-3 mb-1">
+                  {bankMatch.bank_transaction.narration}
+                </p>
+                <p className="text-sm flex items-center gap-1">
+                  <span className="text-red-600 dark:text-red-400 inline-flex items-center gap-0.5">
+                    <FormattedCurrency amount={bankMatch.bank_transaction.amount} />
+                    <ArrowDownIcon className="h-3 w-3" />
+                  </span>
+                </p>
+                {bankMatch.offset !== 0 && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Offset: {bankMatch.offset > 0 ? "+" : ""}{formatCurrency(bankMatch.offset)}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={handleUnlink}
+              disabled={unlinking}
+              className="w-full py-2 px-4 rounded-lg border border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors disabled:opacity-50"
+            >
+              {unlinking ? "Unlinking..." : ccMatch ? "Unlink CC Payment" : "Unlink Bank Payment"}
+            </button>
+          </div>
+
+          <Dialog.Close asChild>
+            <button
+              className="absolute top-4 right-4 p-2 rounded-lg hover:bg-muted transition-colors"
+              aria-label="Close"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+          </Dialog.Close>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }

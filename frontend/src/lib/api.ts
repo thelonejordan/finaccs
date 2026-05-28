@@ -1465,6 +1465,8 @@ export interface StoryTransaction {
   category: string
   source: string
   refund_link: RefundLinkInfo | null
+  bank_payment_match: BankPaymentMatchInfo | null
+  cc_payment_match: CCPaymentMatchInfo | null
 }
 
 export interface StoryDetail extends Story {
@@ -1646,6 +1648,8 @@ export interface EntityTransaction {
   category: string
   source: string
   refund_link: RefundLinkInfo | null
+  bank_payment_match: BankPaymentMatchInfo | null
+  cc_payment_match: CCPaymentMatchInfo | null
 }
 
 export interface EntityDetail extends Entity {
@@ -2105,6 +2109,7 @@ export interface EMITransaction {
   tax_parent_link_id: number | null
   tax_rate: number | null
   refund_link: RefundLinkInfo | null
+  bank_payment_match: BankPaymentMatchInfo | null
 }
 
 export interface EMIDetail extends EMI {
