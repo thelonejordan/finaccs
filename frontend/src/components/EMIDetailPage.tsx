@@ -18,7 +18,7 @@ import {
 import * as Dialog from "@radix-ui/react-dialog"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import { Footer } from "@/components/Footer"
-import { RefundLinkBadge, StoriesBadges, EntitiesBadges } from "@/components/shared/TransactionLinkBadges"
+import { RefundLinkBadge, StoriesBadges, EntitiesBadges, PaymentLinkBadge } from "@/components/shared/TransactionLinkBadges"
 import {
   fetchEMI,
   updateEMI,
@@ -825,6 +825,7 @@ export function EMIDetailPage() {
                         <span className="flex-1 truncate">{txn.description}</span>
                         <span className="flex items-center gap-0.5 flex-shrink-0">
                           {txn.refund_link && <RefundLinkBadge refundLink={txn.refund_link} transaction={{ ...txn, type: 'credit_card' as const }} onUnlinked={loadEMI} />}
+                          <PaymentLinkBadge bankMatch={txn.bank_payment_match} transaction={{ ...txn, type: 'credit_card' as const }} onUnlinked={loadEMI} />
                           <StoriesBadges stories={transactionStories[`credit_card:${txn.id}`] || []} />
                           <EntitiesBadges entities={transactionEntities[`credit_card:${txn.id}`] || []} />
                         </span>

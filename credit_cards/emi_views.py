@@ -97,6 +97,8 @@ def serialize_emi(emi, include_stats=True):
 def get_emi_transactions(emi):
     """Get all transactions linked to an EMI with component info."""
     from links.utils import get_refund_links_for_rt_ids
+    from links.models import CreditCardPaymentLink
+    from bank_accounts.models import BankTransaction
 
     links = EMILink.objects.filter(emi=emi).select_related('resolved_transaction')
     rt_ids = list(links.values_list('resolved_transaction_id', flat=True))
@@ -118,6 +120,36 @@ def get_emi_transactions(emi):
 
     refund_map = get_refund_links_for_rt_ids(rt_ids)
 
+    # Build bank payment link map for CC transactions
+    cc_rt_bank_link_map = {}
+    cc_payment_links = CreditCardPaymentLink.objects.filter(
+        is_active=True, cc_resolved_transaction_id__in=rt_ids
+    ).select_related('bank_resolved_transaction')
+    for link in cc_payment_links:
+        if link.cc_resolved_transaction_id not in cc_rt_bank_link_map:
+            bank_rt = link.bank_resolved_transaction
+            if bank_rt and bank_rt.primary_transaction_id:
+                bank_txn = BankTransaction.objects.filter(
+                    id=bank_rt.primary_transaction_id
+                ).select_related('bank_account').first()
+                if bank_txn:
+                    cc_rt_bank_link_map[link.cc_resolved_transaction_id] = {
+                        'id': link.id,
+                        'bank_transaction': {
+                            'id': bank_txn.id,
+                            'date': bank_txn.date.isoformat(),
+                            'narration': bank_txn.narration,
+                            'amount': float(bank_txn.debit_amount),
+                            'bank_account': {
+                                'id': bank_txn.bank_account.id,
+                                'nickname': bank_txn.bank_account.nickname,
+                            } if bank_txn.bank_account else None,
+                        },
+                        'offset': float(link.offset),
+                        'confidence_score': link.confidence_score,
+                        'match_reasons': link.match_reasons,
+                    }
+
     transactions = []
     for txn in cc_txns:
         link_info = link_map.get(txn.resolved_transaction_id, {})
@@ -134,6 +166,7 @@ def get_emi_transactions(emi):
             'tax_parent_link_id': link_info.get('tax_parent_link_id'),
             'tax_rate': link_info.get('tax_rate'),
             'refund_link': refund_map.get(txn.resolved_transaction_id),
+            'bank_payment_match': cc_rt_bank_link_map.get(txn.resolved_transaction_id),
         })
 
     transactions.sort(key=lambda x: x['date'])
