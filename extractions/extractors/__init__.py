@@ -146,7 +146,9 @@ def detect_extractor(filename: str, domain: str) -> Optional[str]:
         # Default to generic extractors
         if ext in ['.xlsx', '.xls'] and 'generic_xlsx' in candidates:
             return 'generic_xlsx'
-        if ext in ['.txt', '.csv'] and 'hdfc_txt' in candidates:
+        if ext in ['.csv'] and 'standard_bank_csv' in candidates:
+            return 'standard_bank_csv'
+        if ext in ['.txt'] and 'hdfc_txt' in candidates:
             return 'hdfc_txt'
         if ext == '.pdf' and 'sbi_pdf' in candidates:
             return 'sbi_pdf'
@@ -159,7 +161,9 @@ def detect_extractor(filename: str, domain: str) -> Optional[str]:
                 return 'icici_cc_laststatement_pdf' if 'icici_cc_laststatement_pdf' in candidates else None
             return 'icici_cc_pdf' if 'icici_cc_pdf' in candidates else None
         if ext == '.csv':
-            return 'sbi_cc_csv' if 'sbi_cc_csv' in candidates else None
+            if 'sbi' in filename_lower:
+                return 'sbi_cc_csv' if 'sbi_cc_csv' in candidates else None
+            return 'standard_cc_csv' if 'standard_cc_csv' in candidates else ('sbi_cc_csv' if 'sbi_cc_csv' in candidates else None)
 
     return candidates[0] if candidates else None
 
@@ -247,3 +251,4 @@ from . import hdfc_txt
 from . import sbi_cc_csv
 from . import slice_cc_pdf
 from . import niyo_dcb_pdf
+from . import standard_csv
