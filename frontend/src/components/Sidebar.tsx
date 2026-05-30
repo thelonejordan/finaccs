@@ -19,6 +19,7 @@ import {
   FlaskConicalIcon,
   RepeatIcon,
   RotateCcwIcon,
+  ScissorsIcon,
 } from "lucide-react"
 
 /** Maximum badge count to display before showing "99+" */
@@ -33,6 +34,7 @@ const NAV_SECTIONS = [
       { path: "/stories", label: "Stories", icon: BookOpenIcon },
       { path: "/entities", label: "Entities", icon: UsersIcon },
       { path: "/emis", label: "EMIs", icon: WalletIcon },
+      { path: "/breakdowns", label: "Breakdowns", icon: ScissorsIcon },
     ],
   },
   {
@@ -113,7 +115,8 @@ export function Sidebar() {
                 const isActive = location.pathname === path ||
                   (path === "/stories" && location.pathname.startsWith("/stories/")) ||
                   (path === "/entities" && location.pathname.startsWith("/entities/")) ||
-                  (path === "/emis" && location.pathname.startsWith("/emis/"))
+                  (path === "/emis" && location.pathname.startsWith("/emis/")) ||
+                  (path === "/breakdowns" && location.pathname.startsWith("/breakdowns/"))
                 const badgeCount = getBadgeCount(badgeKey)
 
                 return (

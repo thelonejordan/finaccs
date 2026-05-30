@@ -27,6 +27,7 @@ import {
   UsersIcon,
   TagIcon,
   WalletIcon,
+  ScissorsIcon,
 } from "lucide-react"
 import * as Select from "@radix-ui/react-select"
 import * as Popover from "@radix-ui/react-popover"
@@ -51,6 +52,7 @@ import {
   getTransactionStories,
   getTransactionEntities,
   getTransactionEMIs,
+  createBreakdown,
   type CreditCard,
   type CreditCardTransaction,
   type CreditCardTransactionStats,
@@ -2133,6 +2135,23 @@ export function CreditCardTransactionsPage() {
                         <WalletIcon className="h-4 w-4" />
                         Add to EMI
                       </button>
+                      {selectedIds.size === 1 && (
+                        <button
+                          onClick={async () => {
+                            const txnId = Array.from(selectedIds)[0]
+                            try {
+                              const result = await createBreakdown({ transaction_type: 'credit_card', transaction_id: txnId })
+                              navigate(`/breakdowns/${result.breakdown_id}`)
+                            } catch (err) {
+                              logError("Failed to create breakdown", err)
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 flex items-center gap-1.5"
+                        >
+                          <ScissorsIcon className="h-4 w-4" />
+                          Breakdown
+                        </button>
+                      )}
                       <Popover.Root open={bulkCategoryOpen} onOpenChange={setBulkCategoryOpen}>
                         <Popover.Trigger asChild>
                           <button

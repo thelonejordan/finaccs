@@ -50,6 +50,7 @@ urlpatterns = [
     path('', include('extractions.urls')),
     path('', include('stories.urls')),
     path('', include('entities.urls')),
+    path('', include('links.urls')),
 ]
 
 # API docs (dev only)

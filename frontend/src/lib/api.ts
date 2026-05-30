@@ -2242,3 +2242,120 @@ export async function fetchEMISuggestions(): Promise<{ suggestions: EMISuggestio
   if (!res.ok) throw new Error('Failed to fetch EMI suggestions')
   return res.json()
 }
+
+// --- Breakdowns ---
+
+export interface BreakdownPart {
+  id: number
+  label: string
+  amount: number
+  rate: number | null
+  rate_reference_id: number | null
+  order: number
+}
+
+export interface BreakdownStats {
+  parts_count: number
+  parts_sum: number
+  transaction_amount: number
+  is_valid: boolean
+}
+
+export interface BreakdownTransaction {
+  id: number
+  type: string
+  date: string
+  description: string
+  amount: number
+  source: string
+}
+
+export interface Breakdown {
+  id: number
+  breakdown_id: string
+  name: string
+  description: string
+  transaction: BreakdownTransaction | null
+  stats: BreakdownStats
+  created_at: string
+  updated_at: string
+}
+
+export interface BreakdownDetail extends Breakdown {
+  parts: BreakdownPart[]
+  validations: { label: string; status: 'pass' | 'warn' | 'error'; detail: string }[]
+}
+
+export async function fetchBreakdowns(): Promise<{ breakdowns: Breakdown[] }> {
+  const res = await fetch(`${API_BASE}/api/breakdowns/`)
+  if (!res.ok) throw new Error('Failed to fetch breakdowns')
+  return res.json()
+}
+
+export async function fetchBreakdown(breakdownId: string): Promise<BreakdownDetail> {
+  const res = await fetch(`${API_BASE}/api/breakdowns/${breakdownId}/`)
+  if (!res.ok) throw new Error('Failed to fetch breakdown')
+  return res.json()
+}
+
+export async function createBreakdown(data: {
+  name?: string
+  description?: string
+  transaction_type: string
+  transaction_id: number
+  parts?: { label: string; amount: number; rate?: number | null; rate_reference_order?: number | null; order?: number }[]
+}): Promise<BreakdownDetail> {
+  const res = await fetch(`${API_BASE}/api/breakdowns/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Failed to create breakdown')
+  }
+  return res.json()
+}
+
+export async function updateBreakdown(breakdownId: string, data: {
+  name?: string
+  description?: string
+}): Promise<BreakdownDetail> {
+  const res = await fetch(`${API_BASE}/api/breakdowns/${breakdownId}/`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error('Failed to update breakdown')
+  return res.json()
+}
+
+export async function deleteBreakdown(breakdownId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/breakdowns/${breakdownId}/`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error('Failed to delete breakdown')
+}
+
+export async function updateBreakdownParts(breakdownId: string, parts: {
+  label: string
+  amount: number
+  rate?: number | null
+  rate_reference_order?: number | null
+  order?: number
+}[]): Promise<BreakdownDetail> {
+  const res = await fetch(`${API_BASE}/api/breakdowns/${breakdownId}/parts/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parts }),
+  })
+  if (!res.ok) throw new Error('Failed to update breakdown parts')
+  return res.json()
+}
+
+export async function deleteBreakdownPart(breakdownId: string, partId: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/breakdowns/${breakdownId}/parts/${partId}/`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error('Failed to delete breakdown part')
+}

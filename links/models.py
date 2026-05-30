@@ -5,7 +5,12 @@ Links attach to ResolvedTransaction (display_group). They are not deleted when
 the origin transaction or primary is deleted; they can be marked unused when
 the display_group has no members.
 """
+import secrets
 from django.db import models
+
+
+def generate_breakdown_id():
+    return f"bkdn_{secrets.token_hex(4)}"
 
 
 class CategoryLink(models.Model):
@@ -214,3 +219,54 @@ class RefundLink(models.Model):
 
     def __str__(self):
         return f"RefundLink(original={self.original_resolved_transaction_id} -> refund={self.refund_resolved_transaction_id})"
+
+
+class Breakdown(models.Model):
+    breakdown_id = models.CharField(max_length=20, unique=True, default=generate_breakdown_id)
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    resolved_transaction = models.OneToOneField(
+        'extractions.ResolvedTransaction',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='breakdown',
+    )
+    origin_transaction_type = models.CharField(max_length=20, blank=True, null=True)
+    origin_transaction_id = models.IntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'links_breakdown'
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"Breakdown({self.name}, {self.breakdown_id})"
+
+
+class BreakdownPart(models.Model):
+    breakdown = models.ForeignKey(
+        Breakdown,
+        on_delete=models.CASCADE,
+        related_name='parts',
+    )
+    label = models.CharField(max_length=200)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    rate = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    rate_reference = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='rate_dependents',
+    )
+    order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'links_breakdownpart'
+        ordering = ['order', 'id']
+
+    def __str__(self):
+        return f"BreakdownPart({self.label}: {self.amount})"

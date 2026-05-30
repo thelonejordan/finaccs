@@ -40,4 +40,5 @@ FinAccs - Personal finance dashboard: Django REST backend + React SPA frontend.
 - [docs/STORIES.md](docs/STORIES.md) - stories feature design
 - [docs/CC-EMIS.md](docs/CC-EMIS.md) - credit card EMIs feature design
 - [docs/STANDARD-FORMAT.md](docs/STANDARD-FORMAT.md) - standard CSV format for manual transaction entry
+- [docs/BREAKDOWNS.md](docs/BREAKDOWNS.md) - transaction breakdowns feature design
 - [frontend/docs/UI.md](frontend/docs/UI.md) - UI design system

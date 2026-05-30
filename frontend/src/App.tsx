@@ -16,6 +16,8 @@ import { StoriesPage } from "@/components/StoriesPage"
 import { StoryDetailPage } from "@/components/StoryDetailPage"
 import { EMIsPage } from "@/components/EMIsPage"
 import { EMIDetailPage } from "@/components/EMIDetailPage"
+import { BreakdownsPage } from "@/components/BreakdownsPage"
+import { BreakdownDetailPage } from "@/components/BreakdownDetailPage"
 import { EntitiesPage } from "@/components/EntitiesPage"
 import { EntityDetailPage } from "@/components/EntityDetailPage"
 import { Layout } from "@/components/Layout"
@@ -52,6 +54,8 @@ function App() {
             <Route path="/stories/:storyId" element={<StoryDetailPage />} />
             <Route path="/emis" element={<EMIsPage />} />
             <Route path="/emis/:emiId" element={<EMIDetailPage />} />
+            <Route path="/breakdowns" element={<BreakdownsPage />} />
+            <Route path="/breakdowns/:breakdownId" element={<BreakdownDetailPage />} />
             <Route path="/entities" element={<EntitiesPage />} />
             <Route path="/entities/:entityId" element={<EntityDetailPage />} />
             <Route path="/resolution" element={<ResolutionPage />} />
