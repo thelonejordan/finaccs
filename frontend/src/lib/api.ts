@@ -1467,6 +1467,7 @@ export interface StoryTransaction {
   refund_link: RefundLinkInfo | null
   bank_payment_match: BankPaymentMatchInfo | null
   cc_payment_match: CCPaymentMatchInfo | null
+  linked_transaction: LinkedTransaction | null
 }
 
 export interface StoryDetail extends Story {
@@ -1650,6 +1651,7 @@ export interface EntityTransaction {
   refund_link: RefundLinkInfo | null
   bank_payment_match: BankPaymentMatchInfo | null
   cc_payment_match: CCPaymentMatchInfo | null
+  linked_transaction: LinkedTransaction | null
 }
 
 export interface EntityDetail extends Entity {

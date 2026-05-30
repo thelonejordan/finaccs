@@ -22,7 +22,7 @@ import {
 import * as Dialog from "@radix-ui/react-dialog"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import { Footer } from "@/components/Footer"
-import { RefundLinkBadge, StoriesBadges, EntitiesBadges, EMIsBadges, PaymentLinkBadge } from "@/components/shared/TransactionLinkBadges"
+import { RefundLinkBadge, SelfTransferLinkBadge, StoriesBadges, EntitiesBadges, EMIsBadges, PaymentLinkBadge } from "@/components/shared/TransactionLinkBadges"
 import { MoveOrCopyToStoryModal } from "@/components/stories/MoveOrCopyToStoryModal"
 import { CreateStoryModal } from "@/components/stories/CreateStoryModal"
 import { UnifiedCompareModal } from "@/components/shared/UnifiedCompareModal"
@@ -723,11 +723,12 @@ export function StoryDetailPage() {
                         <td className="px-3 py-3 text-center">
                           <div className="flex items-center justify-center gap-1">
                             {txn.refund_link && <RefundLinkBadge refundLink={txn.refund_link} transaction={txn} onUnlinked={loadStory} />}
+                            {txn.linked_transaction && <SelfTransferLinkBadge linkedTransaction={txn.linked_transaction} transaction={txn} />}
                             <PaymentLinkBadge ccMatch={txn.cc_payment_match} bankMatch={txn.bank_payment_match} transaction={txn} onUnlinked={loadStory} />
                             <StoriesBadges stories={transactionStories[`${txn.type}:${txn.id}`] || []} excludeStoryId={storyId} />
                             <EntitiesBadges entities={transactionEntities[`${txn.type}:${txn.id}`] || []} />
                             <EMIsBadges emis={transactionEMIs[`${txn.type}:${txn.id}`] || []} />
-                            {!txn.refund_link && !txn.cc_payment_match && !txn.bank_payment_match &&
+                            {!txn.refund_link && !txn.linked_transaction && !txn.cc_payment_match && !txn.bank_payment_match &&
                              !transactionStories[`${txn.type}:${txn.id}`]?.filter(s => s.story_id !== storyId).length &&
                              !transactionEntities[`${txn.type}:${txn.id}`]?.length &&
                              !transactionEMIs[`${txn.type}:${txn.id}`]?.length && (

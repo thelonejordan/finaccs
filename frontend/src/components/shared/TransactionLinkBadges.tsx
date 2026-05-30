@@ -13,7 +13,7 @@ import {
 } from "lucide-react"
 import * as Dialog from "@radix-ui/react-dialog"
 import * as Tooltip from "@radix-ui/react-tooltip"
-import { deleteRefundLink, deleteCCPaymentMatch, type RefundLinkInfo, type StoryBadge, type EntityBadge, type EMIBadge, type CCPaymentMatchInfo, type BankPaymentMatchInfo } from "@/lib/api"
+import { deleteRefundLink, deleteCCPaymentMatch, type RefundLinkInfo, type LinkedTransaction, type StoryBadge, type EntityBadge, type EMIBadge, type CCPaymentMatchInfo, type BankPaymentMatchInfo } from "@/lib/api"
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-IN", {
@@ -264,6 +264,104 @@ export function EMIsBadges({ emis, excludeEmiId }: { emis: EMIBadge[]; excludeEm
         </Tooltip.Content>
       </Tooltip.Portal>
     </Tooltip.Root>
+  )
+}
+
+export function SelfTransferLinkBadge({ linkedTransaction, transaction }: {
+  linkedTransaction: LinkedTransaction
+  transaction: CurrentTransactionInfo
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Tooltip.Provider>
+        <Tooltip.Root>
+          <Tooltip.Trigger asChild>
+            <Dialog.Trigger asChild>
+              <button className="p-1 rounded transition-colors text-green-600 dark:text-green-400 hover:bg-green-500/10">
+                <Link2Icon className="h-4 w-4" />
+              </button>
+            </Dialog.Trigger>
+          </Tooltip.Trigger>
+          <Tooltip.Portal>
+            <Tooltip.Content
+              className="bg-card text-card-foreground px-3 py-1.5 rounded-md shadow-lg border border-border text-sm"
+              sideOffset={4}
+            >
+              Linked to {linkedTransaction.bank_account} on {formatDate(linkedTransaction.date)}
+              <Tooltip.Arrow className="fill-card" />
+            </Tooltip.Content>
+          </Tooltip.Portal>
+        </Tooltip.Root>
+      </Tooltip.Provider>
+
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card rounded-xl border border-border shadow-xl w-full max-w-xl max-h-[85vh] overflow-hidden z-50">
+          <div className="p-6 border-b border-border flex items-start justify-between">
+            <div>
+              <Dialog.Title className="text-lg font-semibold">Linked Self Transfer</Dialog.Title>
+              <Dialog.Description className="text-sm text-muted-foreground mt-1">
+                This transaction is linked to a corresponding transfer in another account.
+              </Dialog.Description>
+            </div>
+            <Dialog.Close className="p-1 rounded hover:bg-muted">
+              <span className="sr-only">Close</span>
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </Dialog.Close>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <div className="p-3 rounded-lg bg-muted/50 border border-border">
+              <p className="text-sm text-muted-foreground mb-1">Current Transaction</p>
+              <div className="flex items-center gap-2 mb-1">
+                <LandmarkIcon className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">{transaction.source}</span>
+              </div>
+              <p className="font-medium">{formatDate(transaction.date)}</p>
+              <p className="text-sm text-muted-foreground line-clamp-1">{transaction.description}</p>
+              <p className="text-sm mt-1">
+                {transaction.amount > 0 ? (
+                  <span className="text-red-600 dark:text-red-400 inline-flex items-center gap-0.5">
+                    <FormattedCurrency amount={transaction.amount} />
+                    <ArrowDownIcon className="h-3 w-3" />
+                  </span>
+                ) : (
+                  <span className="text-green-600 dark:text-green-400 inline-flex items-center gap-0.5">
+                    <FormattedCurrency amount={Math.abs(transaction.amount)} />
+                    <ArrowUpIcon className="h-3 w-3" />
+                  </span>
+                )}
+              </p>
+            </div>
+
+            <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+              <p className="text-sm text-muted-foreground mb-1">Linked Transfer</p>
+              <div className="flex items-center gap-2 mb-1">
+                <LandmarkIcon className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">{linkedTransaction.bank_account || "Unknown"}</span>
+              </div>
+              <p className="font-medium">{formatDate(linkedTransaction.date)}</p>
+              <p className="text-sm text-muted-foreground line-clamp-3 mb-1">{linkedTransaction.narration}</p>
+              <p className="text-sm flex items-center gap-1">
+                {transaction.amount > 0 ? (
+                  <span className="text-green-600 dark:text-green-400 inline-flex items-center gap-0.5">
+                    <FormattedCurrency amount={linkedTransaction.amount} />
+                    <ArrowUpIcon className="h-3 w-3" />
+                  </span>
+                ) : (
+                  <span className="text-red-600 dark:text-red-400 inline-flex items-center gap-0.5">
+                    <FormattedCurrency amount={linkedTransaction.amount} />
+                    <ArrowDownIcon className="h-3 w-3" />
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }
 

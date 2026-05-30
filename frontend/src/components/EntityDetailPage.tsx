@@ -23,7 +23,7 @@ import {
 import * as Dialog from "@radix-ui/react-dialog"
 import * as Tooltip from "@radix-ui/react-tooltip"
 import { Footer } from "@/components/Footer"
-import { RefundLinkBadge, StoriesBadges, EntitiesBadges, EMIsBadges, PaymentLinkBadge } from "@/components/shared/TransactionLinkBadges"
+import { RefundLinkBadge, SelfTransferLinkBadge, StoriesBadges, EntitiesBadges, EMIsBadges, PaymentLinkBadge } from "@/components/shared/TransactionLinkBadges"
 import { MoveOrCopyToEntityModal } from "@/components/entities/MoveOrCopyToEntityModal"
 import { CreateEntityModal } from "@/components/entities/CreateEntityModal"
 import { UnifiedCompareModal } from "@/components/shared/UnifiedCompareModal"
@@ -745,11 +745,12 @@ export function EntityDetailPage() {
                         <td className="px-3 py-3 text-center">
                           <div className="flex items-center justify-center gap-1">
                             {txn.refund_link && <RefundLinkBadge refundLink={txn.refund_link} transaction={txn} onUnlinked={loadEntity} />}
+                            {txn.linked_transaction && <SelfTransferLinkBadge linkedTransaction={txn.linked_transaction} transaction={txn} />}
                             <PaymentLinkBadge ccMatch={txn.cc_payment_match} bankMatch={txn.bank_payment_match} transaction={txn} onUnlinked={loadEntity} />
                             <StoriesBadges stories={transactionStories[`${txn.type}:${txn.id}`] || []} />
                             <EntitiesBadges entities={transactionEntities[`${txn.type}:${txn.id}`] || []} excludeEntityId={entityId} />
                             <EMIsBadges emis={transactionEMIs[`${txn.type}:${txn.id}`] || []} />
-                            {!txn.refund_link && !txn.cc_payment_match && !txn.bank_payment_match &&
+                            {!txn.refund_link && !txn.linked_transaction && !txn.cc_payment_match && !txn.bank_payment_match &&
                              !transactionStories[`${txn.type}:${txn.id}`]?.length &&
                              !transactionEntities[`${txn.type}:${txn.id}`]?.filter(e => e.entity_id !== entityId).length &&
                              !transactionEMIs[`${txn.type}:${txn.id}`]?.length && (

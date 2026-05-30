@@ -53,6 +53,62 @@ def get_refund_links_for_rt_ids(rt_ids):
     return result
 
 
+def get_self_transfer_links_for_rt_ids(rt_ids):
+    """Return a map of resolved_transaction_id -> linked_transaction_info for self-transfer links."""
+    from links.models import SelfTransferLink
+    from bank_accounts.models import BankTransaction
+
+    if not rt_ids:
+        return {}
+
+    result = {}
+    rt_id_set = set(rt_ids)
+
+    links = SelfTransferLink.objects.filter(
+        resolved_transaction_a_id__in=rt_id_set
+    ).select_related('resolved_transaction_b')
+    for link in links:
+        rt_id = link.resolved_transaction_a_id
+        if rt_id in result:
+            continue
+        other_rt = link.resolved_transaction_b
+        if other_rt and other_rt.primary_transaction_id:
+            txn = BankTransaction.objects.filter(
+                id=other_rt.primary_transaction_id
+            ).select_related('bank_account').first()
+            if txn:
+                result[rt_id] = {
+                    'id': txn.id,
+                    'date': txn.date.isoformat(),
+                    'narration': txn.narration,
+                    'bank_account': txn.bank_account.nickname if txn.bank_account else None,
+                    'amount': float(txn.debit_amount or txn.credit_amount),
+                }
+
+    links = SelfTransferLink.objects.filter(
+        resolved_transaction_b_id__in=rt_id_set
+    ).select_related('resolved_transaction_a')
+    for link in links:
+        rt_id = link.resolved_transaction_b_id
+        if rt_id in result:
+            continue
+        other_rt = link.resolved_transaction_a
+        if other_rt and other_rt.primary_transaction_id:
+            txn = BankTransaction.objects.filter(
+                id=other_rt.primary_transaction_id
+            ).select_related('bank_account').first()
+            if txn:
+                result[rt_id] = {
+                    'id': txn.id,
+                    'date': txn.date.isoformat(),
+                    'narration': txn.narration,
+                    'bank_account': txn.bank_account.nickname if txn.bank_account else None,
+                    'amount': float(txn.debit_amount or txn.credit_amount),
+                }
+
+    return result
+
+
 def ensure_resolved_transaction(txn, txn_type):
     """Get or create a ResolvedTransaction for a transaction.
 

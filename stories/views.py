@@ -101,7 +101,7 @@ def _build_category_map(resolved_transaction_ids):
 
 def get_story_transactions(story):
     """Get all transactions for a story with full details."""
-    from links.utils import get_refund_links_for_rt_ids
+    from links.utils import get_refund_links_for_rt_ids, get_self_transfer_links_for_rt_ids
     from links.models import CreditCardPaymentLink
 
     rt_ids = list(StoryLink.objects.filter(story=story).values_list('resolved_transaction_id', flat=True))
@@ -112,6 +112,7 @@ def get_story_transactions(story):
     cc_rt_ids = list(resolved_txns.filter(transaction_type='credit_card').values_list('id', flat=True))
     category_map = _build_category_map(rt_ids)
     refund_map = get_refund_links_for_rt_ids(rt_ids)
+    self_transfer_map = get_self_transfer_links_for_rt_ids(bank_rt_ids)
 
     # Build CC payment link maps
     cc_payment_links = CreditCardPaymentLink.objects.filter(
@@ -194,6 +195,7 @@ def get_story_transactions(story):
                 'refund_link': refund_map.get(txn.resolved_transaction_id),
                 'cc_payment_match': bank_rt_cc_link_map.get(txn.resolved_transaction_id),
                 'bank_payment_match': None,
+                'linked_transaction': self_transfer_map.get(txn.resolved_transaction_id),
             })
 
     # Get CC transactions
@@ -214,6 +216,7 @@ def get_story_transactions(story):
                 'refund_link': refund_map.get(txn.resolved_transaction_id),
                 'cc_payment_match': None,
                 'bank_payment_match': cc_rt_bank_link_map.get(txn.resolved_transaction_id),
+                'linked_transaction': None,
             })
 
     # Sort by date descending
