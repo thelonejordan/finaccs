@@ -175,7 +175,10 @@ if not DEBUG:
 
 
 # Django REST Framework
-REST_FRAMEWORK = {}
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    'DEFAULT_PERMISSION_CLASSES': [],
+}
 
 # API documentation (dev only)
 if DEV_MODE:
