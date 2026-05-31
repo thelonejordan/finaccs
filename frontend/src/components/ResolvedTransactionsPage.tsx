@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, Link } from "react-router-dom"
 import {
   SearchIcon,
   ArrowRightIcon,
   CheckCircleIcon,
   ArrowUpIcon,
   ArrowDownIcon,
-  FlaskConicalIcon,
 } from "lucide-react"
 import { fetchResolvedTransactions, type ResolvedTransaction } from "@/lib/api"
 import { formatDate, formatCurrency } from "@/lib/format"
@@ -54,15 +53,12 @@ export function ResolvedTransactionsPage() {
       <div className="max-w-4xl mx-auto px-6 py-8">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 rounded-xl bg-primary/10">
-              <FlaskConicalIcon className="h-6 w-6 text-primary" />
-            </div>
-            <h1 className="text-2xl font-bold">Resolved Transactions</h1>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+            <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+            <span>/</span>
+            <span>resolved-transactions</span>
           </div>
-          <p className="text-muted-foreground">
-            Browse and search resolved transactions across all resolution groups.
-          </p>
+          <h1 className="text-2xl font-bold">Resolved Transactions</h1>
         </div>
 
         {/* Quick Lookup */}

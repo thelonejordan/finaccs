@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { useParams, useNavigate, useSearchParams } from "react-router-dom"
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom"
 import {
   ArrowLeftIcon,
   CopyIcon,
@@ -112,6 +112,11 @@ export function TransactionDetailPage() {
     return (
       <div className="min-h-screen bg-background">
         <div className="max-w-2xl mx-auto px-6 py-12">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+            <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+            <span>/</span>
+            <span>transaction</span>
+          </div>
           <h1 className="text-2xl font-bold mb-6">Transaction Lookup</h1>
           <p className="text-muted-foreground mb-6">
             Enter a transaction UUID or short ID to view its details.

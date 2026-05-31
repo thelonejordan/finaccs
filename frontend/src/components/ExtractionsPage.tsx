@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { logError } from "@/lib/logger"
-import { useSearchParams } from "react-router-dom"
+import { useSearchParams, Link } from "react-router-dom"
 import {
   FileTextIcon,
   DownloadIcon,
@@ -1498,21 +1498,12 @@ export function ExtractionsPage() {
       <main className="max-w-7xl mx-auto px-4 py-8" onClick={handleMainClick}>
         <header className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                {domain === 'credit_card' ? (
-                  <CreditCardIcon className="h-6 w-6 text-primary" />
-                ) : (
-                  <LandmarkIcon className="h-6 w-6 text-primary" />
-                )}
-              </div>
-              Extractions
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {domain === 'credit_card'
-                ? 'Extract transactions from credit card statements'
-                : 'Extract transactions from bank statements'}
-            </p>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+              <span>/</span>
+              <span>extractions</span>
+            </div>
+            <h1 className="text-2xl font-bold">Extractions</h1>
           </div>
           <div className="flex items-center gap-3">
             {/* Domain toggle (bank_account/credit_card) */}

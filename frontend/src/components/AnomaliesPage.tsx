@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { logError } from "@/lib/logger"
-import { useSearchParams } from "react-router-dom"
+import { useSearchParams, Link } from "react-router-dom"
 import {
   AlertTriangleIcon,
   ChevronLeftIcon,
@@ -1084,15 +1084,12 @@ export function AnomaliesPage() {
         {/* Header */}
         <header className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <AlertTriangleIcon className="h-6 w-6 text-primary" />
-              </div>
-              Anomalies
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Detect and resolve transaction inconsistencies
-            </p>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+              <span>/</span>
+              <span>anomalies</span>
+            </div>
+            <h1 className="text-2xl font-bold">Anomalies</h1>
           </div>
 
           {/* Tabs */}

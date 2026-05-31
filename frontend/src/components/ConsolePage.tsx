@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { useSearchParams } from "react-router-dom"
+import { useSearchParams, Link } from "react-router-dom"
 import {
   CreditCardIcon,
   FileTextIcon,
@@ -1607,15 +1607,12 @@ export function ConsolePage() {
       <main className="max-w-7xl mx-auto px-4 py-8" onClick={handleCreditTabClick}>
         <header className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <SettingsIcon className="h-6 w-6 text-primary" />
-              </div>
-              Console
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Manage your bank accounts, credit cards, and data sources
-            </p>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+              <span>/</span>
+              <span>console</span>
+            </div>
+            <h1 className="text-2xl font-bold">Console</h1>
           </div>
           <div className="flex items-center gap-3">
             {/* Domain toggle */}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { Link } from "react-router-dom"
 import { logError } from "@/lib/logger"
 import {
   ChevronLeftIcon,
@@ -124,15 +125,12 @@ export function ActivityLogsPage() {
         {/* Header */}
         <header className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <ActivityIcon className="h-6 w-6 text-primary" />
-              </div>
-              Activity
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Track changes and actions across your accounts
-            </p>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+              <span>/</span>
+              <span>activity</span>
+            </div>
+            <h1 className="text-2xl font-bold">Activity</h1>
           </div>
 
           {/* Actions Filter */}

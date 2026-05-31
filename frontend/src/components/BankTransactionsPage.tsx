@@ -1600,15 +1600,12 @@ export function BankTransactionsPage() {
         {/* Page Header */}
         <header className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <LandmarkIcon className="h-6 w-6 text-primary" />
-              </div>
-              Transactions
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Bank account transactions
-            </p>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+              <span>/</span>
+              <span>transactions</span>
+            </div>
+            <h1 className="text-2xl font-bold">Transactions</h1>
           </div>
           <div className="flex items-center gap-3">
             {/* Domain toggle */}
@@ -2287,7 +2284,7 @@ export function BankTransactionsPage() {
                           </td>
                           <td className="px-3 py-3 align-middle">
                             <div className="flex items-center justify-center gap-1">
-                              {t.category === "Self Transfer" ? (
+                              {(t.category === "Self Transfer" || t.linked_transaction) ? (
                                 <LinkDialog
                                   transaction={t}
                                   onLink={(linkToId) => handleLink(t.id, linkToId)}
@@ -2369,7 +2366,7 @@ export function BankTransactionsPage() {
                                 </Tooltip.Root>
                               )}
                               {/* Show dash if no links, stories, or entities */}
-                              {t.category !== "Self Transfer" && t.category !== "Credit Card Payment" &&
+                              {t.category !== "Self Transfer" && t.category !== "Credit Card Payment" && !t.linked_transaction && !t.refund_link &&
                                !transactionStories[`bank:${t.id}`]?.length && !transactionEntities[`bank:${t.id}`]?.length && (
                                 <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
                               )}

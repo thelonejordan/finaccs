@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
+import { Link } from "react-router-dom"
 import {
-  LayersIcon,
   ChevronDownIcon,
 } from "lucide-react"
 import { fetchDataSources, type DataSourceArtifact } from "@/lib/api"
@@ -46,15 +46,12 @@ export function ResolutionPage() {
       <div className="max-w-4xl mx-auto px-6 py-8">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 rounded-xl bg-primary/10">
-              <LayersIcon className="h-6 w-6 text-primary" />
-            </div>
-            <h1 className="text-2xl font-bold">Transaction Resolution</h1>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+            <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+            <span>/</span>
+            <span>resolution</span>
           </div>
-          <p className="text-muted-foreground">
-            Merge duplicate transactions from multiple data sources while preserving all records.
-          </p>
+          <h1 className="text-2xl font-bold">Transaction Resolution</h1>
         </div>
 
         {/* Help Section */}

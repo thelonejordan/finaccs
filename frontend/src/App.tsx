@@ -18,7 +18,7 @@ import { EMIsPage } from "@/components/EMIsPage"
 import { EMIDetailPage } from "@/components/EMIDetailPage"
 import { BreakdownsPage } from "@/components/BreakdownsPage"
 import { BreakdownDetailPage } from "@/components/BreakdownDetailPage"
-import { EntitiesPage } from "@/components/EntitiesPage"
+import { EntitiesPage, EntitiesTypePage } from "@/components/EntitiesPage"
 import { EntityDetailPage } from "@/components/EntityDetailPage"
 import { Layout } from "@/components/Layout"
 import { ThemeProvider } from "@/lib/theme"
@@ -57,6 +57,8 @@ function App() {
             <Route path="/breakdowns" element={<BreakdownsPage />} />
             <Route path="/breakdowns/:breakdownId" element={<BreakdownDetailPage />} />
             <Route path="/entities" element={<EntitiesPage />} />
+            <Route path="/entities/people" element={<EntitiesTypePage entityType="person" />} />
+            <Route path="/entities/businesses" element={<EntitiesTypePage entityType="business" />} />
             <Route path="/entities/:entityId" element={<EntityDetailPage />} />
             <Route path="/resolution" element={<ResolutionPage />} />
             <Route path="/experimental" element={<ResolvedTransactionsPage />} />

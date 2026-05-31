@@ -384,13 +384,17 @@ export function EMIsPage() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <div className="flex-1 p-6 max-w-7xl mx-auto w-full">
+      <main className="flex-1 max-w-7xl mx-auto px-4 py-8 w-full">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <WalletIcon className="h-6 w-6" />
-            Credit Card EMIs
-          </h1>
+          <div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+              <span>/</span>
+              <span>emis</span>
+            </div>
+            <h1 className="text-2xl font-bold">Credit Card EMIs</h1>
+          </div>
           <div className="flex items-center gap-2">
             <SortDropdown
               options={emiSortOptions}
@@ -494,7 +498,7 @@ export function EMIsPage() {
             <p className="text-sm mt-1">Create one manually or from a statement suggestion above.</p>
           </div>
         )}
-      </div>
+      </main>
 
       <Footer />
 

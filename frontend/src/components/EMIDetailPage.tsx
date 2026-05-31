@@ -1,7 +1,6 @@
 import { useEffect, useState, useMemo } from "react"
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams, useNavigate, Link } from "react-router-dom"
 import {
-  ArrowLeftIcon,
   TrashIcon,
   PencilIcon,
   CheckIcon,
@@ -525,14 +524,14 @@ export function EMIDetailPage() {
     <Tooltip.Provider>
     <div className="flex flex-col min-h-screen">
       <div className="flex-1 p-6 max-w-5xl mx-auto w-full">
-        {/* Back button */}
-        <button
-          onClick={() => navigate("/emis")}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4"
-        >
-          <ArrowLeftIcon className="h-4 w-4" />
-          Back to EMIs
-        </button>
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+          <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+          <span>/</span>
+          <Link to="/emis" className="hover:text-foreground transition-colors">emis</Link>
+          <span>/</span>
+          <span>{emi.name}</span>
+        </div>
 
         {/* Header */}
         <div className="flex items-start justify-between mb-6">

@@ -100,9 +100,9 @@ function BreakdownRow({ breakdown }: { breakdown: Breakdown }) {
             <div className="py-2 text-xs text-muted-foreground">Loading...</div>
           ) : detail && detail.parts.length > 0 ? (
             <div className="rounded border border-border overflow-hidden">
-              {detail.parts.map(part => (
+              {detail.parts.map((part, idx) => (
                 <div key={part.id} className="flex items-center gap-3 px-3 py-1.5 text-xs border-b border-border last:border-b-0">
-                  <span className="text-muted-foreground w-5">{part.order + 1}.</span>
+                  <span className="text-muted-foreground w-5">{idx + 1}.</span>
                   <span className="flex-1">{part.label}</span>
                   {part.rate != null && (
                     <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
@@ -171,12 +171,16 @@ export function BreakdownsPage() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <div className="flex-1 p-6 max-w-7xl mx-auto w-full">
+      <main className="flex-1 max-w-7xl mx-auto px-4 py-8 w-full">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <ScissorsIcon className="h-6 w-6" />
-            Breakdowns
-          </h1>
+          <div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+              <span>/</span>
+              <span>breakdowns</span>
+            </div>
+            <h1 className="text-2xl font-bold">Breakdowns</h1>
+          </div>
           <SortDropdown
             options={sortOptions}
             sortBy={sortBy}
@@ -198,7 +202,7 @@ export function BreakdownsPage() {
             <p className="text-sm mt-1">Select a transaction and click "Breakdown" to split it into parts.</p>
           </div>
         )}
-      </div>
+      </main>
 
       <Footer />
     </div>

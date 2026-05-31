@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react"
 import { logError } from "@/lib/logger"
 import { AnimatePresence, motion } from "motion/react"
-import { useSearchParams } from "react-router-dom"
+import { useSearchParams, Link } from "react-router-dom"
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -765,15 +765,12 @@ export function SelfTransfersPage() {
         {/* Header */}
         <header className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <RepeatIcon className="h-6 w-6 text-primary" />
-              </div>
-              Self Transfers
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Match transfers between your own bank accounts
-            </p>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+              <span>/</span>
+              <span>self-transfers</span>
+            </div>
+            <h1 className="text-2xl font-bold">Self Transfers</h1>
           </div>
 
           {/* Tabs */}

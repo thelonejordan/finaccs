@@ -363,14 +363,14 @@ export function StoryDetailPage() {
   return (
     <Tooltip.Provider>
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Back link */}
-        <Link
-          to="/stories"
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6"
-        >
-          <ArrowLeftIcon className="h-4 w-4" />
-          Back to Stories
-        </Link>
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+          <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+          <span>/</span>
+          <Link to="/stories" className="hover:text-foreground transition-colors">stories</Link>
+          <span>/</span>
+          <span>{story.story_id}</span>
+        </div>
 
         {/* Story Header */}
         <header className="mb-8">

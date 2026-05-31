@@ -1,7 +1,6 @@
 import { useEffect, useState, useMemo } from "react"
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams, useNavigate, Link } from "react-router-dom"
 import {
-  ArrowLeftIcon,
   TrashIcon,
   PencilIcon,
   PlusIcon,
@@ -11,13 +10,11 @@ import {
   AlertTriangleIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  ScissorsIcon,
 } from "lucide-react"
 import * as Dialog from "@radix-ui/react-dialog"
 import { Footer } from "@/components/Footer"
 import {
   fetchBreakdown,
-  updateBreakdown,
   deleteBreakdown,
   updateBreakdownParts,
   type BreakdownDetail,
@@ -104,10 +101,6 @@ export function BreakdownDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const [editing, setEditing] = useState(false)
-  const [editName, setEditName] = useState("")
-  const [editDescription, setEditDescription] = useState("")
-
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [validationsOpen, setValidationsOpen] = useState(false)
 
@@ -121,8 +114,6 @@ export function BreakdownDetailPage() {
     try {
       const data = await fetchBreakdown(breakdownId)
       setBreakdown(data)
-      setEditName(data.name)
-      setEditDescription(data.description)
     } catch (err) {
       setError("Failed to load breakdown")
     } finally {
@@ -189,16 +180,6 @@ export function BreakdownDetailPage() {
     }
   }
 
-  const handleSaveEdit = async () => {
-    if (!breakdownId) return
-    await updateBreakdown(breakdownId, {
-      name: editName,
-      description: editDescription,
-    })
-    setEditing(false)
-    loadBreakdown()
-  }
-
   const handleDelete = async () => {
     if (!breakdownId) return
     await deleteBreakdown(breakdownId)
@@ -233,68 +214,19 @@ export function BreakdownDetailPage() {
   return (
     <div className="flex flex-col min-h-screen">
       <div className="flex-1 p-6 max-w-5xl mx-auto w-full">
-        {/* Back button */}
-        <button
-          onClick={() => navigate("/breakdowns")}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4"
-        >
-          <ArrowLeftIcon className="h-4 w-4" />
-          Back to Breakdowns
-        </button>
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+          <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+          <span>/</span>
+          <Link to="/breakdowns" className="hover:text-foreground transition-colors">breakdowns</Link>
+          <span>/</span>
+          <span>{breakdown.breakdown_id}</span>
+        </div>
 
         {/* Header */}
         <div className="flex items-start justify-between mb-6">
           <div className="flex-1">
-            {editing && (
-              <Dialog.Root open={editing} onOpenChange={setEditing}>
-                <Dialog.Portal>
-                  <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-                  <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-card border border-border rounded-lg shadow-lg p-6 w-[480px] max-h-[85vh] overflow-y-auto z-50">
-                    <Dialog.Title className="text-lg font-semibold mb-4">Edit Breakdown</Dialog.Title>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs font-medium text-muted-foreground">Name *</label>
-                        <input
-                          type="text"
-                          value={editName}
-                          onChange={e => setEditName(e.target.value)}
-                          className="w-full mt-1 px-3 py-1.5 rounded border border-border bg-background text-sm"
-                          autoFocus
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-muted-foreground">Description</label>
-                        <textarea
-                          value={editDescription}
-                          onChange={e => setEditDescription(e.target.value)}
-                          className="w-full mt-1 px-3 py-1.5 rounded border border-border bg-background text-sm"
-                          rows={2}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex justify-end gap-2 mt-6">
-                      <button onClick={() => setEditing(false)} className="px-3 py-1.5 rounded border border-border text-sm hover:bg-muted">
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleSaveEdit}
-                        disabled={!editName.trim()}
-                        className="px-3 py-1.5 rounded bg-primary text-primary-foreground text-sm hover:bg-primary/90 disabled:opacity-50"
-                      >
-                        Save
-                      </button>
-                    </div>
-                  </Dialog.Content>
-                </Dialog.Portal>
-              </Dialog.Root>
-            )}
-            <div className="flex items-center gap-2">
-              <ScissorsIcon className="h-5 w-5 text-muted-foreground" />
-              <h1 className="text-xl font-bold">{breakdown.name}</h1>
-              <button onClick={() => setEditing(true)} className="p-1 rounded hover:bg-muted">
-                <PencilIcon className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-            </div>
+            <h1 className="text-xl font-bold">{breakdown.name}</h1>
             {breakdown.description && (
               <p className="text-sm text-muted-foreground mt-1">{breakdown.description}</p>
             )}
@@ -395,9 +327,9 @@ export function BreakdownDetailPage() {
               </div>
             ) : (
               <div className="divide-y divide-border">
-                {breakdown.parts.map(part => (
+                {breakdown.parts.map((part, idx) => (
                   <div key={part.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                    <span className="text-xs text-muted-foreground w-6">{part.order + 1}.</span>
+                    <span className="text-xs text-muted-foreground w-6">{idx + 1}.</span>
                     <span className="flex-1 font-medium">{part.label}</span>
                     {part.rate != null && (
                       <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">

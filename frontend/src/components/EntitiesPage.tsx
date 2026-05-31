@@ -124,15 +124,12 @@ export function EntitiesPage() {
         {/* Page Header */}
         <header className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <UsersIcon className="h-6 w-6 text-primary" />
-              </div>
-              Entities
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Group transactions by people or businesses
-            </p>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+              <span>/</span>
+              <span>entities</span>
+            </div>
+            <h1 className="text-2xl font-bold">Entities</h1>
           </div>
           <div className="flex items-center gap-2">
             <SortDropdown
@@ -183,11 +180,60 @@ export function EntitiesPage() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {sortItems(entities, sortBy, sortDirection).map((entity) => (
-              <EntityCard key={entity.id} entity={entity} />
-            ))}
-          </div>
+          <>
+            {(() => {
+              const sorted = sortItems(entities, sortBy, sortDirection)
+              const people = sorted.filter(e => e.entity_type === "person")
+              const businesses = sorted.filter(e => e.entity_type === "business")
+              const LIMIT = 8
+              return (
+                <div className="space-y-8">
+                  {people.length > 0 && (
+                    <section>
+                      <h2 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
+                        <UserIcon className="h-4 w-4 text-blue-500" />
+                        People ({people.length})
+                      </h2>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {people.slice(0, LIMIT).map((entity) => (
+                          <EntityCard key={entity.id} entity={entity} />
+                        ))}
+                      </div>
+                      {people.length > LIMIT && (
+                        <Link
+                          to="/entities/people"
+                          className="mt-3 inline-block text-sm text-primary hover:text-primary/80 font-medium transition-colors"
+                        >
+                          Show all ({people.length})
+                        </Link>
+                      )}
+                    </section>
+                  )}
+                  {businesses.length > 0 && (
+                    <section>
+                      <h2 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
+                        <BuildingIcon className="h-4 w-4 text-purple-500" />
+                        Businesses ({businesses.length})
+                      </h2>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {businesses.slice(0, LIMIT).map((entity) => (
+                          <EntityCard key={entity.id} entity={entity} />
+                        ))}
+                      </div>
+                      {businesses.length > LIMIT && (
+                        <Link
+                          to="/entities/businesses"
+                          className="mt-3 inline-block text-sm text-primary hover:text-primary/80 font-medium transition-colors"
+                        >
+                          Show all ({businesses.length})
+                        </Link>
+                      )}
+                    </section>
+                  )}
+                </div>
+              )
+            })()}
+          </>
         )}
       </main>
 
@@ -200,6 +246,110 @@ export function EntitiesPage() {
       <UnifiedCompareModal
         open={compareModalOpen}
         onOpenChange={setCompareModalOpen}
+      />
+
+      <Footer />
+    </>
+  )
+}
+
+export function EntitiesTypePage({ entityType }: { entityType: "person" | "business" }) {
+  const [entities, setEntities] = useState<Entity[]>([])
+  const [loading, setLoading] = useState(true)
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [sortBy, setSortBy] = useState("created_at")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
+
+  const label = entityType === "person" ? "People" : "Businesses"
+  const Icon = entityType === "person" ? UserIcon : BuildingIcon
+  const iconColor = entityType === "person" ? "text-blue-500" : "text-purple-500"
+
+  useEffect(() => {
+    document.title = `${label} | Entities | FinAccs`
+  }, [label])
+
+  const loadEntities = async () => {
+    try {
+      const data = await fetchEntities()
+      setEntities(data.entities.filter(e => e.entity_type === entityType))
+    } catch (error) {
+      console.error("Failed to load entities:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadEntities()
+  }, [entityType])
+
+  return (
+    <>
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        <header className="mb-8 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+              <span>/</span>
+              <Link to="/entities" className="hover:text-foreground transition-colors">entities</Link>
+              <span>/</span>
+              <span>{label.toLowerCase()}</span>
+            </div>
+            <h1 className="text-2xl font-bold">{label}</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <SortDropdown
+              options={[
+                { value: "created_at", label: "Created at" },
+                { value: "updated_at", label: "Last updated" },
+                { value: "name", label: "Name" },
+              ]}
+              sortBy={sortBy}
+              sortDirection={sortDirection}
+              onSortChange={(by, dir) => { setSortBy(by); setSortDirection(dir) }}
+            />
+            <button
+              onClick={() => setCreateModalOpen(true)}
+              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors flex items-center gap-2"
+            >
+              <PlusIcon className="h-4 w-4" />
+              Create Entity
+            </button>
+          </div>
+        </header>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          </div>
+        ) : entities.length === 0 ? (
+          <div className="bg-card rounded-xl border border-border shadow-sm p-12 text-center">
+            <Icon className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+            <h3 className="text-lg font-medium mb-2">No {label.toLowerCase()} yet</h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              Create your first {entityType} entity to start grouping transactions.
+            </p>
+            <button
+              onClick={() => setCreateModalOpen(true)}
+              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors inline-flex items-center gap-2"
+            >
+              <PlusIcon className="h-4 w-4" />
+              Create Entity
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {sortItems(entities, sortBy, sortDirection).map((entity) => (
+              <EntityCard key={entity.id} entity={entity} />
+            ))}
+          </div>
+        )}
+      </main>
+
+      <CreateEntityModal
+        open={createModalOpen}
+        onOpenChange={setCreateModalOpen}
+        onCreated={loadEntities}
       />
 
       <Footer />

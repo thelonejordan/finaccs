@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react"
+import { Link } from "react-router-dom"
 import { logError } from "@/lib/logger"
 import {
   FileTextIcon,
@@ -1788,15 +1789,12 @@ export function ExtractionsV2Page() {
         {/* Header */}
         <header className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <DatabaseIcon className="h-6 w-6 text-primary" />
-              </div>
-              Extractions v2
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Manage source files, extractions, and data sources
-            </p>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+              <span>/</span>
+              <span>extractions-v2</span>
+            </div>
+            <h1 className="text-2xl font-bold">Extractions v2</h1>
           </div>
 
           {/* View Toggle */}

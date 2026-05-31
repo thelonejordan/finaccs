@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react"
 import { logError } from "@/lib/logger"
 import { AnimatePresence, motion } from "motion/react"
-import { useSearchParams } from "react-router-dom"
+import { useSearchParams, Link } from "react-router-dom"
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -1283,15 +1283,12 @@ export function PaymentsPage() {
         {/* Header */}
         <header className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <LinkIcon className="h-6 w-6 text-primary" />
-              </div>
-              Payments
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Match credit card payments with bank transactions
-            </p>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Link to="/dashboard" className="hover:text-foreground transition-colors">home</Link>
+              <span>/</span>
+              <span>payments</span>
+            </div>
+            <h1 className="text-2xl font-bold">Payments</h1>
           </div>
 
           {/* Tabs */}
