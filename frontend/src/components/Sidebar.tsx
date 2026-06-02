@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { useInconsistencyCache } from "@/lib/inconsistency-cache"
 import { usePaymentsCache } from "@/lib/payments-cache"
@@ -20,6 +21,8 @@ import {
   RepeatIcon,
   RotateCcwIcon,
   ScissorsIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
 } from "lucide-react"
 
 /** Maximum badge count to display before showing "99+" */
@@ -64,16 +67,20 @@ const NAV_SECTIONS = [
   },
 ]
 
-/**
- * Sidebar navigation component with grouped menu sections.
- * Displays navigation links with active state highlighting and notification badges.
- */
 export function Sidebar() {
   const location = useLocation()
   const { cache } = useInconsistencyCache()
   const { cache: paymentsCache } = usePaymentsCache()
   const { cache: selfTransfersCache } = useSelfTransfersCache()
   const { cache: refundsCache } = useRefundsCache()
+
+  const [collapsed, setCollapsed] = useState(() => {
+    return localStorage.getItem("sidebar-collapsed") === "true"
+  })
+
+  useEffect(() => {
+    localStorage.setItem("sidebar-collapsed", String(collapsed))
+  }, [collapsed])
 
   const inconsistencyCount = cache.count ?? cache.previousCount ?? 0
   const paymentsCount = paymentsCache.count ?? paymentsCache.previousCount ?? 0
@@ -89,15 +96,23 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-64 h-[calc(100vh-2rem)] bg-card border-r border-border flex flex-col shrink-0 sticky top-8 self-start">
-      {/* Logo */}
-      <div className="p-4 pb-3">
-        <Link to="/dashboard" className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-primary/10">
-            <WalletIcon className="w-5 h-5 text-primary" />
-          </div>
-          <span className="text-xl font-bold tracking-tight text-foreground">FinAccs</span>
-        </Link>
+    <aside className={`${collapsed ? "w-16" : "w-64"} h-[calc(100vh-2rem)] bg-card border-r border-border flex flex-col shrink-0 sticky top-8 self-start transition-all duration-200`}>
+      {/* Logo + collapse toggle */}
+      <div className={`p-4 pb-3 flex items-center ${collapsed ? "justify-center" : "justify-between"}`}>
+        {!collapsed && (
+          <Link to="/dashboard" className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-primary/10">
+              <WalletIcon className="w-5 h-5 text-primary" />
+            </div>
+            <span className="text-xl font-bold tracking-tight text-foreground">FinAccs</span>
+          </Link>
+        )}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+        >
+          {collapsed ? <PanelLeftOpenIcon className="w-4 h-4" /> : <PanelLeftCloseIcon className="w-4 h-4" />}
+        </button>
       </div>
 
       {/* Divider */}
@@ -107,9 +122,11 @@ export function Sidebar() {
       <nav className="flex-1 px-3 py-1 overflow-y-auto">
         {NAV_SECTIONS.map((section) => (
           <div key={section.label} className="mb-5">
-            <h3 className="px-3 mb-2 text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">
-              {section.label}
-            </h3>
+            {!collapsed && (
+              <h3 className="px-3 mb-2 text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">
+                {section.label}
+              </h3>
+            )}
             <ul className="space-y-1">
               {section.items.map(({ path, label, icon: Icon, badgeKey }) => {
                 const isActive = location.pathname === path ||
@@ -123,18 +140,22 @@ export function Sidebar() {
                   <li key={path}>
                     <Link
                       to={path}
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
+                      title={collapsed ? label : undefined}
+                      className={`relative flex items-center ${collapsed ? "justify-center" : "gap-2.5"} px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
                         isActive
                           ? "bg-primary text-primary-foreground"
                           : "text-muted-foreground hover:text-foreground hover:bg-accent"
                       }`}
                     >
                       <Icon className="w-4 h-4 flex-shrink-0" />
-                      <span className="flex-1">{label}</span>
-                      {badgeCount > 0 && (
+                      {!collapsed && <span className="flex-1">{label}</span>}
+                      {!collapsed && badgeCount > 0 && (
                         <span className="bg-red-500 text-white text-[9px] font-bold rounded-full h-4 min-w-4 flex items-center justify-center px-1">
                           {badgeCount > MAX_BADGE_DISPLAY ? `${MAX_BADGE_DISPLAY}+` : badgeCount}
                         </span>
+                      )}
+                      {collapsed && badgeCount > 0 && (
+                        <span className="absolute top-1 right-1 bg-red-500 rounded-full h-2 w-2" />
                       )}
                     </Link>
                   </li>
@@ -144,6 +165,7 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
+
     </aside>
   )
 }
