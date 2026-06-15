@@ -84,6 +84,9 @@ def _get_currency_from_next_lines(line_positions, match_end, max_lines=5):
             stripped = line.strip()
             if re.match(r'^[A-Z]{3}$', stripped):
                 return stripped
+            m = re.search(r'(?:^|\s)([A-Z]{3})$', stripped)
+            if m:
+                return m.group(1)
             lines_checked += 1
             if lines_checked >= max_lines:
                 break
@@ -126,7 +129,7 @@ def _extract_inline_intl_transactions(text, card_headers):
 
 def _extract_two_amount_intl_transactions(text, card_headers, line_positions, matched_positions):
     """Extract two-amount international transactions with currency on next lines."""
-    pattern = r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+(.+?)\s+(?:(-?\d+)\s+)?([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*(CR)?'
+    pattern = r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+(.+?)\s+(?:(-?\d+)\s+)?([\d,]+\.\d+)\s+([\d,]+\.\d{2})\s*(CR)?'
     matches = []
 
     for match in re.finditer(pattern, text):
