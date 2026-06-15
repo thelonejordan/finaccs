@@ -439,6 +439,19 @@ def _serialize_cc_transaction(t, active_bank_txn_ids=None, bank_txns_map=None):
     except (AttributeError, ObjectDoesNotExist):
         pass
 
+    breakdown_data = None
+    try:
+        rt = t.resolved_transaction
+        if rt:
+            breakdown = getattr(rt, 'breakdown', None)
+            if breakdown:
+                breakdown_data = {
+                    'breakdown_id': breakdown.breakdown_id,
+                    'name': breakdown.name,
+                }
+    except (AttributeError, ObjectDoesNotExist):
+        pass
+
     return {
         'id': t.id,
         'date': t.date.isoformat(),
@@ -452,6 +465,7 @@ def _serialize_cc_transaction(t, active_bank_txn_ids=None, bank_txns_map=None):
         'source_file': source_file_data,
         'bank_payment_match': bank_match_data,
         'refund_link': refund_link_data,
+        'breakdown': breakdown_data,
     }
 
 
@@ -515,6 +529,7 @@ def credit_card_transactions(request):
         'resolved_transaction__refund_links_as_original__refund_resolved_transaction',
         'resolved_transaction__refund_links_as_refund',
         'resolved_transaction__refund_links_as_refund__original_resolved_transaction',
+        'resolved_transaction__breakdown',
     )
 
     active_bank_txn_ids = set(get_active_transactions().values_list('id', flat=True))

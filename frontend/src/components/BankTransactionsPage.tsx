@@ -2365,9 +2365,31 @@ export function BankTransactionsPage() {
                                   </Tooltip.Portal>
                                 </Tooltip.Root>
                               )}
+                              {/* Breakdown icon */}
+                              {t.breakdown && (
+                                <Tooltip.Root>
+                                  <Tooltip.Trigger asChild>
+                                    <Link
+                                      to={`/breakdowns/${t.breakdown.breakdown_id}`}
+                                      className="p-1 rounded hover:bg-muted transition-colors"
+                                    >
+                                      <ScissorsIcon className="h-4 w-4 text-orange-500" />
+                                    </Link>
+                                  </Tooltip.Trigger>
+                                  <Tooltip.Portal>
+                                    <Tooltip.Content
+                                      className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-sm max-w-xs z-50"
+                                      sideOffset={4}
+                                    >
+                                      <p className="font-medium">{t.breakdown.name}</p>
+                                      <Tooltip.Arrow className="fill-card" />
+                                    </Tooltip.Content>
+                                  </Tooltip.Portal>
+                                </Tooltip.Root>
+                              )}
                               {/* Show dash if no links, stories, or entities */}
                               {t.category !== "Self Transfer" && t.category !== "Credit Card Payment" && !t.linked_transaction && !t.refund_link &&
-                               !transactionStories[`bank:${t.id}`]?.length && !transactionEntities[`bank:${t.id}`]?.length && (
+                               !transactionStories[`bank:${t.id}`]?.length && !transactionEntities[`bank:${t.id}`]?.length && !t.breakdown && (
                                 <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
                               )}
                             </div>

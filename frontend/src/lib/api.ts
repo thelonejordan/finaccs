@@ -90,6 +90,7 @@ export interface Transaction {
   linked_transaction: LinkedTransaction | null
   cc_payment_match: CCPaymentMatchInfo | null
   refund_link: RefundLinkInfo | null
+  breakdown: { breakdown_id: string; name: string } | null
 }
 
 export interface TopExpense {
@@ -542,6 +543,7 @@ export interface CreditCardTransaction {
   } | null
   bank_payment_match: BankPaymentMatchInfo | null
   refund_link: RefundLinkInfo | null
+  breakdown: { breakdown_id: string; name: string } | null
 }
 
 export interface CreditCardTransactionStats {
@@ -1468,6 +1470,7 @@ export interface StoryTransaction {
   bank_payment_match: BankPaymentMatchInfo | null
   cc_payment_match: CCPaymentMatchInfo | null
   linked_transaction: LinkedTransaction | null
+  breakdown: { breakdown_id: string; name: string } | null
 }
 
 export interface StoryDetail extends Story {
@@ -1652,6 +1655,7 @@ export interface EntityTransaction {
   bank_payment_match: BankPaymentMatchInfo | null
   cc_payment_match: CCPaymentMatchInfo | null
   linked_transaction: LinkedTransaction | null
+  breakdown: { breakdown_id: string; name: string } | null
 }
 
 export interface EntityDetail extends Entity {

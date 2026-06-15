@@ -483,6 +483,7 @@ def api_transactions(request):
         'resolved_transaction__refund_links_as_original__refund_resolved_transaction',
         'resolved_transaction__refund_links_as_refund',
         'resolved_transaction__refund_links_as_refund__original_resolved_transaction',
+        'resolved_transaction__breakdown',
     )
 
     # Filter by bank account
@@ -671,6 +672,16 @@ def api_transactions(request):
                             }
                             break
 
+        breakdown_data = None
+        rt = t.resolved_transaction
+        if rt:
+            breakdown = getattr(rt, 'breakdown', None)
+            if breakdown:
+                breakdown_data = {
+                    'breakdown_id': breakdown.breakdown_id,
+                    'name': breakdown.name,
+                }
+
         aggregated_category = category_map.get(t.resolved_transaction_id) if t.resolved_transaction_id else t.category
         if not aggregated_category:
             for member in member_txns:
@@ -707,6 +718,7 @@ def api_transactions(request):
             'linked_transaction': linked_data,
             'cc_payment_match': cc_match_data,
             'refund_link': refund_link_data,
+            'breakdown': breakdown_data,
         })
 
     return JsonResponse({

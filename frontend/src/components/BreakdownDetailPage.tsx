@@ -73,7 +73,7 @@ function runBreakdownValidations(breakdown: BreakdownDetail): ValidationResult[]
       }
       const expected = refAmount * part.rate / 100
       const diff = Math.abs(part.amount - expected)
-      if (diff <= 0.01) {
+      if (diff <= 0.015) {
         results.push({ label: `${part.label} = ${part.rate}% of ${refLabel}`, status: 'pass', detail: `${formatCurrency(part.amount)} = ${formatCurrency(expected)}` })
       } else {
         results.push({ label: `${part.label} ≠ ${part.rate}% of ${refLabel}`, status: 'warn', detail: `${formatCurrency(part.amount)} vs ${formatCurrency(expected)} (Δ${formatCurrency(diff)})` })

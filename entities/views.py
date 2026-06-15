@@ -165,6 +165,7 @@ def _build_payment_link_maps(bank_rt_ids, cc_rt_ids):
 def get_entity_transactions(entity):
     """Get all transactions for an entity with full details."""
     from links.utils import get_refund_links_for_rt_ids, get_self_transfer_links_for_rt_ids
+    from links.models import Breakdown
 
     rt_ids = list(EntityLink.objects.filter(entity=entity).values_list('resolved_transaction_id', flat=True))
     resolved_txns = ResolvedTransaction.objects.filter(id__in=rt_ids)
@@ -176,6 +177,13 @@ def get_entity_transactions(entity):
     refund_map = get_refund_links_for_rt_ids(rt_ids)
     self_transfer_map = get_self_transfer_links_for_rt_ids(bank_rt_ids)
     bank_rt_cc_link_map, cc_rt_bank_link_map = _build_payment_link_maps(bank_rt_ids, cc_rt_ids)
+
+    breakdown_map = {}
+    for bd in Breakdown.objects.filter(resolved_transaction_id__in=rt_ids):
+        breakdown_map[bd.resolved_transaction_id] = {
+            'breakdown_id': bd.breakdown_id,
+            'name': bd.name,
+        }
 
     # Get bank transactions
     if bank_rt_ids:
@@ -196,6 +204,7 @@ def get_entity_transactions(entity):
                 'cc_payment_match': bank_rt_cc_link_map.get(txn.resolved_transaction_id),
                 'bank_payment_match': None,
                 'linked_transaction': self_transfer_map.get(txn.resolved_transaction_id),
+                'breakdown': breakdown_map.get(txn.resolved_transaction_id),
             })
 
     # Get CC transactions
@@ -217,6 +226,7 @@ def get_entity_transactions(entity):
                 'cc_payment_match': None,
                 'bank_payment_match': cc_rt_bank_link_map.get(txn.resolved_transaction_id),
                 'linked_transaction': None,
+                'breakdown': breakdown_map.get(txn.resolved_transaction_id),
             })
 
     # Sort by date descending

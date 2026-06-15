@@ -1014,9 +1014,31 @@ const TransactionRow = memo(function TransactionRow({
               </Tooltip.Portal>
             </Tooltip.Root>
           )}
+          {/* Breakdown icon */}
+          {t.breakdown && (
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
+                <Link
+                  to={`/breakdowns/${t.breakdown.breakdown_id}`}
+                  className="p-1 rounded hover:bg-muted transition-colors"
+                >
+                  <ScissorsIcon className="h-4 w-4 text-orange-500" />
+                </Link>
+              </Tooltip.Trigger>
+              <Tooltip.Portal>
+                <Tooltip.Content
+                  className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-sm max-w-xs z-50"
+                  sideOffset={4}
+                >
+                  <p className="font-medium">{t.breakdown.name}</p>
+                  <Tooltip.Arrow className="fill-card" />
+                </Tooltip.Content>
+              </Tooltip.Portal>
+            </Tooltip.Root>
+          )}
           {/* Show dash if no links, stories, entities, or EMIs */}
           {!t.bank_payment_match && t.category !== 'Credit Card Payment' && t.category !== 'Refund' &&
-           stories.length === 0 && entities.length === 0 && emis.length === 0 && (
+           stories.length === 0 && entities.length === 0 && emis.length === 0 && !t.breakdown && (
             <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
           )}
         </div>

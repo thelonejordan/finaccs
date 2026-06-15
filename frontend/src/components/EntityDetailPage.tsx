@@ -19,6 +19,7 @@ import {
   UserIcon,
   BuildingIcon,
   GitCompareIcon,
+  ScissorsIcon,
 } from "lucide-react"
 import * as Dialog from "@radix-ui/react-dialog"
 import * as Tooltip from "@radix-ui/react-tooltip"
@@ -35,6 +36,7 @@ import {
   getTransactionStories,
   getTransactionEntities,
   getTransactionEMIs,
+  createBreakdown,
   type EntityDetail,
   type EntityTransaction,
   type TransactionRef,
@@ -627,6 +629,28 @@ export function EntityDetailPage() {
                 {selectedKeys.size} transaction{selectedKeys.size !== 1 ? "s" : ""} selected
               </span>
               <div className="flex items-center gap-2">
+                {selectedKeys.size === 1 && (() => {
+                  const key = Array.from(selectedKeys)[0]
+                  const [type, id] = key.split('-')
+                  const txn = entity?.transactions.find(t => t.type === type && t.id === Number(id))
+                  if (txn?.breakdown) return null
+                  return (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const result = await createBreakdown({ transaction_type: type as 'bank' | 'credit_card', transaction_id: Number(id) })
+                          navigate(`/breakdowns/${result.breakdown_id}`)
+                        } catch (err) {
+                          console.error("Failed to create breakdown", err)
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      <ScissorsIcon className="h-4 w-4" />
+                      Breakdown
+                    </button>
+                  )
+                })()}
                 <button
                   onClick={openMoveModal}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
@@ -754,10 +778,31 @@ export function EntityDetailPage() {
                             <StoriesBadges stories={transactionStories[`${txn.type}:${txn.id}`] || []} />
                             <EntitiesBadges entities={transactionEntities[`${txn.type}:${txn.id}`] || []} excludeEntityId={entityId} />
                             <EMIsBadges emis={transactionEMIs[`${txn.type}:${txn.id}`] || []} />
+                            {txn.breakdown && (
+                              <Tooltip.Root>
+                                <Tooltip.Trigger asChild>
+                                  <Link
+                                    to={`/breakdowns/${txn.breakdown.breakdown_id}`}
+                                    className="p-1 rounded hover:bg-muted transition-colors"
+                                  >
+                                    <ScissorsIcon className="h-4 w-4 text-orange-500" />
+                                  </Link>
+                                </Tooltip.Trigger>
+                                <Tooltip.Portal>
+                                  <Tooltip.Content
+                                    className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-sm max-w-xs z-50"
+                                    sideOffset={4}
+                                  >
+                                    <p className="font-medium">{txn.breakdown.name}</p>
+                                    <Tooltip.Arrow className="fill-card" />
+                                  </Tooltip.Content>
+                                </Tooltip.Portal>
+                              </Tooltip.Root>
+                            )}
                             {!txn.refund_link && !txn.linked_transaction && !txn.cc_payment_match && !txn.bank_payment_match &&
                              !transactionStories[`${txn.type}:${txn.id}`]?.length &&
                              !transactionEntities[`${txn.type}:${txn.id}`]?.filter(e => e.entity_id !== entityId).length &&
-                             !transactionEMIs[`${txn.type}:${txn.id}`]?.length && (
+                             !transactionEMIs[`${txn.type}:${txn.id}`]?.length && !txn.breakdown && (
                               <span className="inline-flex items-center justify-center w-6 h-6 text-muted-foreground/40 text-xs">-</span>
                             )}
                           </div>

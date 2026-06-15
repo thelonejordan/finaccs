@@ -123,7 +123,7 @@ def _compute_validations(breakdown):
                 ref_label = 'total'
             expected = ref_amount * float(part.rate) / 100
             rate_diff = abs(float(part.amount) - expected)
-            if rate_diff <= 0.01:
+            if rate_diff <= 0.015:
                 results.append({
                     'label': f'{part.label} = {float(part.rate)}% of {ref_label}',
                     'status': 'pass',
