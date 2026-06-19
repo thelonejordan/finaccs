@@ -183,6 +183,7 @@ export function StoriesBadges({ stories, excludeStoryId }: { stories: StoryBadge
               <Link
                 key={s.story_id}
                 to={`/stories/${s.story_id}`}
+                target="_blank"
                 className="flex items-center gap-1.5 hover:text-primary"
               >
                 <span>{s.icon}</span>
@@ -218,6 +219,7 @@ export function EntitiesBadges({ entities, excludeEntityId }: { entities: Entity
               <Link
                 key={e.entity_id}
                 to={`/entities/${e.entity_id}`}
+                target="_blank"
                 className="flex items-center gap-1.5 hover:text-primary"
               >
                 <span>{e.icon}</span>
@@ -253,6 +255,7 @@ export function EMIsBadges({ emis, excludeEmiId }: { emis: EMIBadge[]; excludeEm
               <Link
                 key={e.emi_id}
                 to={`/emis/${e.emi_id}`}
+                target="_blank"
                 className="flex items-center gap-1.5 hover:text-primary"
               >
                 <WalletIcon className="h-3 w-3" />

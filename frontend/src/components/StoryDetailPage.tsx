@@ -613,7 +613,7 @@ export function StoryDetailPage() {
                       onClick={async () => {
                         try {
                           const result = await createBreakdown({ transaction_type: type as 'bank' | 'credit_card', transaction_id: Number(id) })
-                          navigate(`/breakdowns/${result.breakdown_id}`)
+                          window.open(`/breakdowns/${result.breakdown_id}`, '_blank')
                         } catch (err) {
                           console.error("Failed to create breakdown", err)
                         }
@@ -757,6 +757,7 @@ export function StoryDetailPage() {
                                 <Tooltip.Trigger asChild>
                                   <Link
                                     to={`/breakdowns/${txn.breakdown.breakdown_id}`}
+                                    target="_blank"
                                     className="p-1 rounded hover:bg-muted transition-colors"
                                   >
                                     <ScissorsIcon className="h-4 w-4 text-orange-500" />

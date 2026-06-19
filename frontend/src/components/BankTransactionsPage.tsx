@@ -2121,7 +2121,7 @@ export function BankTransactionsPage() {
                             const txnId = Array.from(selectedIds)[0]
                             try {
                               const result = await createBreakdown({ transaction_type: 'bank', transaction_id: txnId })
-                              navigate(`/breakdowns/${result.breakdown_id}`)
+                              window.open(`/breakdowns/${result.breakdown_id}`, '_blank')
                             } catch (err) {
                               logError("Failed to create breakdown", err)
                             }
@@ -2322,6 +2322,7 @@ export function BankTransactionsPage() {
                                           <Link
                                             key={s.story_id}
                                             to={`/stories/${s.story_id}`}
+                                            target="_blank"
                                             className="flex items-center gap-1.5 hover:text-primary"
                                           >
                                             <span>{s.icon}</span>
@@ -2353,6 +2354,7 @@ export function BankTransactionsPage() {
                                           <Link
                                             key={e.entity_id}
                                             to={`/entities/${e.entity_id}`}
+                                            target="_blank"
                                             className="flex items-center gap-1.5 hover:text-primary"
                                           >
                                             <span>{e.icon}</span>
@@ -2371,6 +2373,7 @@ export function BankTransactionsPage() {
                                   <Tooltip.Trigger asChild>
                                     <Link
                                       to={`/breakdowns/${t.breakdown.breakdown_id}`}
+                                      target="_blank"
                                       className="p-1 rounded hover:bg-muted transition-colors"
                                     >
                                       <ScissorsIcon className="h-4 w-4 text-orange-500" />

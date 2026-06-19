@@ -940,6 +940,7 @@ const TransactionRow = memo(function TransactionRow({
                       <Link
                         key={s.story_id}
                         to={`/stories/${s.story_id}`}
+                        target="_blank"
                         className="flex items-center gap-1.5 hover:text-primary"
                       >
                         <span>{s.icon}</span>
@@ -971,6 +972,7 @@ const TransactionRow = memo(function TransactionRow({
                       <Link
                         key={e.entity_id}
                         to={`/entities/${e.entity_id}`}
+                        target="_blank"
                         className="flex items-center gap-1.5 hover:text-primary"
                       >
                         <span>{e.icon}</span>
@@ -1002,6 +1004,7 @@ const TransactionRow = memo(function TransactionRow({
                       <Link
                         key={e.emi_id}
                         to={`/emis/${e.emi_id}`}
+                        target="_blank"
                         className="flex items-center gap-1.5 hover:text-primary"
                       >
                         <WalletIcon className="h-3 w-3" />
@@ -1020,6 +1023,7 @@ const TransactionRow = memo(function TransactionRow({
               <Tooltip.Trigger asChild>
                 <Link
                   to={`/breakdowns/${t.breakdown.breakdown_id}`}
+                  target="_blank"
                   className="p-1 rounded hover:bg-muted transition-colors"
                 >
                   <ScissorsIcon className="h-4 w-4 text-orange-500" />
@@ -2160,7 +2164,7 @@ export function CreditCardTransactionsPage() {
                             const txnId = Array.from(selectedIds)[0]
                             try {
                               const result = await createBreakdown({ transaction_type: 'credit_card', transaction_id: txnId })
-                              navigate(`/breakdowns/${result.breakdown_id}`)
+                              window.open(`/breakdowns/${result.breakdown_id}`, '_blank')
                             } catch (err) {
                               logError("Failed to create breakdown", err)
                             }
